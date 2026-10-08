@@ -1,0 +1,115 @@
+name: dcfs_dashboard
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging:
+    driver: local
+    options:
+      max-size: 10m
+      max-file: "5"
+      compress: "true"
+
+services:
+  gateway:
+    <<: *service-defaults
+    container_name: dcfsDashboardGateway
+    build:
+      context: .
+      dockerfile: deploy/gateway/Dockerfile
+    ports:
+      - "${DASHBOARD_BIND_IP:-192.168.22.19}:${DASHBOARD_HTTP_PORT:-8080}:8080"
+      - "${DASHBOARD_BIND_IP:-192.168.22.19}:${AUTHENTIK_HTTP_PORT:-8081}:8081"
+    environment:
+      DASHBOARD_TITLE: ${DASHBOARD_TITLE:-DCFS 协同平台}
+      DASHBOARD_API_BASE_URL: /api/v1
+      DASHBOARD_AUTHENTIK_URL: ${DASHBOARD_AUTHENTIK_URL:-http://192.168.22.19:8081}
+      DASHBOARD_GITLAB_URL: ${DASHBOARD_GITLAB_URL:-http://192.168.22.19:8082}
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    depends_on:
+      - api
+    networks:
+      - dashboard_frontend
+      - authentik_frontend
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512m
+
+  api:
+    <<: *service-defaults
+    container_name: dcfsDashboardApi
+    build:
+      context: .
+      dockerfile: src/Dcfs.Dashboard.Api/Dockerfile
+    expose:
+      - "8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Dashboard: Host=postgres;Port=5432;Database=${DASHBOARD_DB_NAME:-dashboard};Username=${DASHBOARD_DB_USER:-dashboard};Password=${DASHBOARD_DB_PASSWORD:?set DASHBOARD_DB_PASSWORD};Application Name=dcfs-dashboard
+      Authentication__Oidc__Enabled: "true"
+      Authentication__Oidc__Authority: ${DASHBOARD_OIDC_AUTHORITY:?set DASHBOARD_OIDC_AUTHORITY}
+      Authentication__Oidc__ClientId: ${DASHBOARD_OIDC_CLIENT_ID:?set DASHBOARD_OIDC_CLIENT_ID}
+      Authentication__Oidc__ClientSecret: ${DASHBOARD_OIDC_CLIENT_SECRET:?set DASHBOARD_OIDC_CLIENT_SECRET}
+      Valkey__Endpoint: valkey:6379
+      Valkey__User: ${DASHBOARD_VALKEY_USER:-dashboard}
+      Valkey__Password: ${DASHBOARD_VALKEY_PASSWORD:?set DASHBOARD_VALKEY_PASSWORD}
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks:
+      - dashboard_frontend
+      - authentik_frontend
+      - postgres_backend
+      - valkey_backend
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 2g
+
+  worker:
+    <<: *service-defaults
+    container_name: dcfsDashboardWorker
+    build:
+      context: .
+      dockerfile: src/Dcfs.Dashboard.Worker/Dockerfile
+    environment:
+      DOTNET_ENVIRONMENT: Production
+      ConnectionStrings__Dashboard: Host=postgres;Port=5432;Database=${DASHBOARD_DB_NAME:-dashboard};Username=${DASHBOARD_DB_USER:-dashboard};Password=${DASHBOARD_DB_PASSWORD:?set DASHBOARD_DB_PASSWORD};Application Name=dcfs-dashboard-worker
+      Valkey__Endpoint: valkey:6379
+      Valkey__User: ${DASHBOARD_VALKEY_USER:-dashboard}
+      Valkey__Password: ${DASHBOARD_VALKEY_PASSWORD:?set DASHBOARD_VALKEY_PASSWORD}
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks:
+      - postgres_backend
+      - valkey_backend
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1g
+
+networks:
+  dashboard_frontend:
+    name: dcfsAppDashboard
+    internal: true
+  authentik_frontend:
+    name: dcfsAppAuthentik
+    external: true
+  postgres_backend:
+    name: dcfsDbPostgres
+    external: true
+  valkey_backend:
+    name: dcfsCacheGeneral
+    external: true
