@@ -1,32 +1,23 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   ArrowDown,
-  Bell,
   Box,
   Connection,
   DataAnalysis,
-  Expand,
-  Fold,
   Grid,
   Lock,
-  Menu as MenuIcon,
   Operation,
-  Search,
   Setting,
   Tickets,
   UserFilled,
 } from '@element-plus/icons-vue'
-import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import ThemeSwitch from '@/components/ThemeSwitch.vue'
-import { runtimeConfig } from '@/config/runtime'
+import { RouterView, useRoute, useRouter } from 'vue-router'
+import AppTopbar from '@/components/AppTopbar.vue'
 import { authSession } from '@/services/authSession'
 
 const route = useRoute()
 const router = useRouter()
-const whaleMarkUrl = '/images/whaledeck-mark.png'
-const isScrolled = ref(false)
-const isSidebarCollapsed = ref(false)
 const isMobileNavigationOpen = ref(false)
 
 const activeNavigation = computed(() => route.hash.slice(1) || 'overview')
@@ -55,14 +46,6 @@ const navigationGroups = [
   },
 ] as const
 
-function updateScrollState() {
-  isScrolled.value = window.scrollY > 8
-}
-
-function toggleSidebar() {
-  isSidebarCollapsed.value = !isSidebarCollapsed.value
-}
-
 function toggleMobileNavigation() {
   isMobileNavigationOpen.value = !isMobileNavigationOpen.value
 }
@@ -76,95 +59,11 @@ async function selectNavigation(index: string) {
     document.getElementById(index)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
 }
-
-function updateTopbarSpotlight(event: PointerEvent) {
-  const target = event.currentTarget as HTMLElement
-  const rect = target.getBoundingClientRect()
-  target.style.setProperty('--topbar-spotlight-x', `${event.clientX - rect.left}px`)
-  target.style.setProperty('--topbar-spotlight-y', `${event.clientY - rect.top}px`)
-  target.style.setProperty('--topbar-spotlight-opacity', '1')
-}
-
-function hideTopbarSpotlight(event: PointerEvent) {
-  const target = event.currentTarget as HTMLElement
-  target.style.setProperty('--topbar-spotlight-opacity', '0')
-}
-
-onMounted(() => {
-  updateScrollState()
-  window.addEventListener('scroll', updateScrollState, { passive: true })
-})
-
-onBeforeUnmount(() => window.removeEventListener('scroll', updateScrollState))
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'app-shell--collapsed': isSidebarCollapsed }">
-    <header
-      data-test="topbar"
-      class="topbar"
-      :class="{ 'topbar--scrolled': isScrolled }"
-      @pointermove="updateTopbarSpotlight"
-      @pointerleave="hideTopbarSpotlight"
-    >
-      <RouterLink class="brand" to="/" aria-label="返回工作站概览">
-        <span class="brand__mark brand__mark--image" aria-hidden="true">
-          <img :src="whaleMarkUrl" alt="" />
-        </span>
-        <span class="brand__text">
-          <strong>{{ runtimeConfig.appTitle }}</strong>
-          <small>Control Plane</small>
-        </span>
-      </RouterLink>
-
-      <div class="topbar__workspace">
-        <el-button
-          class="navigation-trigger navigation-trigger--mobile"
-          text
-          circle
-          aria-label="打开导航"
-          @click="toggleMobileNavigation"
-        >
-          <el-icon><MenuIcon /></el-icon>
-        </el-button>
-        <el-button
-          class="navigation-trigger navigation-trigger--desktop"
-          text
-          circle
-          :aria-label="isSidebarCollapsed ? '展开侧边导航' : '收起侧边导航'"
-          @click="toggleSidebar"
-        >
-          <el-icon><component :is="isSidebarCollapsed ? Expand : Fold" /></el-icon>
-        </el-button>
-
-        <button class="command-search" type="button" aria-label="搜索平台功能">
-          <el-icon><Search /></el-icon>
-          <span>搜索功能</span>
-          <kbd>Ctrl K</kbd>
-        </button>
-
-        <div class="topbar__actions">
-          <span class="connection-state">
-            <span class="connection-state__pulse" />
-            内部网络
-          </span>
-          <el-tooltip content="通知" placement="bottom">
-            <el-button class="icon-action" text circle aria-label="通知">
-              <el-badge is-dot
-                ><el-icon><Bell /></el-icon
-              ></el-badge>
-            </el-button>
-          </el-tooltip>
-          <ThemeSwitch />
-          <el-button class="login-button user-button" type="primary" plain round>
-            <el-icon><UserFilled /></el-icon>
-            <span>{{ currentUserName }}</span>
-            <el-icon class="login-button__arrow"><ArrowDown /></el-icon>
-          </el-button>
-        </div>
-      </div>
-      <span class="topbar__accent" aria-hidden="true" />
-    </header>
+  <div class="app-shell">
+    <AppTopbar show-navigation-trigger @toggle-navigation="toggleMobileNavigation" />
 
     <div class="shell-body">
       <aside class="sidebar" :class="{ 'sidebar--mobile-open': isMobileNavigationOpen }">
@@ -175,8 +74,6 @@ onBeforeUnmount(() => window.removeEventListener('scroll', updateScrollState))
               <el-menu
                 class="side-menu"
                 :default-active="activeNavigation"
-                :collapse="isSidebarCollapsed"
-                :collapse-transition="false"
                 @select="selectNavigation"
               >
                 <el-menu-item v-for="item in group.items" :key="item.index" :index="item.index">
@@ -198,6 +95,16 @@ onBeforeUnmount(() => window.removeEventListener('scroll', updateScrollState))
               <small>等待服务接入</small>
             </span>
           </div>
+          <button class="sidebar-user" type="button" aria-label="打开用户菜单">
+            <span class="sidebar-user__avatar">
+              <el-icon><UserFilled /></el-icon>
+            </span>
+            <span class="sidebar-user__copy">
+              <strong>{{ currentUserName }}</strong>
+              <small>Authentik 账户</small>
+            </span>
+            <el-icon class="sidebar-user__arrow"><ArrowDown /></el-icon>
+          </button>
         </div>
       </aside>
 

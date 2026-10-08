@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { ArrowRight, Key, Lock, UserFilled } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
-import ThemeSwitch from '@/components/ThemeSwitch.vue'
-import { runtimeConfig } from '@/config/runtime'
+import AppTopbar from '@/components/AppTopbar.vue'
 import { authSession } from '@/services/authSession'
 
 const route = useRoute()
 const router = useRouter()
 const isPreviewMode = import.meta.env.DEV
-const whaleMarkUrl = '/images/whaledeck-mark.png'
 const loginIllustrationUrl = '/images/whaledeck-login-illustration.png'
 
 async function authenticate() {
@@ -30,18 +28,7 @@ async function authenticate() {
 <template>
   <div class="login-page">
     <div class="login-page__mesh" aria-hidden="true" />
-    <header class="login-toolbar">
-      <div class="login-brand" aria-label="WhaleDeck 协同平台">
-        <span class="brand__mark brand__mark--image">
-          <img :src="whaleMarkUrl" alt="" />
-        </span>
-        <span>
-          <strong>{{ runtimeConfig.appTitle }}</strong>
-          <small>WORKSTATION CONTROL PLANE</small>
-        </span>
-      </div>
-      <ThemeSwitch />
-    </header>
+    <AppTopbar login-mode />
 
     <main class="login-layout">
       <section class="login-visual">

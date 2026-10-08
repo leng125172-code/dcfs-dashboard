@@ -1,52 +1,64 @@
 <script setup lang="ts">
 import { Moon, Sunny } from '@element-plus/icons-vue'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
+import type { SwitchInstance } from 'element-plus'
 import { useUiStore } from '@/stores/ui'
 
 const uiStore = useUiStore()
-const burst = ref({ active: false, x: 0, y: 0, key: 0 })
-let pointerPosition: { x: number; y: number } | null = null
+const switchRef = ref<SwitchInstance>()
 
-function rememberPointer(event: PointerEvent) {
-  pointerPosition = { x: event.clientX, y: event.clientY }
+function beforeThemeChange() {
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  if (!('startViewTransition' in document) || prefersReducedMotion) {
+    return true
+  }
+
+  return new Promise<boolean>((resolve) => {
+    const switchElement = switchRef.value?.$el as HTMLElement | undefined
+    const rect = switchElement?.getBoundingClientRect()
+    const x = rect ? rect.left + rect.width / 2 : window.innerWidth - 44
+    const y = rect ? rect.top + rect.height / 2 : 32
+    const endRadius = Math.hypot(
+      Math.max(x, window.innerWidth - x),
+      Math.max(y, window.innerHeight - y),
+    )
+    const root = document.documentElement
+
+    root.dataset.themeTransition = uiStore.isDark ? 'to-light' : 'to-dark'
+    root.style.setProperty('--theme-transition-x', `${x}px`)
+    root.style.setProperty('--theme-transition-y', `${y}px`)
+    root.style.setProperty('--theme-transition-radius', `${endRadius}px`)
+
+    const transition = document.startViewTransition(async () => {
+      resolve(true)
+      await nextTick()
+    })
+
+    transition.finished.finally(() => {
+      delete root.dataset.themeTransition
+      root.style.removeProperty('--theme-transition-x')
+      root.style.removeProperty('--theme-transition-y')
+      root.style.removeProperty('--theme-transition-radius')
+    })
+  })
 }
 
 function changeTheme(value: string | number | boolean) {
-  const fallback = { x: window.innerWidth - 44, y: 32 }
-  const position = pointerPosition ?? fallback
-
-  burst.value = {
-    active: true,
-    x: position.x,
-    y: position.y,
-    key: burst.value.key + 1,
-  }
   uiStore.setTheme(Boolean(value))
-  pointerPosition = null
-
-  window.setTimeout(() => {
-    burst.value.active = false
-  }, 560)
 }
 </script>
 
 <template>
-  <div class="theme-switch" @pointerdown="rememberPointer">
+  <div class="theme-switch">
     <el-switch
+      ref="switchRef"
       :model-value="uiStore.isDark"
       :active-action-icon="Moon"
       :inactive-action-icon="Sunny"
+      :before-change="beforeThemeChange"
       aria-label="切换明暗主题"
       @change="changeTheme"
     />
   </div>
-  <Teleport to="body">
-    <span
-      v-if="burst.active"
-      :key="burst.key"
-      class="theme-burst"
-      :style="{ '--theme-x': `${burst.x}px`, '--theme-y': `${burst.y}px` }"
-      aria-hidden="true"
-    />
-  </Teleport>
 </template>

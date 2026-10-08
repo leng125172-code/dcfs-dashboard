@@ -22,6 +22,8 @@ describe('WhaleDeck entry flow', () => {
     expect(wrapper.get('[data-test="topbar"]').classes()).toContain('topbar')
     expect(wrapper.find('.topbar__context').exists()).toBe(false)
     expect(wrapper.find('.theme-switch .el-switch').exists()).toBe(true)
+    expect(wrapper.find('.navigation-trigger--desktop').exists()).toBe(false)
+    expect(wrapper.find('.sidebar-user').exists()).toBe(true)
   })
 
   it('renders the startup loading state', () => {
@@ -45,5 +47,8 @@ describe('WhaleDeck entry flow', () => {
     expect(wrapper.find('input[type="password"]').exists()).toBe(false)
     expect(wrapper.get('.authentik-login')).toBeTruthy()
     expect(wrapper.find('.theme-switch .el-switch').exists()).toBe(true)
+    expect(wrapper.find('[data-test="topbar"]').exists()).toBe(true)
+    expect(wrapper.find('.command-search').exists()).toBe(false)
+    expect(wrapper.find('.topbar__actions').exists()).toBe(false)
   })
 })

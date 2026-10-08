@@ -105,11 +105,11 @@ networks:
     name: whaledeck-app-ui
     internal: true
   authentik_frontend:
-    name: whaledeck-app-authentik
+    name: database-platform-app-authentik
     external: true
   postgres_backend:
-    name: whaledeck-db-postgres
+    name: database-platform-db-postgres
     external: true
   valkey_backend:
-    name: whaledeck-cache-general
+    name: database-platform-cache-general
     external: true

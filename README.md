@@ -67,9 +67,9 @@ Only the gateway publishes host ports. The API and Worker are internal container
 
 ## Container boundaries
 
-- `whaledeck-gateway`: `whaledeck-app-ui` and `whaledeck-app-authentik`
-- `whaledeck-api`: `whaledeck-app-ui`, `whaledeck-app-authentik`, `whaledeck-db-postgres`, and `whaledeck-cache-general`
-- `whaledeck-worker`: `whaledeck-db-postgres` and `whaledeck-cache-general`
+- `whaledeck-gateway`: `whaledeck-app-ui` and `database-platform-app-authentik`
+- `whaledeck-api`: `whaledeck-app-ui`, `database-platform-app-authentik`, `database-platform-db-postgres`, and `database-platform-cache-general`
+- `whaledeck-worker`: `database-platform-db-postgres` and `database-platform-cache-general`
 
 Docker uses the `local` logging driver with a maximum of five compressed 10 MiB files per container. Application request logs below server errors are emitted at debug level to avoid repeating the previous log-volume incident.
 
