@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-interface DcfsRuntimeConfig {
+interface WhaleDeckRuntimeConfig {
   apiBaseUrl: string
   appTitle: string
   authentikUrl: string
@@ -8,5 +8,5 @@ interface DcfsRuntimeConfig {
 }
 
 interface Window {
-  __DCFS_RUNTIME_CONFIG__?: Partial<DcfsRuntimeConfig>
+  __WHALEDECK_RUNTIME_CONFIG__?: Partial<WhaleDeckRuntimeConfig>
 }

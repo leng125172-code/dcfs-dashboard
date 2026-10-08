@@ -239,9 +239,6 @@ importers:
       vite:
         specifier: ^8.2.2
         version: 8.3.3(@types/node@24.19.1)(jiti@2.7.0)
-      vite-plugin-vue-devtools:
-        specifier: ^8.2.1
-        version: 8.2.1(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0))(vue@3.5.43(typescript@6.0.3))
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@24.19.1)(jsdom@30.1.2)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0))

@@ -8,7 +8,7 @@
 - Use Element Plus CSS variables and components before introducing custom equivalents.
 - Preserve the sticky translucent top bar, its scroll transition, dark theme, responsive behavior, and reduced-motion support.
 - Do not expose API, Worker, database, cache, or Authentik container ports directly on the host.
-- Do not mount the Docker socket into Dashboard API or Worker containers.
+- Do not mount the Docker socket into WhaleDeck API or Worker containers.
 - Log to stdout/stderr as structured JSON. Do not add unbounded file logs or high-frequency information logs.
 - Keep secrets out of Git and use environment variables or mounted secret files.
 - Pin application dependencies and container images; production images require immutable digests.

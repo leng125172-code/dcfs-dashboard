@@ -12,8 +12,8 @@ RUN pnpm build
 FROM ${NGINX_IMAGE} AS final
 COPY deploy/gateway/nginx.conf /etc/nginx/nginx.conf
 COPY deploy/gateway/runtime-config.template.js /usr/share/nginx/runtime-config.template.js
-COPY --chmod=755 deploy/gateway/start.sh /usr/local/bin/dcfs-gateway-start
+COPY --chmod=755 deploy/gateway/start.sh /usr/local/bin/whaledeck-gateway-start
 COPY --from=web-build /src/dist /usr/share/nginx/html
 USER 101:101
 EXPOSE 8080 8081
-ENTRYPOINT ["/usr/local/bin/dcfs-gateway-start"]
+ENTRYPOINT ["/usr/local/bin/whaledeck-gateway-start"]

@@ -1,11 +1,11 @@
-const defaults: DcfsRuntimeConfig = {
+const defaults: WhaleDeckRuntimeConfig = {
   apiBaseUrl: '/api/v1',
-  appTitle: 'DCFS 协同平台',
+  appTitle: 'WhaleDeck 协同平台',
   authentikUrl: 'http://192.168.22.19:8081',
   gitlabUrl: 'http://192.168.22.19:8082',
 }
 
-export const runtimeConfig: DcfsRuntimeConfig = {
+export const runtimeConfig: WhaleDeckRuntimeConfig = {
   ...defaults,
-  ...window.__DCFS_RUNTIME_CONFIG__,
+  ...window.__WHALEDECK_RUNTIME_CONFIG__,
 }

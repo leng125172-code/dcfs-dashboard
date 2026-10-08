@@ -1,11 +1,19 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, onScopeDispose, ref } from 'vue'
 
-const storageKey = 'dcfs-dashboard-theme'
+const storageKey = 'whaledeck-theme'
+type ThemePreference = 'system' | 'light' | 'dark'
 
 export const useUiStore = defineStore('ui', () => {
-  const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
-  const isDark = ref(localStorage.getItem(storageKey) === 'dark' || prefersDark)
+  const colorScheme = window.matchMedia?.('(prefers-color-scheme: dark)')
+  const savedPreference = localStorage.getItem(storageKey)
+  const preference = ref<ThemePreference>(
+    savedPreference === 'light' || savedPreference === 'dark' ? savedPreference : 'system',
+  )
+  const systemPrefersDark = ref(colorScheme?.matches ?? false)
+  const isDark = computed(() =>
+    preference.value === 'system' ? systemPrefersDark.value : preference.value === 'dark',
+  )
 
   function applyTheme() {
     document.documentElement.classList.toggle('dark', isDark.value)
@@ -14,13 +22,21 @@ export const useUiStore = defineStore('ui', () => {
       ?.setAttribute('content', isDark.value ? '#141414' : '#ffffff')
   }
 
-  function toggleTheme() {
-    isDark.value = !isDark.value
-    localStorage.setItem(storageKey, isDark.value ? 'dark' : 'light')
+  function setTheme(dark: boolean) {
+    preference.value = dark ? 'dark' : 'light'
+    localStorage.setItem(storageKey, preference.value)
     applyTheme()
   }
 
+  function handleSystemThemeChange(event: MediaQueryListEvent) {
+    systemPrefersDark.value = event.matches
+    if (preference.value === 'system') applyTheme()
+  }
+
+  colorScheme?.addEventListener('change', handleSystemThemeChange)
+  onScopeDispose(() => colorScheme?.removeEventListener('change', handleSystemThemeChange))
+
   applyTheme()
 
-  return { isDark, toggleTheme }
+  return { isDark, preference, setTheme }
 })

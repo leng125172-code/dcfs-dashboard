@@ -1,6 +1,6 @@
-# DCFS Dashboard
+# WhaleDeck
 
-DCFS Dashboard is the containerized control plane for the Precision 7920 workstation. It provides a single IP-based entry point for platform status, Authentik-backed login and user identity, GitLab, user synchronization, and later restricted container operations.
+WhaleDeck is the containerized control plane for the Precision 7920 workstation. It provides a single IP-based entry point for platform status, Authentik-backed login and user identity, GitLab, user synchronization, and later restricted container operations.
 
 ## Technology
 
@@ -12,17 +12,17 @@ DCFS Dashboard is the containerized control plane for the Precision 7920 worksta
 
 The repository is a modular monolith. `Domain` has no infrastructure dependency, `Application` contains use cases and ports, `Infrastructure` implements persistence and external integrations, and `Api` owns HTTP/OIDC concerns.
 
-Dashboard has no local password store and does not duplicate Authentik user profiles. Interactive login uses Authentik through the backend OIDC authorization-code flow. Authentik subject IDs and group claims are mapped to Dashboard-specific permissions and immutable audit events; Authentik remains the source of truth for names, email addresses, groups, credentials, MFA, and account state.
+WhaleDeck has no local password store and does not duplicate Authentik user profiles. Interactive login uses Authentik through the backend OIDC authorization-code flow. Authentik subject IDs and group claims are mapped to platform-specific permissions and immutable audit events; Authentik remains the source of truth for names, email addresses, groups, credentials, MFA, and account state.
 
 ## Repository layout
 
 ```text
 src/
-  Dcfs.Dashboard.Api/
-  Dcfs.Dashboard.Application/
-  Dcfs.Dashboard.Domain/
-  Dcfs.Dashboard.Infrastructure/
-  Dcfs.Dashboard.Worker/
+  WhaleDeck.Api/
+  WhaleDeck.Application/
+  WhaleDeck.Domain/
+  WhaleDeck.Infrastructure/
+  WhaleDeck.Worker/
 web/
 tests/
 deploy/gateway/
@@ -59,7 +59,7 @@ Copy `.env.example` to `.env`, set mode `0600` on Linux, and replace every place
 
 The intended canonical URLs are:
 
-- Dashboard: `http://192.168.22.19:8080`
+- WhaleDeck: `http://192.168.22.19:8080`
 - Authentik: `http://192.168.22.19:8081`
 - GitLab: `http://192.168.22.19:8082` (added when GitLab is deployed)
 
@@ -67,9 +67,9 @@ Only the gateway publishes host ports. The API and Worker are internal container
 
 ## Container boundaries
 
-- `dcfsDashboardGateway`: `dcfsAppDashboard` and `dcfsAppAuthentik`
-- `dcfsDashboardApi`: `dcfsAppDashboard`, `dcfsAppAuthentik`, `dcfsDbPostgres`, and `dcfsCacheGeneral`
-- `dcfsDashboardWorker`: `dcfsDbPostgres` and `dcfsCacheGeneral`
+- `whaledeck-gateway`: `whaledeck-app-ui` and `whaledeck-app-authentik`
+- `whaledeck-api`: `whaledeck-app-ui`, `whaledeck-app-authentik`, `whaledeck-db-postgres`, and `whaledeck-cache-general`
+- `whaledeck-worker`: `whaledeck-db-postgres` and `whaledeck-cache-general`
 
 Docker uses the `local` logging driver with a maximum of five compressed 10 MiB files per container. Application request logs below server errors are emitted at debug level to avoid repeating the previous log-volume incident.
 
