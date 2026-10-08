@@ -1,14 +1,16 @@
+@import url('../assets/fonts/whaledeck-mono/whaledeck-mono.css');
+
 :root {
   color-scheme: light;
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    'Microsoft YaHei',
-    sans-serif;
+  --whaledeck-font-family: 'WhaleDeck Mono', 'Sarasa Mono SC', 'Cascadia Mono', Consolas, monospace;
+  --el-font-family: var(--whaledeck-font-family);
+  font-family: var(--whaledeck-font-family);
+  font-feature-settings:
+    'liga' 0,
+    'calt' 0;
+  font-kerning: none;
+  font-synthesis: weight;
+  font-variant-ligatures: none;
   text-rendering: optimizeLegibility;
   --whaledeck-topbar-height: 64px;
   --whaledeck-sidebar-width: 246px;
@@ -84,6 +86,14 @@ body {
   transition:
     color 220ms ease,
     background-color 220ms ease;
+}
+
+body,
+button,
+input,
+textarea,
+select {
+  font-family: var(--whaledeck-font-family);
 }
 
 button,
@@ -209,7 +219,6 @@ a {
 .brand__text strong {
   overflow: hidden;
   font-size: 16px;
-  letter-spacing: -0.01em;
   text-overflow: ellipsis;
 }
 
@@ -639,7 +648,7 @@ a {
   align-items: center;
   gap: 10px;
   color: var(--el-text-color-secondary);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: var(--whaledeck-font-family);
   font-size: 11px;
 }
 
@@ -647,7 +656,6 @@ a {
   margin: 11px 0 6px;
   font-size: clamp(26px, 3vw, 34px);
   line-height: 1.2;
-  letter-spacing: -0.025em;
 }
 
 .page-heading p {
@@ -796,7 +804,6 @@ a {
 .feature-panel h2 {
   margin: 4px 0 0;
   font-size: 17px;
-  letter-spacing: -0.01em;
 }
 
 .service-list {
@@ -887,7 +894,7 @@ a {
 
 .quick-action__index {
   color: var(--el-text-color-placeholder);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: var(--whaledeck-font-family);
   font-size: 10px;
 }
 
@@ -1219,7 +1226,6 @@ a {
   margin: 21px 0 16px;
   font-size: clamp(38px, 4.6vw, 66px);
   line-height: 1.08;
-  letter-spacing: -0.045em;
 }
 
 .login-visual__copy p {
@@ -1319,7 +1325,6 @@ a {
 .login-card h2 {
   margin: 7px 0 9px;
   font-size: 25px;
-  letter-spacing: -0.025em;
 }
 
 .login-card > p {
