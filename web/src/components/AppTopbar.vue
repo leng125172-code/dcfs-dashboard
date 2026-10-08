@@ -2,7 +2,6 @@
 import { Bell, Search } from '@element-plus/icons-vue'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { runtimeConfig } from '@/config/runtime'
 import ThemeSwitch from '@/components/ThemeSwitch.vue'
 
 withDefaults(
@@ -61,8 +60,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', updateScrollState))
         <img :src="whaleMarkUrl" alt="" />
       </span>
       <span class="brand__text">
-        <strong>{{ runtimeConfig.appTitle }}</strong>
-        <small>Control Plane</small>
+        <strong>Whale Deck</strong>
       </span>
     </RouterLink>
 
@@ -103,6 +101,5 @@ onBeforeUnmount(() => window.removeEventListener('scroll', updateScrollState))
 
       <ThemeSwitch v-else />
     </div>
-    <span class="topbar__accent" aria-hidden="true" />
   </header>
 </template>

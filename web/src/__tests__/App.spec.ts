@@ -18,7 +18,7 @@ describe('WhaleDeck entry flow', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('WhaleDeck 协同平台')
+    expect(wrapper.text()).toContain('Whale Deck')
     expect(wrapper.get('[data-test="topbar"]').classes()).toContain('topbar')
     expect(wrapper.find('.topbar__context').exists()).toBe(false)
     expect(wrapper.find('.theme-switch .el-switch').exists()).toBe(true)

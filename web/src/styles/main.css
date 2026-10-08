@@ -15,9 +15,9 @@
   --whaledeck-content-width: 1440px;
   --whaledeck-page-padding: 32px;
   --whaledeck-panel-radius: 14px;
-  --whaledeck-shell-bg: #f5f7fa;
+  --whaledeck-shell-bg: #ffffff;
   --whaledeck-panel-bg: #ffffff;
-  --whaledeck-topbar-bg: rgb(255 255 255 / 88%);
+  --whaledeck-topbar-bg: #ffffff;
   --whaledeck-sidebar-bg: #ffffff;
   --whaledeck-soft-bg: #f7f9fc;
   --whaledeck-hover-bg: #f1f5fb;
@@ -26,10 +26,10 @@
 
 :root.dark {
   color-scheme: dark;
-  --whaledeck-shell-bg: #0f1115;
+  --whaledeck-shell-bg: #141414;
   --whaledeck-panel-bg: #17191f;
-  --whaledeck-topbar-bg: rgb(20 21 26 / 88%);
-  --whaledeck-sidebar-bg: #14161b;
+  --whaledeck-topbar-bg: #141414;
+  --whaledeck-sidebar-bg: #141414;
   --whaledeck-soft-bg: #1d2027;
   --whaledeck-hover-bg: #222630;
   --whaledeck-shadow: 0 12px 36px rgb(0 0 0 / 22%);
@@ -116,8 +116,11 @@ a {
   height: var(--whaledeck-topbar-height);
   isolation: isolate;
   border-bottom: 1px solid var(--el-border-color-lighter);
-  background: var(--whaledeck-topbar-bg);
+  background-color: transparent;
+  background-image: radial-gradient(transparent 1px, var(--whaledeck-topbar-bg) 1px);
+  background-size: 4px 4px;
   backdrop-filter: saturate(50%) blur(4px);
+  -webkit-backdrop-filter: saturate(50%) blur(4px);
   transition:
     background-color 220ms ease,
     border-color 220ms ease,
@@ -145,39 +148,7 @@ a {
     var(--el-color-primary) 16%,
     var(--el-border-color-lighter)
   );
-  background-color: transparent;
-  background-image: radial-gradient(transparent 1px, var(--whaledeck-topbar-bg) 1px);
-  background-size: 4px 4px;
   box-shadow: 0 8px 28px rgb(31 45 61 / 8%);
-}
-
-.topbar__accent {
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 2px;
-  pointer-events: none;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--el-color-primary-light-5) 38%,
-    var(--el-color-primary) 50%,
-    var(--el-color-primary-light-5) 62%,
-    transparent 100%
-  );
-  background-size: 220% 100%;
-  opacity: 0;
-  transform: scaleX(0.65);
-  transition:
-    opacity 240ms ease,
-    transform 240ms ease;
-}
-
-.topbar--scrolled .topbar__accent {
-  opacity: 0.72;
-  transform: scaleX(1);
-  animation: topbar-flow 4s linear infinite;
 }
 
 .brand {
@@ -237,18 +208,9 @@ a {
 
 .brand__text strong {
   overflow: hidden;
-  font-size: 15px;
-  letter-spacing: 0.01em;
+  font-size: 16px;
+  letter-spacing: -0.01em;
   text-overflow: ellipsis;
-}
-
-.brand__text small {
-  margin-top: 4px;
-  color: var(--el-text-color-secondary);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
 
 .topbar__workspace {
@@ -1478,12 +1440,6 @@ a {
 
 .navigation-backdrop {
   display: none;
-}
-
-@keyframes topbar-flow {
-  to {
-    background-position: -220% 0;
-  }
 }
 
 @keyframes signal-pulse {
