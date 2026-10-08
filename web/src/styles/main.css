@@ -23,6 +23,11 @@
   --whaledeck-sidebar-bg: #ffffff;
   --whaledeck-soft-bg: #f7f9fc;
   --whaledeck-hover-bg: #f1f5fb;
+  --whaledeck-brand-color: color-mix(
+    in srgb,
+    var(--el-color-primary) 82%,
+    var(--el-text-color-primary)
+  );
   --whaledeck-shadow: 0 10px 34px rgb(31 45 61 / 6%);
 }
 
@@ -201,6 +206,8 @@ a {
   width: 48px;
   height: 48px;
   object-fit: contain;
+  transform: translateY(-2px) scale(1.08);
+  transform-origin: center;
 }
 
 .dark .brand__mark--image img {
@@ -218,8 +225,11 @@ a {
 
 .brand__text strong {
   overflow: hidden;
+  color: var(--whaledeck-brand-color);
   font-size: 16px;
+  font-weight: 700;
   text-overflow: ellipsis;
+  transition: color 220ms ease;
 }
 
 .topbar__workspace {
