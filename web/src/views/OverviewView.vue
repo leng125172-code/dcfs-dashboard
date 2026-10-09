@@ -12,11 +12,14 @@ import {
   Monitor,
   Platform,
   Promotion,
+  RefreshRight,
+  VideoPlay,
 } from '@element-plus/icons-vue'
 import TelemetryChart from '@/components/overview/TelemetryChart.vue'
 import {
   demoWorkstationOverview,
   fetchWorkstationOverview,
+  type ContainerState,
   type RecommendedApplication,
   type ResourceKey,
 } from '@/services/workstationOverview'
@@ -43,6 +46,18 @@ const applicationIcons = {
   runtime: Platform,
   developer: Cpu,
 } as const
+
+const applicationStateIcons: Partial<Record<ContainerState, object>> = {
+  running: VideoPlay,
+  restarting: RefreshRight,
+}
+
+const applicationStateLabels = {
+  available: '未安装',
+  running: '运行中',
+  stopped: '已停止',
+  restarting: '重启中',
+} satisfies Record<ContainerState, string>
 
 const monitorOptions = [
   { label: '流量监控', value: 'network' },
@@ -82,9 +97,12 @@ function showDeferredAction(action: 'details' | 'install', app: RecommendedAppli
   ElMessage.info(`${app.name}：${actionLabel}将在后端服务接入后开放`)
 }
 
-async function confirmContainerAction(app: RecommendedApplication, action: 'stop' | 'restart') {
-  const actionLabel = action === 'stop' ? '关闭' : '重启'
-  const confirmText = action === 'stop' ? '确认关闭' : '确认重启'
+async function confirmContainerAction(
+  app: RecommendedApplication,
+  action: 'stop' | 'restart' | 'start',
+) {
+  const actionLabel = action === 'stop' ? '关闭' : action === 'start' ? '启动' : '重启'
+  const confirmText = `确认${actionLabel}`
 
   try {
     await ElMessageBox.confirm(
@@ -98,6 +116,15 @@ async function confirmContainerAction(app: RecommendedApplication, action: 'stop
       },
     )
   } catch {
+    return
+  }
+
+  if (action === 'restart') {
+    app.state = 'restarting'
+    ElMessage.success(`${app.name} 已在预览中标记为重启中`)
+    window.setTimeout(() => {
+      app.state = 'running'
+    }, 900)
     return
   }
 
@@ -275,55 +302,61 @@ onMounted(() => {
             >
               <span class="application-card__icon" :class="`application-card__icon--${app.icon}`">
                 <el-icon><component :is="applicationIcons[app.icon]" /></el-icon>
+                <span
+                  v-if="app.installedVersion"
+                  class="application-card__state"
+                  :class="`application-card__state--${app.state}`"
+                  role="status"
+                  :aria-label="applicationStateLabels[app.state]"
+                  :title="applicationStateLabels[app.state]"
+                >
+                  <span
+                    v-if="app.state === 'stopped'"
+                    class="application-card__stop-icon"
+                    aria-hidden="true"
+                  />
+                  <el-icon v-else>
+                    <component :is="applicationStateIcons[app.state]" />
+                  </el-icon>
+                </span>
               </span>
 
               <div class="application-card__body">
-                <div class="application-card__top">
-                  <span class="application-card__copy">
-                    <strong>{{ app.name }}</strong>
-                    <small>{{ app.category }}</small>
-                  </span>
-                  <el-tag
-                    v-if="app.installedVersion"
-                    :type="app.state === 'running' ? 'success' : 'info'"
-                    effect="light"
-                    round
-                    size="small"
-                  >
-                    {{ app.state === 'running' ? '运行' : '停止' }}
-                  </el-tag>
+                <div class="application-card__headline">
+                  <strong>{{ app.name }}</strong>
+                  <span>{{ app.description }}</span>
                 </div>
 
-                <p>{{ app.description }}</p>
-                <div class="application-card__meta">
-                  <div class="application-card__version">
-                    <span>推荐 {{ app.version }}</span>
-                    <span v-if="app.installedVersion">已装 {{ app.installedVersion }}</span>
-                  </div>
+                <div class="application-card__version">
+                  <span>推荐 {{ app.version }}</span>
+                  <span v-if="app.installedVersion">已装 {{ app.installedVersion }}</span>
+                </div>
 
-                  <footer class="application-card__actions">
-                    <template v-if="app.installedVersion">
-                      <el-button
-                        link
-                        type="danger"
-                        :disabled="app.state === 'stopped'"
-                        @click="confirmContainerAction(app, 'stop')"
-                      >
-                        关闭
-                      </el-button>
-                      <el-button
-                        link
-                        type="primary"
-                        @click="confirmContainerAction(app, 'restart')"
-                      >
-                        重启
-                      </el-button>
-                    </template>
-                    <el-button link type="primary" @click="showDeferredAction('details', app)">
-                      更多
+                <footer class="application-card__actions">
+                  <template v-if="app.installedVersion">
+                    <el-button
+                      link
+                      type="danger"
+                      :disabled="app.state === 'stopped' || app.state === 'restarting'"
+                      @click="confirmContainerAction(app, 'stop')"
+                    >
+                      关闭
                     </el-button>
-                  </footer>
-                </div>
+                    <el-button
+                      link
+                      type="primary"
+                      :disabled="app.state === 'restarting'"
+                      @click="
+                        confirmContainerAction(app, app.state === 'stopped' ? 'start' : 'restart')
+                      "
+                    >
+                      {{ app.state === 'stopped' ? '启动' : '重启' }}
+                    </el-button>
+                  </template>
+                  <el-button link type="primary" @click="showDeferredAction('details', app)">
+                    更多
+                  </el-button>
+                </footer>
               </div>
 
               <el-button
@@ -780,25 +813,38 @@ onMounted(() => {
   border-color: color-mix(in srgb, var(--el-color-success) 32%, var(--el-border-color-lighter));
 }
 
-.application-card__top {
+.application-card__headline {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.application-card__top :deep(.el-tag) {
-  height: 18px;
-  padding: 0 5px;
-  font-size: 8px;
+  overflow: hidden;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .application-card__body {
   min-width: 0;
 }
 
+.application-card__headline strong {
+  flex: 0 0 auto;
+  color: var(--el-text-color-primary);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.application-card__headline span {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--el-text-color-secondary);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .application-card__icon {
   --app-color: var(--el-color-primary);
+  position: relative;
   display: grid;
   width: 34px;
   height: 34px;
@@ -810,6 +856,46 @@ onMounted(() => {
   background: color-mix(in srgb, var(--app-color) 10%, var(--whaledeck-panel-bg));
   font-size: 17px;
   box-shadow: 0 5px 14px color-mix(in srgb, var(--app-color) 10%, transparent);
+}
+
+.application-card__state {
+  --state-color: var(--el-color-info);
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border: 2px solid var(--whaledeck-panel-bg);
+  border-radius: 50%;
+  color: white;
+  background: var(--state-color);
+  font-size: 9px;
+  box-shadow: 0 2px 7px color-mix(in srgb, var(--state-color) 38%, transparent);
+}
+
+.application-card__state--running {
+  --state-color: var(--el-color-success);
+}
+
+.application-card__state--stopped {
+  --state-color: var(--el-color-info);
+}
+
+.application-card__state--restarting {
+  --state-color: var(--el-color-primary);
+}
+
+.application-card__state--restarting :deep(svg) {
+  animation: application-state-spin 900ms linear infinite;
+}
+
+.application-card__stop-icon {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: currentColor;
 }
 
 .application-card__icon--gateway {
@@ -840,47 +926,12 @@ onMounted(() => {
   --app-color: #d8dee9;
 }
 
-.application-card__copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-}
-
-.application-card__copy strong {
-  overflow: hidden;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.application-card__copy small {
-  display: none;
-}
-
-.application-card__body > p {
-  overflow: hidden;
-  margin: 2px 0 3px;
-  color: var(--el-text-color-secondary);
-  font-size: 9px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.application-card__meta {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
 .application-card__version {
   display: flex;
   flex-wrap: wrap;
   gap: 3px;
   min-width: 0;
+  margin-top: 3px;
   color: var(--el-text-color-secondary);
   font-size: 8px;
 }
@@ -897,6 +948,7 @@ onMounted(() => {
   flex: 0 0 auto;
   gap: 7px;
   min-height: 18px;
+  margin-top: 2px;
 }
 
 .application-card__actions :deep(.el-button) {
@@ -908,6 +960,12 @@ onMounted(() => {
 
 .application-card__install {
   min-width: 50px;
+}
+
+@keyframes application-state-spin {
+  to {
+    transform: rotate(1turn);
+  }
 }
 
 @media (max-width: 1260px) {

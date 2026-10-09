@@ -63,6 +63,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', updateScrollState))
       <span class="brand__text">
         <strong>Whale Deck</strong>
       </span>
+      <span class="backend-version">V{{ runtimeConfig.backendVersion }}</span>
     </RouterLink>
 
     <div class="topbar__workspace">
@@ -78,8 +79,6 @@ onBeforeUnmount(() => window.removeEventListener('scroll', updateScrollState))
       </el-button>
 
       <template v-if="!loginMode">
-        <span class="backend-version">API v{{ runtimeConfig.backendVersion }}</span>
-
         <button class="command-search" type="button" aria-label="搜索平台功能">
           <el-icon><Search /></el-icon>
           <span>搜索功能</span>

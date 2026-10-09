@@ -1,5 +1,5 @@
 export type ResourceKey = 'agents' | 'websites' | 'databases' | 'containers'
-export type ContainerState = 'available' | 'running' | 'stopped'
+export type ContainerState = 'available' | 'running' | 'stopped' | 'restarting'
 
 export interface ResourceSummary {
   key: ResourceKey

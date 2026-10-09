@@ -297,10 +297,10 @@ a {
   position: relative;
   z-index: 1;
   display: inline-flex;
-  min-height: 24px;
+  min-height: 22px;
   flex: 0 0 auto;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 7px;
   border: 1px solid color-mix(in srgb, var(--el-color-primary) 42%, var(--el-border-color));
   border-radius: 6px;
   color: var(--el-color-primary);
@@ -1490,7 +1490,7 @@ a {
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1045px) {
   :root {
     --whaledeck-page-padding: 24px;
   }
