@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { createPinia } from 'pinia'
 import BootScreen from '@/components/BootScreen.vue'
 import AppShell from '@/layouts/AppShell.vue'
 import LoginView from '@/views/LoginView.vue'
+import OverviewView from '@/views/OverviewView.vue'
 import router from '@/router'
 
 const globalPlugins = () => [createPinia(), router, ElementPlus]
@@ -31,6 +32,24 @@ describe('WhaleDeck entry flow', () => {
 
     expect(wrapper.text()).toContain('正在连接身份与平台服务')
     expect(wrapper.findAll('.boot-screen__dots i')).toHaveLength(3)
+  })
+
+  it('renders workstation telemetry and recommended applications', async () => {
+    const wrapper = mount(OverviewView, {
+      global: {
+        plugins: globalPlugins(),
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('运行流畅')
+    expect(wrapper.text()).toContain('流量监控')
+    expect(wrapper.text()).toContain('磁盘 IO')
+    expect(wrapper.find('.telemetry-chart').exists()).toBe(true)
+    expect(wrapper.findAll('.application-card')).toHaveLength(6)
+    expect(wrapper.find('.application-card--installed').text()).toContain('关闭')
+    expect(wrapper.find('.application-card--installed').text()).toContain('重启')
   })
 
   it('delegates login to Authentik without collecting a password', async () => {

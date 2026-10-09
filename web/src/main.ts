@@ -6,6 +6,10 @@ import {
   ElIcon,
   ElMenu,
   ElMenuItem,
+  ElOption,
+  ElProgress,
+  ElSegmented,
+  ElSelect,
   ElSwitch,
   ElTag,
   ElTooltip,
@@ -26,6 +30,10 @@ app.component(ElButton.name!, ElButton)
 app.component(ElIcon.name!, ElIcon)
 app.component(ElMenu.name!, ElMenu)
 app.component(ElMenuItem.name!, ElMenuItem)
+app.component(ElOption.name!, ElOption)
+app.component(ElProgress.name!, ElProgress)
+app.component(ElSegmented.name!, ElSegmented)
+app.component(ElSelect.name!, ElSelect)
 app.component(ElSwitch.name!, ElSwitch)
 app.component(ElTag.name!, ElTag)
 app.component(ElTooltip.name!, ElTooltip)

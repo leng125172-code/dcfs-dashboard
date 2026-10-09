@@ -3,13 +3,12 @@ import { computed, ref } from 'vue'
 import {
   ArrowDown,
   Box,
-  Connection,
   DataAnalysis,
   Grid,
-  Lock,
+  Monitor,
+  Odometer,
   Operation,
   Setting,
-  Tickets,
   UserFilled,
 } from '@element-plus/icons-vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
@@ -25,24 +24,21 @@ const currentUserName = computed(() => authSession.user.value?.name || '已登�
 
 const navigationGroups = [
   {
-    label: '工作区',
+    label: '工作站',
     items: [{ index: 'overview', label: '工作站概览', icon: Grid }],
   },
   {
-    label: '平台管理',
+    label: '运行与监控',
     items: [
-      { index: 'services', label: '服务状态', icon: Connection },
-      { index: 'identity', label: '用户与权限', icon: Lock },
-      { index: 'containers', label: '容器管理', icon: Box },
-      { index: 'database', label: '数据平台', icon: DataAnalysis },
+      { index: 'resources', label: '资源概览', icon: DataAnalysis },
+      { index: 'status', label: '运行状态', icon: Odometer },
+      { index: 'monitoring', label: '实时监控', icon: Monitor },
+      { index: 'system', label: '系统信息', icon: Setting },
     ],
   },
   {
-    label: '系统',
-    items: [
-      { index: 'audit', label: '审计日志', icon: Tickets },
-      { index: 'settings', label: '平台设置', icon: Setting },
-    ],
+    label: '应用',
+    items: [{ index: 'containers', label: '容器推荐', icon: Box }],
   },
 ] as const
 
@@ -91,8 +87,8 @@ async function selectNavigation(index: string) {
               ><el-icon><Operation /></el-icon
             ></span>
             <span class="sidebar-status__copy">
-              <strong>平台通道</strong>
-              <small>等待服务接入</small>
+              <strong>预览数据</strong>
+              <small>等待工作站 Agent</small>
             </span>
           </div>
           <button class="sidebar-user" type="button" aria-label="打开用户菜单">
