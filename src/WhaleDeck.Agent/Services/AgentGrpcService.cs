@@ -1,0 +1,50 @@
+using Google.Protobuf.WellKnownTypes;
+using Grpc.Core;
+using WhaleDeck.Contracts.Agent.V1;
+
+namespace WhaleDeck.Agent.Services;
+
+public sealed class AgentGrpcService(DockerEngine docker) : AgentService.AgentServiceBase
+{
+    public override Task<CapabilitiesResponse> GetCapabilities(Empty request, ServerCallContext context)
+    {
+        var response = new CapabilitiesResponse
+        {
+            AgentVersion = typeof(AgentGrpcService).Assembly.GetName().Version?.ToString() ?? "0.1.0",
+            ProtocolMajor = 1,
+            ProtocolMinor = 0,
+            OperatingSystem = System.Runtime.InteropServices.RuntimeInformation.OSDescription
+        };
+        response.Capabilities.AddRange([
+            "host.read", "host.metrics", "docker.read", "docker.lifecycle",
+            "database.registered", "backup.registered", "compose.registered",
+            "systemd.registered", "config-repository.registered", "maintenance.registered"
+        ]);
+        return Task.FromResult(response);
+    }
+
+    public override async Task<HealthResponse> GetHealth(Empty request, ServerCallContext context) =>
+        await BuildHealth(context.CancellationToken);
+
+    public override async Task WatchHealth(Empty request, IServerStreamWriter<HealthResponse> responseStream, ServerCallContext context)
+    {
+        while (!context.CancellationToken.IsCancellationRequested)
+        {
+            await responseStream.WriteAsync(await BuildHealth(context.CancellationToken));
+            await Task.Delay(TimeSpan.FromSeconds(15), context.CancellationToken);
+        }
+    }
+
+    private async Task<HealthResponse> BuildHealth(CancellationToken cancellationToken)
+    {
+        var dockerAvailable = await docker.IsAvailableAsync(cancellationToken);
+        return new HealthResponse
+        {
+            Healthy = dockerAvailable,
+            DockerAvailable = dockerAvailable,
+            SystemdAvailable = Directory.Exists("/run/systemd/system"),
+            Status = dockerAvailable ? "Ready" : "DockerUnavailable",
+            ObservedAtUtc = Timestamp.FromDateTimeOffset(DateTimeOffset.UtcNow)
+        };
+    }
+}

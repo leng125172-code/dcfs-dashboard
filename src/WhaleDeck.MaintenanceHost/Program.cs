@@ -1,0 +1,111 @@
+using System.Text.Json;
+using Microsoft.AspNetCore.HttpOverrides;
+using Serilog;
+using Serilog.Formatting.Json;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.UseUrls(builder.Configuration["Maintenance:Urls"]
+    ?? "http://192.168.22.19:8080;http://192.168.100.13:8080;http://192.168.22.19:8081;http://192.168.100.13:8081");
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(new JsonFormatter()));
+
+builder.Services.AddReverseProxy()
+    .LoadFromMemory(
+        [
+            new Yarp.ReverseProxy.Configuration.RouteConfig
+            {
+                RouteId = "authentik",
+                ClusterId = "authentik",
+                Order = -100,
+                Match = new Yarp.ReverseProxy.Configuration.RouteMatch
+                {
+                    Hosts = ["192.168.22.19:8081", "192.168.100.13:8081"],
+                    Path = "{**catch-all}"
+                }
+            },
+            new Yarp.ReverseProxy.Configuration.RouteConfig
+            {
+                RouteId = "gateway",
+                ClusterId = "gateway",
+                Match = new Yarp.ReverseProxy.Configuration.RouteMatch { Path = "{**catch-all}" }
+            }
+        ],
+        [
+        new Yarp.ReverseProxy.Configuration.ClusterConfig
+        {
+            ClusterId = "gateway",
+            Destinations = new Dictionary<string, Yarp.ReverseProxy.Configuration.DestinationConfig>
+            {
+                ["gateway"] = new() { Address = "http://127.0.0.1:18080/" }
+            }
+        },
+        new Yarp.ReverseProxy.Configuration.ClusterConfig
+        {
+            ClusterId = "authentik",
+            Destinations = new Dictionary<string, Yarp.ReverseProxy.Configuration.DestinationConfig>
+            {
+                ["authentik"] = new() { Address = "http://127.0.0.1:18081/" }
+            }
+        }]);
+
+var app = builder.Build();
+var statusPath = builder.Configuration["Maintenance:StatusPath"]
+    ?? "/run/whaledeck/maintenance/status.json";
+
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
+app.UseStatusCodePages(async context =>
+{
+    if (context.HttpContext.Response.StatusCode is not (502 or 503 or 504))
+    {
+        return;
+    }
+
+    context.HttpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+    context.HttpContext.Response.ContentType = "text/html; charset=utf-8";
+    await context.HttpContext.Response.WriteAsync(MaintenancePage(statusPath));
+});
+app.MapGet("/maintenance/status", () =>
+{
+    if (!File.Exists(statusPath))
+    {
+        return Results.Json(new { state = "Unavailable", phase = "GatewayOffline" }, statusCode: 503);
+    }
+
+    using var document = JsonDocument.Parse(File.ReadAllText(statusPath));
+    return Results.Json(document.RootElement.Clone());
+});
+app.MapReverseProxy();
+await app.RunAsync();
+
+static string MaintenancePage(string statusPath)
+{
+    var status = "平台服务正在启动，请稍候。";
+    if (File.Exists(statusPath))
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(statusPath));
+            if (document.RootElement.TryGetProperty("message", out var message))
+            {
+                status = message.GetString() ?? status;
+            }
+        }
+        catch (JsonException)
+        {
+            status = "维护状态暂不可用，正在等待平台恢复。";
+        }
+    }
+
+    return $$"""
+        <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+        <meta http-equiv="refresh" content="6"><title>Whale Deck 维护中</title>
+        <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f172a;color:#dbeafe;font:14px ui-monospace,monospace}.card{padding:32px;border:1px solid #1d4ed8;border-radius:16px;background:#111827;box-shadow:0 20px 60px #02061780}h1{font-size:20px;color:#60a5fa}</style></head>
+        <body><main class="card"><h1>Whale Deck</h1><p>{{System.Net.WebUtility.HtmlEncode(status)}}</p><p>页面将在 6 秒后自动重试。</p></main></body></html>
+        """;
+}

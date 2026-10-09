@@ -1,0 +1,38 @@
+[Unit]
+Description=Whale Deck host management agent
+Documentation=file:/opt/whaledeck-agent/README.md
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=simple
+User=whaledeck-agent
+Group=whaledeck
+SupplementaryGroups=docker systemd-journal
+WorkingDirectory=/opt/whaledeck-agent
+ExecStart=/opt/whaledeck-agent/WhaleDeck.Agent
+Restart=on-failure
+RestartSec=5s
+RuntimeDirectory=whaledeck whaledeck/maintenance
+RuntimeDirectoryMode=0770
+StateDirectory=whaledeck-agent
+StateDirectoryMode=0750
+UMask=0007
+PrivateTmp=true
+PrivateDevices=false
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/run/whaledeck /var/lib/whaledeck-agent /data/WhaleDeck/apps
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

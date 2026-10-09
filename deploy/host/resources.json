@@ -1,0 +1,13 @@
+[
+  { "id": "database-platform.postgres", "type": "Container", "externalId": "database-platform-postgres", "protectionLevel": "CriticalData" },
+  { "id": "database-platform.mariadb", "type": "Container", "externalId": "database-platform-mariadb", "protectionLevel": "CriticalData" },
+  { "id": "database-platform.mongodb", "type": "Container", "externalId": "database-platform-mongodb", "protectionLevel": "CriticalData" },
+  { "id": "database-platform.sqlserver", "type": "Container", "externalId": "database-platform-sqlserver", "protectionLevel": "CriticalData" },
+  { "id": "database-platform.valkey", "type": "Container", "externalId": "database-platform-valkey", "protectionLevel": "CriticalData" },
+  { "id": "database-platform.valkey72", "type": "Container", "externalId": "database-platform-valkey72", "protectionLevel": "CriticalData" },
+  { "id": "database-platform.authentik.server", "type": "Container", "externalId": "database-platform-authentik-server", "protectionLevel": "IdentityCore" },
+  { "id": "database-platform.authentik.worker", "type": "Container", "externalId": "database-platform-authentik-worker", "protectionLevel": "IdentityCore" },
+  { "id": "whaledeck.agent", "type": "SystemdUnit", "externalId": "whaledeck-agent.service", "protectionLevel": "ControlPlane", "allowedActions": ["restart"] },
+  { "id": "database-platform.repository", "type": "GitRepository", "externalId": "database-platform", "protectionLevel": "CriticalData", "path": "/data/GitRepos/database-platform", "allowedActions": ["status", "snapshot", "push"] },
+  { "id": "whaledeck.apps", "type": "ManagedDirectory", "externalId": "whaledeck-apps", "protectionLevel": "Managed", "path": "/data/WhaleDeck/apps", "allowedActions": ["plan", "deploy", "remove"] }
+]

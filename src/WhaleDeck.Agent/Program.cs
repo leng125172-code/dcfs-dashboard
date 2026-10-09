@@ -1,0 +1,42 @@
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Serilog;
+using Serilog.Formatting.Json;
+using WhaleDeck.Agent.Services;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(new JsonFormatter()));
+
+var socketPath = builder.Configuration["Agent:SocketPath"] ?? "/run/whaledeck/agent.sock";
+var socketDirectory = Path.GetDirectoryName(socketPath)
+    ?? throw new InvalidOperationException("Agent socket path must have a parent directory.");
+Directory.CreateDirectory(socketDirectory);
+if (File.Exists(socketPath))
+{
+    File.Delete(socketPath);
+}
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenUnixSocket(socketPath, listen => listen.Protocols = HttpProtocols.Http2);
+});
+
+builder.Services.AddGrpc(options => options.Interceptors.Add<CapabilityInterceptor>());
+builder.Services.AddSingleton<CapabilityValidator>();
+builder.Services.AddSingleton<DockerEngine>();
+builder.Services.AddSingleton<OperationStore>();
+builder.Services.AddSingleton<PlanStore>();
+builder.Services.AddSingleton<HostReader>();
+builder.Services.AddSingleton<ResourceRegistry>();
+builder.Services.AddHostedService<SocketPermissionService>();
+
+var app = builder.Build();
+app.MapGrpcService<AgentGrpcService>();
+app.MapGrpcService<HostGrpcService>();
+app.MapGrpcService<DockerGrpcService>();
+app.MapGrpcService<OperationGrpcService>();
+app.MapGrpcService<ManagedResourceGrpcService>();
+await app.RunAsync();

@@ -1,0 +1,29 @@
+[Unit]
+Description=Whale Deck stable maintenance and reverse proxy endpoint
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=whaledeck-maintenance
+Group=whaledeck
+WorkingDirectory=/opt/whaledeck-maintenance
+ExecStart=/opt/whaledeck-maintenance/WhaleDeck.MaintenanceHost
+Restart=always
+RestartSec=3s
+Environment=Maintenance__Urls=http://192.168.22.19:8080;http://192.168.100.13:8080;http://192.168.22.19:8081;http://192.168.100.13:8081
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadOnlyPaths=/run/whaledeck/maintenance/status.json
+
+[Install]
+WantedBy=multi-user.target
