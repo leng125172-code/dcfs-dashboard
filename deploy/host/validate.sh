@@ -19,6 +19,10 @@ for unit in whaledeck-agent.service whaledeck-maintenance.service; do
   [[ $(systemctl show "$unit" -p NRestarts --value) == 0 ]]
 done
 
+for attempt in {1..30}; do
+  [[ -S /run/whaledeck/agent.sock ]] && break
+  sleep 1
+done
 [[ -S /run/whaledeck/agent.sock ]]
 assert_metadata /run/whaledeck '770:whaledeck-agent:whaledeck'
 assert_metadata /run/whaledeck/agent.sock '660:whaledeck-agent:whaledeck'
