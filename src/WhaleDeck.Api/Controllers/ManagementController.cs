@@ -1,0 +1,56 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
+using WhaleDeck.Api.Security;
+using WhaleDeck.Application.Abstractions;
+using WhaleDeck.Application.Models;
+using WhaleDeck.Application.Services;
+
+namespace WhaleDeck.Api.Controllers;
+
+[ApiController]
+[Authorize(Policy = "Administrator")]
+[Route("api/v1")]
+public sealed class ManagementController(
+    IAgentGateway agent,
+    IManagementQuery queries,
+    ICatalogProvider catalog,
+    IIdentityDirectory identity,
+    OperationService operations) : ControllerBase
+{
+    [HttpGet("containers")]
+    public async Task<IActionResult> Containers([FromQuery] bool includeStopped = true, CancellationToken cancellationToken = default) =>
+        Ok(await agent.ListContainersAsync(includeStopped, cancellationToken));
+
+    [HttpGet("applications/popular")]
+    public async Task<IActionResult> Popular(CancellationToken cancellationToken) => Ok(await catalog.GetPopularAsync(cancellationToken));
+
+    [HttpGet("users")]
+    public async Task<IActionResult> Users(CancellationToken cancellationToken) => Ok(await identity.ListUsersAsync(cancellationToken));
+
+    [HttpGet("groups")]
+    public async Task<IActionResult> Groups(CancellationToken cancellationToken) => Ok(await identity.ListGroupsAsync(cancellationToken));
+
+    [HttpGet("sso")]
+    public async Task<IActionResult> Sso(CancellationToken cancellationToken) => Ok(await identity.ListSsoApplicationsAsync(cancellationToken));
+
+    [HttpGet("{area:regex(^(images|networks|volumes|compose-projects|databases|applications|systemd)$)}")]
+    public async Task<IActionResult> Resources(string area, CancellationToken cancellationToken) => Ok(await queries.ListAsync(area, cancellationToken));
+
+    [HttpPost("{area:regex(^(containers|docker|databases|backups|applications|host|config-repository|platform)$)}/{action}/plan")]
+    public async Task<IActionResult> Plan(string area, string action, [FromBody] PlanRequest request, CancellationToken cancellationToken) =>
+        Ok(await agent.PlanAsync(area, action, request.ResourceId, request.Parameters ?? new Dictionary<string, string>(), cancellationToken));
+
+    [HttpPost("{area:regex(^(containers|docker|databases|backups|applications|host|schedules|alerts|config-repository|platform|identity|settings)$)}/{action}")]
+    public async Task<IActionResult> Enqueue(string area, string action, [FromBody] OperationRequest request, CancellationToken cancellationToken)
+    {
+        var idempotencyKey = Request.Headers["Idempotency-Key"].FirstOrDefault() ?? request.IdempotencyKey;
+        var requestJson = JsonSerializer.Serialize(new { resourceId = request.ResourceId, parameters = request.Parameters ?? new Dictionary<string, string>(), planHash = request.PlanHash });
+        var command = new OperationCommand(area, action, request.ResourceId, idempotencyKey, requestJson, request.PlanHash, request.Confirmed);
+        var job = await operations.EnqueueAsync(User.RequireSubject(), HttpContext.TraceIdentifier, command, cancellationToken);
+        return AcceptedAtAction(nameof(JobsController.Get), "Jobs", new { id = job.Id }, job);
+    }
+
+    public sealed record OperationRequest(string? ResourceId, string IdempotencyKey, IReadOnlyDictionary<string, string>? Parameters, string? PlanHash, bool Confirmed);
+    public sealed record PlanRequest(string? ResourceId, IReadOnlyDictionary<string, string>? Parameters);
+}

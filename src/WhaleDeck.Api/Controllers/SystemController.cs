@@ -14,6 +14,7 @@ public sealed class SystemController : ControllerBase
         return Ok(new
         {
             service = "whaledeck-api",
+            version = "V0.1.0",
             status = "ok",
             utcTime = DateTimeOffset.UtcNow,
         });

@@ -1,9 +1,12 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/WhaleDeck.Agent/WhaleDeck.Agent.csproj" />
     <Project Path="src/WhaleDeck.Api/WhaleDeck.Api.csproj" />
     <Project Path="src/WhaleDeck.Application/WhaleDeck.Application.csproj" />
+    <Project Path="src/WhaleDeck.Contracts/WhaleDeck.Contracts.csproj" />
     <Project Path="src/WhaleDeck.Domain/WhaleDeck.Domain.csproj" />
     <Project Path="src/WhaleDeck.Infrastructure/WhaleDeck.Infrastructure.csproj" />
+    <Project Path="src/WhaleDeck.MaintenanceHost/WhaleDeck.MaintenanceHost.csproj" />
     <Project Path="src/WhaleDeck.Worker/WhaleDeck.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">

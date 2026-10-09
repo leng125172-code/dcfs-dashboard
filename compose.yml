@@ -22,8 +22,8 @@ services:
       context: .
       dockerfile: deploy/gateway/Dockerfile
     ports:
-      - "${WHALEDECK_BIND_IP:-192.168.22.19}:${WHALEDECK_HTTP_PORT:-8080}:8080"
-      - "${WHALEDECK_BIND_IP:-192.168.22.19}:${AUTHENTIK_HTTP_PORT:-8081}:8081"
+      - "127.0.0.1:${WHALEDECK_GATEWAY_UPSTREAM_PORT:-18080}:8080"
+      - "127.0.0.1:${AUTHENTIK_UPSTREAM_PORT:-18081}:8081"
     environment:
       WHALEDECK_TITLE: ${WHALEDECK_TITLE:-WhaleDeck 协同平台}
       WHALEDECK_BACKEND_VERSION: ${WHALEDECK_BACKEND_VERSION:-0.1.0}
@@ -63,6 +63,16 @@ services:
       Valkey__Endpoint: valkey:6379
       Valkey__User: ${WHALEDECK_VALKEY_USER:-whaledeck}
       Valkey__Password: ${WHALEDECK_VALKEY_PASSWORD:?set WHALEDECK_VALKEY_PASSWORD}
+      Agent__SocketPath: /run/whaledeck/agent.sock
+      Agent__CapabilityKeyFile: /run/secrets/agent-capability.key
+      Authentication__Authentik__ApiBaseUrl: http://authentik:9000/api/v3/
+      Authentication__Authentik__ApiToken: ${WHALEDECK_AUTHENTIK_API_TOKEN:?set WHALEDECK_AUTHENTIK_API_TOKEN}
+      Authentication__Authentik__AdministratorGroupId: ${WHALEDECK_AUTHENTIK_ADMIN_GROUP_ID:?set WHALEDECK_AUTHENTIK_ADMIN_GROUP_ID}
+    volumes:
+      - /run/whaledeck/agent.sock:/run/whaledeck/agent.sock
+      - /etc/whaledeck/agent-capability.key:/run/secrets/agent-capability.key:ro
+    group_add:
+      - "${WHALEDECK_AGENT_GID:?set WHALEDECK_AGENT_GID}"
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -89,6 +99,13 @@ services:
       Valkey__Endpoint: valkey:6379
       Valkey__User: ${WHALEDECK_VALKEY_USER:-whaledeck}
       Valkey__Password: ${WHALEDECK_VALKEY_PASSWORD:?set WHALEDECK_VALKEY_PASSWORD}
+      Agent__SocketPath: /run/whaledeck/agent.sock
+      Agent__CapabilityKeyFile: /run/secrets/agent-capability.key
+    volumes:
+      - /run/whaledeck/agent.sock:/run/whaledeck/agent.sock
+      - /etc/whaledeck/agent-capability.key:/run/secrets/agent-capability.key:ro
+    group_add:
+      - "${WHALEDECK_AGENT_GID:?set WHALEDECK_AGENT_GID}"
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777

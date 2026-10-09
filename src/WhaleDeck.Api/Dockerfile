@@ -8,6 +8,8 @@ COPY ["Directory.Build.props", "."]
 COPY ["global.json", "."]
 COPY ["src/WhaleDeck.Domain/WhaleDeck.Domain.csproj", "src/WhaleDeck.Domain/"]
 COPY ["src/WhaleDeck.Application/WhaleDeck.Application.csproj", "src/WhaleDeck.Application/"]
+COPY ["src/WhaleDeck.Contracts/WhaleDeck.Contracts.csproj", "src/WhaleDeck.Contracts/"]
+COPY ["src/WhaleDeck.Contracts/Protos/agent.proto", "src/WhaleDeck.Contracts/Protos/"]
 COPY ["src/WhaleDeck.Infrastructure/WhaleDeck.Infrastructure.csproj", "src/WhaleDeck.Infrastructure/"]
 COPY ["src/WhaleDeck.Api/WhaleDeck.Api.csproj", "src/WhaleDeck.Api/"]
 RUN dotnet restore "src/WhaleDeck.Api/WhaleDeck.Api.csproj"
