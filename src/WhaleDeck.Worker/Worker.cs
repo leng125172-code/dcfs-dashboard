@@ -115,7 +115,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                         job.StartedAtUtc ??= DateTimeOffset.UtcNow;
                         job.Version++;
                         await db.SaveChangesAsync(cancellationToken);
-                        var operation = await agent.ExecuteAsync(split[0], split[1], resourceId, parameters, planHash, cancellationToken);
+                        var operation = await agent.ExecuteAsync(split[0], split[1], resourceId, parameters, planHash, job.Id, job.IdempotencyKey, cancellationToken);
                         job.AgentOperationId = Guid.TryParse(operation.OperationId, out var operationId) ? operationId : null;
                         await ApplyAgentState(db, job, operation, cancellationToken);
                     }

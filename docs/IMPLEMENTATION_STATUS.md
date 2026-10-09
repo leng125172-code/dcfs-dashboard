@@ -43,14 +43,14 @@
 ## 本地验证记录
 
 - .NET Release 构建通过：0 警告、0 错误。
-- .NET 自动化测试 29 项通过（24 项 UnitTests、5 项 IntegrationTests；其中身份测试使用离线 HTTP/cache 替身）。
+- .NET 自动化测试 31 项通过（26 项 UnitTests、5 项 IntegrationTests；其中身份测试使用离线 HTTP/cache 替身）。
 - 安装器命令行 5 项检查通过，空 PATH 下验证 dry-run 不调用系统工具。
 - 依赖环境生成测试通过：专用密码独立生成，重复执行不覆盖原文件。
 - Shell 语法检查通过；已完成宿主组件正式安装与工作站验收，但未执行 API/Worker 镜像构建。
 
 ## 仍需实现或实测
 
-Worker 已能在重启后根据持久化的 Agent operation id 恢复轮询，持续同步进度和终态，并把取消请求传播到 Agent；未知的未来 Agent 状态按等待处理，避免错误地报告成功。下列项目仍不能标记为完成：六类数据库管理适配器与真实 CRUD/授权/轮换验收，应用安装/更新/回滚执行器，备份与定时调度，完整资源租约/锁，指标日分区/聚合，告警和配置推送，完整 Authentik 用户与 SSO 写操作，Agent Unix peer credentials 校验，Docker 配置维护的业务端到端回滚。
+Worker 已能在重启后根据持久化的 Agent operation id 恢复轮询，持续同步进度和终态，并把取消请求传播到 Agent；未知的未来 Agent 状态按等待处理，避免错误地报告成功。Worker 向 Agent 传递 job id 与幂等键，Agent 以 SHA-256 索引将请求绑定到持久化 operation；API/Worker 或 Agent 在响应前重启时，重试返回原 operation，不会重复执行同一容器动作。下列项目仍不能标记为完成：六类数据库管理适配器与真实 CRUD/授权/轮换验收，应用安装/更新/回滚执行器，备份与定时调度，完整资源租约/锁，指标日分区/聚合，告警和配置推送，完整 Authentik 用户与 SSO 写操作，Agent Unix peer credentials 校验，Docker 配置维护的业务端到端回滚。
 
 Agent capability 已限制为最长 60 秒、调用方法签名绑定和一次性 nonce；签发端使用 45 秒有效期，并增加过期、错方法、超长有效期及重放测试。Unix socket peer credentials 的进程级校验仍未实现，不能用 socket 文件权限替代该未完成项。
 

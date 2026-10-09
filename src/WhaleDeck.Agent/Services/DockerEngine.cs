@@ -49,6 +49,8 @@ public sealed class DockerEngine : IDisposable
         uint timeoutSeconds,
         bool preserveVolumes,
         string? planHash,
+        string jobId,
+        string idempotencyKey,
         CancellationToken cancellationToken)
     {
         var containers = await ListContainersAsync(true, cancellationToken);
@@ -66,22 +68,26 @@ public sealed class DockerEngine : IDisposable
         {
             throw new InvalidOperationException("Protected containers require the platform maintenance workflow.");
         }
-        if (action is ContainerAction.Delete)
-        {
-            _plans.VerifyAndConsume(planHash ?? string.Empty, containerId, "delete", new Dictionary<string, string>
-            {
-                ["timeoutSeconds"] = timeoutSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["preserveVolumes"] = preserveVolumes.ToString().ToLowerInvariant()
-            });
-        }
-
-        var operation = _operations.Create($"Container{action}");
+        var operationKey = string.IsNullOrWhiteSpace(jobId)
+            ? string.Empty
+            : $"{jobId}:{idempotencyKey}:Container:{action}:{container.ID}";
+        var operation = _operations.GetOrCreate(operationKey, $"Container{action}", out var created);
+        if (!created) return operation;
         operation.State = OperationState.Running;
         operation.ProgressPercent = 25;
         _operations.Save(operation);
 
         try
         {
+            if (action is ContainerAction.Delete)
+            {
+                _plans.VerifyAndConsume(planHash ?? string.Empty, containerId, "delete", new Dictionary<string, string>
+                {
+                    ["timeoutSeconds"] = timeoutSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["preserveVolumes"] = preserveVolumes.ToString().ToLowerInvariant()
+                });
+            }
+
             switch (action)
             {
                 case ContainerAction.Start:

@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using WhaleDeck.Contracts.Agent.V1;
 
@@ -7,14 +9,18 @@ namespace WhaleDeck.Agent.Services;
 public sealed class OperationStore
 {
     private readonly ConcurrentDictionary<string, OperationHandle> _operations = new(StringComparer.Ordinal);
+    private readonly object _createLock = new();
     private readonly string _directory;
+    private readonly string _idempotencyDirectory;
     private readonly string _maintenancePath;
 
     public OperationStore(IConfiguration configuration)
     {
         _directory = configuration["Agent:OperationDirectory"] ?? "/var/lib/whaledeck-agent/operations";
+        _idempotencyDirectory = Path.Combine(_directory, "idempotency");
         _maintenancePath = configuration["Agent:MaintenanceStatusPath"] ?? "/run/whaledeck/maintenance/status.json";
         Directory.CreateDirectory(_directory);
+        Directory.CreateDirectory(_idempotencyDirectory);
         Directory.CreateDirectory(Path.GetDirectoryName(_maintenancePath)!);
         foreach (var file in Directory.EnumerateFiles(_directory, "*.json"))
         {
@@ -45,6 +51,34 @@ public sealed class OperationStore
         Save(operation);
         return operation;
     }
+
+    public OperationHandle GetOrCreate(string idempotencyKey, string phase, out bool created)
+    {
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            created = true;
+            return Create(phase);
+        }
+
+        var indexPath = GetIdempotencyPath(idempotencyKey);
+        lock (_createLock)
+        {
+            var existing = ReadIdempotentOperation(indexPath);
+            if (existing is not null)
+            {
+                created = false;
+                return existing;
+            }
+
+            var operation = Create(phase);
+            AtomicWrite(indexPath, operation.OperationId);
+            created = true;
+            return operation;
+        }
+    }
+
+    public OperationHandle? GetByIdempotencyKey(string idempotencyKey) =>
+        string.IsNullOrWhiteSpace(idempotencyKey) ? null : ReadIdempotentOperation(GetIdempotencyPath(idempotencyKey));
 
     public OperationHandle? Get(string id) => _operations.GetValueOrDefault(id);
 
@@ -96,5 +130,18 @@ public sealed class OperationStore
         var temporary = $"{path}.{Guid.NewGuid():N}.tmp";
         File.WriteAllText(temporary, content);
         File.Move(temporary, path, true);
+    }
+
+    private string GetIdempotencyPath(string key)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+        return Path.Combine(_idempotencyDirectory, $"{hash}.key");
+    }
+
+    private OperationHandle? ReadIdempotentOperation(string indexPath)
+    {
+        if (!File.Exists(indexPath)) return null;
+        var operationId = File.ReadAllText(indexPath).Trim();
+        return _operations.GetValueOrDefault(operationId);
     }
 }

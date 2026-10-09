@@ -120,13 +120,15 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
         return values;
     }
 
-    public async Task<AgentOperationDto> ExecuteAsync(string area, string action, string resourceId, IReadOnlyDictionary<string, string> parameters, string? planHash, CancellationToken cancellationToken)
+    public async Task<AgentOperationDto> ExecuteAsync(string area, string action, string resourceId, IReadOnlyDictionary<string, string> parameters, string? planHash, Guid jobId, string idempotencyKey, CancellationToken cancellationToken)
     {
+        var requestContext = new RequestContext { JobId = jobId.ToString("D"), IdempotencyKey = idempotencyKey };
         OperationHandle response;
         if (area.Equals("containers", StringComparison.OrdinalIgnoreCase) && System.Enum.TryParse<ContainerAction>(action, true, out var containerAction))
         {
             response = await _docker.ChangeContainerStateAsync(new ChangeContainerStateRequest
             {
+                Context = requestContext,
                 ContainerId = resourceId,
                 Action = containerAction,
                 TimeoutSeconds = parameters.TryGetValue("timeoutSeconds", out var timeout) && uint.TryParse(timeout, out var seconds) ? seconds : 10,
@@ -138,6 +140,7 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
         {
             var request = new RegisteredActionRequest
             {
+                Context = requestContext,
                 Action = action,
                 Resource = new ResourceReference { ResourceId = resourceId, ResourceType = area },
                 PlanHash = planHash ?? string.Empty

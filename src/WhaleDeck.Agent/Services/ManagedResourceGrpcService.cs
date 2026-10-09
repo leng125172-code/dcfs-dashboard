@@ -47,11 +47,29 @@ public sealed class ManagedResourceGrpcService(ResourceRegistry registry, Operat
     private OperationHandle QueueRegistered(RegisteredActionRequest request, string category, bool maintenance = false)
     {
         registry.Require(request.Resource.ResourceId, request.Action);
-        if (RequiresPlan(request.Action)) plans.VerifyAndConsume(request.PlanHash, request.Resource.ResourceId, request.Action, request.Parameters);
-        var operation = operations.Create($"{category}:{request.Action}");
-        operations.Save(operation, maintenance ? "Whale Deck 正在执行平台维护。" : null);
-        return operation;
+        var idempotencyKey = BuildIdempotencyKey(request.Context, category, request.Action, request.Resource.ResourceId);
+        var operation = operations.GetOrCreate(idempotencyKey, $"{category}:{request.Action}", out var created);
+        if (!created) return operation;
+        try
+        {
+            if (RequiresPlan(request.Action)) plans.VerifyAndConsume(request.PlanHash, request.Resource.ResourceId, request.Action, request.Parameters);
+            operations.Save(operation, maintenance ? "Whale Deck 正在执行平台维护。" : null);
+            return operation;
+        }
+        catch
+        {
+            operation.State = OperationState.Failed;
+            operation.Phase = "ValidationFailed";
+            operation.ErrorCode = "AGENT_ACTION_VALIDATION_FAILED";
+            operations.Save(operation, maintenance ? "Whale Deck 平台维护预检失败。" : null);
+            throw;
+        }
     }
+
+    private static string BuildIdempotencyKey(RequestContext? context, string category, string action, string resourceId) =>
+        context is null || string.IsNullOrWhiteSpace(context.JobId)
+            ? string.Empty
+            : $"{context.JobId}:{context.IdempotencyKey}:{category}:{action}:{resourceId}";
 
     private static bool RequiresPlan(string action) => action is
         "delete" or "prune" or "apply-settings" or "install" or "update" or "reinstall" or "uninstall" or

@@ -54,7 +54,15 @@ public sealed class DockerGrpcService(DockerEngine docker, ResourceRegistry regi
     }
 
     public override Task<OperationHandle> ChangeContainerState(ChangeContainerStateRequest request, ServerCallContext context) =>
-        docker.ChangeContainerStateAsync(request.ContainerId, request.Action, request.TimeoutSeconds, request.PreserveVolumes, request.PlanHash, context.CancellationToken);
+        docker.ChangeContainerStateAsync(
+            request.ContainerId,
+            request.Action,
+            request.TimeoutSeconds,
+            request.PreserveVolumes,
+            request.PlanHash,
+            request.Context?.JobId ?? string.Empty,
+            request.Context?.IdempotencyKey ?? string.Empty,
+            context.CancellationToken);
 
     public override async Task<ResourceCollectionResponse> ListImages(Empty request, ServerCallContext context)
     {
