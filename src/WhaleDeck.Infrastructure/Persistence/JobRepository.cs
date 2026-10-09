@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using WhaleDeck.Application.Abstractions;
 using WhaleDeck.Domain.Entities;
 
@@ -10,9 +11,8 @@ public sealed class JobRepository(PlatformDbContext dbContext) : IJobRepository
     {
         var existing = await dbContext.OperationJobs.AsNoTracking()
             .SingleOrDefaultAsync(item => item.ActorSubject == job.ActorSubject && item.IdempotencyKey == job.IdempotencyKey, cancellationToken);
-        if (existing is not null) return existing;
+        if (existing is not null) return MatchExisting(existing, job);
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         dbContext.OperationJobs.Add(job);
         dbContext.OperationJobEvents.Add(new OperationJobEvent
         {
@@ -24,9 +24,28 @@ public sealed class JobRepository(PlatformDbContext dbContext) : IJobRepository
         });
         dbContext.OutboxMessages.Add(outbox);
         dbContext.AuditEvents.Add(audit);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        // SaveChanges commits the job, event, outbox and audit atomically and is
+        // compatible with the configured Npgsql retrying execution strategy.
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            dbContext.ChangeTracker.Clear();
+            var winner = await dbContext.OperationJobs.AsNoTracking()
+                .SingleOrDefaultAsync(item => item.ActorSubject == job.ActorSubject && item.IdempotencyKey == job.IdempotencyKey, cancellationToken);
+            if (winner is null) throw;
+            return MatchExisting(winner, job);
+        }
         return job;
+    }
+
+    private static OperationJob MatchExisting(OperationJob existing, OperationJob requested)
+    {
+        if (existing.JobType != requested.JobType || existing.RequestJson != requested.RequestJson)
+            throw new InvalidOperationException("The idempotency key is already associated with a different request.");
+        return existing;
     }
 
     public Task<OperationJob?> FindAsync(Guid id, CancellationToken cancellationToken) =>
@@ -49,7 +68,7 @@ public sealed class JobRepository(PlatformDbContext dbContext) : IJobRepository
         }
         job.CancelRequestedAtUtc = DateTimeOffset.UtcNow;
         job.Version++;
-        dbContext.OutboxMessages.Add(new OutboxMessage { MessageType = "OperationCancellationRequested", PayloadJson = $"{{\"jobId\":\"{id:D}\",\"actor\":\"{actorSubject}\"}}" });
+        dbContext.OutboxMessages.Add(new OutboxMessage { MessageType = "OperationCancellationRequested", PayloadJson = System.Text.Json.JsonSerializer.Serialize(new { jobId = id, actor = actorSubject }) });
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 }

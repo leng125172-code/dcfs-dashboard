@@ -21,7 +21,8 @@ public sealed class AuthentikIdentityDirectory(
         if (cached is not null)
         {
             var snapshot = JsonSerializer.Deserialize<PermissionSnapshot>(cached);
-            if (snapshot is not null) return new CurrentUserDto(subject, name, snapshot.Groups, snapshot.Administrator, snapshot.ExpiresAtUtc);
+            if (snapshot is not null && snapshot.ExpiresAtUtc > DateTimeOffset.UtcNow)
+                return new CurrentUserDto(subject, name, snapshot.Groups, snapshot.Administrator, snapshot.ExpiresAtUtc);
         }
 
         var adminGroup = configuration["Authentication:Authentik:AdministratorGroupId"]
@@ -29,10 +30,12 @@ public sealed class AuthentikIdentityDirectory(
         var resolution = await ResolveGroupsFromAuthentik(subject, claimGroups, cancellationToken);
         var groups = resolution.Groups;
         var administrator = !string.IsNullOrWhiteSpace(adminGroup) && groups.Contains(adminGroup, StringComparer.Ordinal);
-        var expires = DateTimeOffset.UtcNow.Add(PermissionTtl);
+        var ttl = resolution.Authoritative || configuration.GetValue<bool>("Authentication:Authentik:AllowClaimFallback")
+            ? PermissionTtl : TimeSpan.FromSeconds(15);
+        var expires = DateTimeOffset.UtcNow.Add(ttl);
         var current = new PermissionSnapshot(groups, administrator, expires);
         await cache.SetStringAsync(key, JsonSerializer.Serialize(current),
-            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = PermissionTtl }, cancellationToken);
+            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = ttl }, cancellationToken);
         return new CurrentUserDto(subject, name, groups, administrator, expires);
     }
 
@@ -59,7 +62,8 @@ public sealed class AuthentikIdentityDirectory(
             if (!response.IsSuccessStatusCode) return new GroupResolution([], false);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
             var user = document.RootElement;
-            if (user.TryGetProperty("is_active", out var active) && !active.GetBoolean()) return new GroupResolution([], true);
+            if (user.TryGetProperty("is_active", out var active) && !active.GetBoolean())
+                throw new UnauthorizedAccessException("The Authentik account is disabled.");
             if (!user.TryGetProperty("groups_obj", out var groups)) return new GroupResolution([], true);
             return new GroupResolution(groups.EnumerateArray()
                 .Select(group => group.TryGetProperty("pk", out var pk) ? pk.GetString() : group.GetProperty("name").GetString())

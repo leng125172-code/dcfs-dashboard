@@ -34,6 +34,17 @@ public sealed class OperationServiceTests
         Assert.Equal("trace", repository.Audit.TraceId);
     }
 
+    [Theory]
+    [InlineData("STOP")]
+    [InlineData("Restart")]
+    [InlineData("DELETE")]
+    public async Task ActionCasingCannotBypassConfirmation(string action)
+    {
+        var service = new OperationService(new RecordingJobRepository());
+        var command = new OperationCommand("CONTAINERS", action, "container-1", "key-1", "{}", null, false);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command, default));
+    }
+
     private sealed class RecordingJobRepository : IJobRepository
     {
         public OperationJob? Job { get; private set; }

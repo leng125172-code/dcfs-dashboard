@@ -25,6 +25,7 @@ public sealed class OperationService(IJobRepository jobs)
 
     public async Task<JobDto> EnqueueAsync(string actorSubject, string traceId, OperationCommand command, CancellationToken cancellationToken)
     {
+        command = command with { Area = command.Area.ToLowerInvariant(), Action = command.Action.ToLowerInvariant() };
         if (!AllowedActions.TryGetValue(command.Area, out var actions) || !actions.Contains(command.Action))
         {
             throw new ArgumentException("The requested management action is not registered.");

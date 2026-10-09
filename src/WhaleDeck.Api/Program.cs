@@ -38,6 +38,10 @@ try
     {
         throw new InvalidOperationException("OIDC authentication must be enabled outside Development.");
     }
+    if (!builder.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Authentication:Authentik:AllowClaimFallback"))
+    {
+        throw new InvalidOperationException("Authentik claim fallback is only supported in Development.");
+    }
 
     builder.Services.AddInfrastructure(builder.Configuration);
     builder.Services.AddControllers(options => options.Filters.Add(new AutoValidateAntiforgeryTokenAttribute()));
