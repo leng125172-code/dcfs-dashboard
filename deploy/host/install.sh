@@ -15,8 +15,12 @@ id whaledeck-maintenance >/dev/null 2>&1 || useradd --system --gid whaledeck --h
 install -d -o root -g whaledeck -m 0750 /etc/whaledeck
 install -d -o whaledeck-agent -g whaledeck -m 0750 /data/WhaleDeck/apps
 install -d -o root -g root -m 0755 /opt/whaledeck-agent /opt/whaledeck-maintenance /usr/local/libexec
-cp -a "$source_root/agent/." /opt/whaledeck-agent/
-cp -a "$source_root/maintenance/." /opt/whaledeck-maintenance/
+# GNU cp otherwise truncates an existing executable in place and fails with
+# ETXTBSY while the old service process is still running. Replacing the
+# directory entry creates a new inode; the running process keeps its old one
+# until the controlled restart below.
+cp -a --remove-destination "$source_root/agent/." /opt/whaledeck-agent/
+cp -a --remove-destination "$source_root/maintenance/." /opt/whaledeck-maintenance/
 chown -R root:root /opt/whaledeck-agent /opt/whaledeck-maintenance
 chmod 0755 /opt/whaledeck-agent/WhaleDeck.Agent /opt/whaledeck-maintenance/WhaleDeck.MaintenanceHost
 
