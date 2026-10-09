@@ -53,12 +53,16 @@ printf '\0\0\0\0\0' | curl --http2-prior-knowledge --unix-socket /run/whaledeck/
 grep -Eqi '^grpc-status: *0' "$temporary/grpc-headers"
 (( $(stat -c '%s' "$temporary/grpc-body") >= 5 ))
 
-# A process that can reach the socket through an unrelated group must still be
-# rejected by SO_PEERCRED. `nobody` is intentionally not added to whaledeck.
+# A process that reaches the socket through whaledeck as a supplementary group
+# must still be rejected when its effective primary group does not match.
 set +e
-runuser -u nobody -G whaledeck -- curl --fail --http2-prior-knowledge --unix-socket /run/whaledeck/agent.sock \
+whaledeck_gid=$(getent group whaledeck | cut -d: -f3)
+nobody_uid=$(id -u nobody)
+nobody_gid=$(id -g nobody)
+setpriv --reuid="$nobody_uid" --regid="$nobody_gid" --groups="$whaledeck_gid" \
+  curl --fail --http2-prior-knowledge --unix-socket /run/whaledeck/agent.sock \
   --silent --output /dev/null --header 'Content-Type: application/grpc' \
-  --header 'TE: trailers' --data-binary $'\0\0\0\0\0' \
+  --header 'TE: trailers' --data-binary '' \
   http://localhost/whaledeck.agent.v1.AgentService/GetHealth
 untrusted_status=$?
 set -e
