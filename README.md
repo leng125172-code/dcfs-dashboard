@@ -14,6 +14,10 @@ The repository is a modular monolith. `Domain` has no infrastructure dependency,
 
 WhaleDeck has no local password store and does not duplicate Authentik user profiles. Interactive login uses Authentik through the backend OIDC authorization-code flow. Authentik subject IDs and group claims are mapped to platform-specific permissions and immutable audit events; Authentik remains the source of truth for names, email addresses, groups, credentials, MFA, and account state.
 
+## Product scope
+
+The living frontend/backend feature baseline, implementation status, security levels, and staged roadmap are documented in [docs/FEATURES.md](docs/FEATURES.md).
+
 ## Repository layout
 
 ```text
