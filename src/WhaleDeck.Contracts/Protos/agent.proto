@@ -1,0 +1,210 @@
+syntax = "proto3";
+
+option csharp_namespace = "WhaleDeck.Contracts.Agent.V1";
+package whaledeck.agent.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+message RequestContext {
+  string trace_id = 1;
+  string actor_subject = 2;
+  string job_id = 3;
+  string idempotency_key = 4;
+  bytes capability = 5;
+}
+
+message ResourceReference {
+  string resource_id = 1;
+  string resource_type = 2;
+}
+
+enum OperationState {
+  OPERATION_STATE_UNSPECIFIED = 0;
+  OPERATION_STATE_QUEUED = 1;
+  OPERATION_STATE_RUNNING = 2;
+  OPERATION_STATE_WAITING_FOR_HEALTH = 3;
+  OPERATION_STATE_SUCCEEDED = 4;
+  OPERATION_STATE_FAILED = 5;
+  OPERATION_STATE_ROLLING_BACK = 6;
+  OPERATION_STATE_ROLLED_BACK = 7;
+  OPERATION_STATE_CANCELED = 8;
+}
+
+message OperationHandle {
+  string operation_id = 1;
+  OperationState state = 2;
+  string phase = 3;
+  int32 progress_percent = 4;
+  string error_code = 5;
+}
+
+message OperationRequest {
+  RequestContext context = 1;
+  string operation_id = 2;
+}
+
+message CapabilitiesResponse {
+  string agent_version = 1;
+  uint32 protocol_major = 2;
+  uint32 protocol_minor = 3;
+  string operating_system = 4;
+  repeated string capabilities = 5;
+}
+
+message HealthResponse {
+  bool healthy = 1;
+  bool docker_available = 2;
+  bool systemd_available = 3;
+  string status = 4;
+  google.protobuf.Timestamp observed_at_utc = 5;
+}
+
+message HostInfoResponse {
+  string host_name = 1;
+  string distribution = 2;
+  string kernel_version = 3;
+  string architecture = 4;
+  int64 boot_time_unix_seconds = 5;
+  int64 uptime_seconds = 6;
+  uint32 logical_processor_count = 7;
+  uint64 total_memory_bytes = 8;
+}
+
+message MetricsRequest {
+  RequestContext context = 1;
+  uint32 interval_seconds = 2;
+}
+
+message MetricPoint {
+  string metric_kind = 1;
+  string device_id = 2;
+  double value = 3;
+  string unit = 4;
+  string quality = 5;
+  google.protobuf.Timestamp sampled_at_utc = 6;
+}
+
+message DockerInfoResponse {
+  string server_version = 1;
+  string api_version = 2;
+  string operating_system = 3;
+  string architecture = 4;
+  int32 containers = 5;
+  int32 images = 6;
+  string logging_driver = 7;
+}
+
+message ListContainersRequest {
+  RequestContext context = 1;
+  bool include_stopped = 2;
+}
+
+message ContainerSummary {
+  string id = 1;
+  string name = 2;
+  string image = 3;
+  string state = 4;
+  string status = 5;
+  bool protected_resource = 6;
+  string protection_level = 7;
+  map<string, string> labels = 8;
+}
+
+message ListContainersResponse {
+  repeated ContainerSummary containers = 1;
+}
+
+enum ContainerAction {
+  CONTAINER_ACTION_UNSPECIFIED = 0;
+  CONTAINER_ACTION_START = 1;
+  CONTAINER_ACTION_STOP = 2;
+  CONTAINER_ACTION_RESTART = 3;
+  CONTAINER_ACTION_DELETE = 4;
+}
+
+message ChangeContainerStateRequest {
+  RequestContext context = 1;
+  string container_id = 2;
+  ContainerAction action = 3;
+  uint32 timeout_seconds = 4;
+  bool preserve_volumes = 5;
+  string plan_hash = 6;
+}
+
+message RegisteredResourceRequest {
+  RequestContext context = 1;
+  ResourceReference resource = 2;
+}
+
+message ResourceCollectionResponse {
+  repeated ResourceSnapshot resources = 1;
+}
+
+message ResourceSnapshot {
+  string resource_id = 1;
+  string display_name = 2;
+  string resource_type = 3;
+  string state = 4;
+  string version = 5;
+  bool protected_resource = 6;
+  map<string, string> attributes = 7;
+}
+
+message RegisteredActionRequest {
+  RequestContext context = 1;
+  ResourceReference resource = 2;
+  string action = 3;
+  string plan_hash = 4;
+  map<string, string> parameters = 5;
+}
+
+message PlanResponse {
+  string plan_hash = 1;
+  google.protobuf.Timestamp expires_at_utc = 2;
+  repeated string changes = 3;
+  repeated string warnings = 4;
+}
+
+service AgentService {
+  rpc GetCapabilities(google.protobuf.Empty) returns (CapabilitiesResponse);
+  rpc GetHealth(google.protobuf.Empty) returns (HealthResponse);
+  rpc WatchHealth(google.protobuf.Empty) returns (stream HealthResponse);
+}
+
+service OperationService {
+  rpc GetOperation(OperationRequest) returns (OperationHandle);
+  rpc GetMaintenanceStatus(google.protobuf.Empty) returns (OperationHandle);
+  rpc CancelOperation(OperationRequest) returns (OperationHandle);
+  rpc WatchOperation(OperationRequest) returns (stream OperationHandle);
+}
+
+service HostService {
+  rpc GetHostInfo(google.protobuf.Empty) returns (HostInfoResponse);
+  rpc StreamMetrics(MetricsRequest) returns (stream MetricPoint);
+  rpc ListNetworkInterfaces(google.protobuf.Empty) returns (ResourceCollectionResponse);
+  rpc ListStorageDevices(google.protobuf.Empty) returns (ResourceCollectionResponse);
+  rpc RebootHost(RegisteredActionRequest) returns (OperationHandle);
+}
+
+service DockerService {
+  rpc GetEngineInfo(google.protobuf.Empty) returns (DockerInfoResponse);
+  rpc ListContainers(ListContainersRequest) returns (ListContainersResponse);
+  rpc ChangeContainerState(ChangeContainerStateRequest) returns (OperationHandle);
+  rpc ListImages(google.protobuf.Empty) returns (ResourceCollectionResponse);
+  rpc ListNetworks(google.protobuf.Empty) returns (ResourceCollectionResponse);
+  rpc ListVolumes(google.protobuf.Empty) returns (ResourceCollectionResponse);
+  rpc PlanAction(RegisteredActionRequest) returns (PlanResponse);
+}
+
+service ManagedResourceService {
+  rpc ListDatabaseInstances(google.protobuf.Empty) returns (ResourceCollectionResponse);
+  rpc RunDatabaseAction(RegisteredActionRequest) returns (OperationHandle);
+  rpc ListSystemdUnits(google.protobuf.Empty) returns (ResourceCollectionResponse);
+  rpc RunSystemdAction(RegisteredActionRequest) returns (OperationHandle);
+  rpc ListComposeProjects(google.protobuf.Empty) returns (ResourceCollectionResponse);
+  rpc RunComposeAction(RegisteredActionRequest) returns (OperationHandle);
+  rpc GetConfigRepositoryStatus(RegisteredResourceRequest) returns (ResourceSnapshot);
+  rpc RunConfigRepositoryAction(RegisteredActionRequest) returns (OperationHandle);
+  rpc RunPlatformMaintenance(RegisteredActionRequest) returns (OperationHandle);
+}

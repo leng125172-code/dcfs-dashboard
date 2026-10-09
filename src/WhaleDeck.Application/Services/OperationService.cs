@@ -1,0 +1,91 @@
+using WhaleDeck.Application.Abstractions;
+using WhaleDeck.Application.Models;
+using WhaleDeck.Domain.Entities;
+
+namespace WhaleDeck.Application.Services;
+
+public sealed class OperationService(IJobRepository jobs)
+{
+    private static readonly Dictionary<string, HashSet<string>> AllowedActions =
+        new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["containers"] = new(StringComparer.OrdinalIgnoreCase) { "create", "start", "stop", "restart", "delete", "pull", "prune" },
+            ["docker"] = new(StringComparer.OrdinalIgnoreCase) { "validate-settings", "apply-settings" },
+            ["databases"] = new(StringComparer.OrdinalIgnoreCase) { "create", "delete", "create-principal", "disable-principal", "grant", "rotate", "terminate-connection" },
+            ["backups"] = new(StringComparer.OrdinalIgnoreCase) { "run", "verify", "cancel", "save-policy" },
+            ["applications"] = new(StringComparer.OrdinalIgnoreCase) { "install", "start", "stop", "restart", "update", "reinstall", "uninstall" },
+            ["host"] = new(StringComparer.OrdinalIgnoreCase) { "update-check", "update-install", "reboot", "systemd-start", "systemd-stop", "systemd-restart" },
+            ["schedules"] = new(StringComparer.OrdinalIgnoreCase) { "create", "update", "enable", "disable", "run" },
+            ["alerts"] = new(StringComparer.OrdinalIgnoreCase) { "acknowledge", "silence" },
+            ["config-repository"] = new(StringComparer.OrdinalIgnoreCase) { "snapshot", "commit-push" },
+            ["platform"] = new(StringComparer.OrdinalIgnoreCase) { "diagnose", "plan-update", "apply-update", "rollback", "diagnostic-bundle" },
+            ["identity"] = new(StringComparer.OrdinalIgnoreCase) { "create-user", "update-user", "disable-user", "create-sso", "update-sso" },
+            ["settings"] = new(StringComparer.OrdinalIgnoreCase) { "update" }
+        };
+
+    public async Task<JobDto> EnqueueAsync(string actorSubject, string traceId, OperationCommand command, CancellationToken cancellationToken)
+    {
+        if (!AllowedActions.TryGetValue(command.Area, out var actions) || !actions.Contains(command.Action))
+        {
+            throw new ArgumentException("The requested management action is not registered.");
+        }
+        if (RequiresConfirmation(command) && !command.Confirmed)
+        {
+            throw new InvalidOperationException("This action requires explicit confirmation.");
+        }
+        if (RequiresPlan(command) && string.IsNullOrWhiteSpace(command.PlanHash))
+        {
+            throw new InvalidOperationException("This action requires a current plan hash.");
+        }
+        if (string.IsNullOrWhiteSpace(command.IdempotencyKey) || command.IdempotencyKey.Length > 128)
+        {
+            throw new ArgumentException("A valid idempotency key is required.");
+        }
+
+        var job = new OperationJob
+        {
+            JobType = $"{command.Area}.{command.Action}",
+            ActorSubject = actorSubject,
+            IdempotencyKey = command.IdempotencyKey,
+            RequestJson = command.RequestJson
+        };
+        var outbox = new OutboxMessage { MessageType = "OperationRequested", PayloadJson = $"{{\"jobId\":\"{job.Id:D}\"}}" };
+        var audit = new AuditEvent
+        {
+            ActorSubject = actorSubject,
+            Action = job.JobType,
+            TargetType = command.Area,
+            TargetId = command.ResourceId ?? "new",
+            Result = "Accepted",
+            JobId = job.Id,
+            TraceId = traceId,
+            DetailJson = "{}"
+        };
+        return Map(await jobs.EnqueueAsync(job, outbox, audit, cancellationToken));
+    }
+
+    public async Task<JobDto?> FindAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var job = await jobs.FindAsync(id, cancellationToken);
+        return job is null ? null : Map(job);
+    }
+
+    public async Task<IReadOnlyCollection<JobDto>> ListAsync(int take, CancellationToken cancellationToken) =>
+        (await jobs.ListAsync(Math.Clamp(take, 1, 200), cancellationToken)).Select(Map).ToArray();
+
+    public async Task<IReadOnlyCollection<JobEventDto>> EventsAsync(Guid id, long afterSequence, CancellationToken cancellationToken) =>
+        (await jobs.ListEventsAsync(id, afterSequence, cancellationToken)).Select(item => new JobEventDto(item.Sequence, item.State, item.Phase, item.ProgressPercent, item.MessageCode, item.OccurredAtUtc)).ToArray();
+
+    public Task CancelAsync(Guid id, string actorSubject, CancellationToken cancellationToken) =>
+        jobs.RequestCancellationAsync(id, actorSubject, cancellationToken);
+
+    private static bool RequiresConfirmation(OperationCommand command) => command.Action is
+        "stop" or "restart" or "delete" or "prune" or "apply-settings" or "uninstall" or
+        "update" or "reinstall" or "reboot" or "update-install" or "commit-push" or "apply-update" or "rollback";
+
+    private static bool RequiresPlan(OperationCommand command) => command.Action is
+        "delete" or "prune" or "apply-settings" or "install" or "update" or "reinstall" or "uninstall" or
+        "update-install" or "reboot" or "commit-push" or "apply-update" or "rollback";
+
+    private static JobDto Map(OperationJob job) => new(job.Id, job.JobType, job.State, job.Phase, job.ProgressPercent, job.ErrorCode, job.CreatedAtUtc, job.CompletedAtUtc);
+}

@@ -9,9 +9,11 @@ public sealed class AuditEventTests
     {
         var auditEvent = new AuditEvent
         {
-            ActorId = "test-user",
+            ActorSubject = "test-user",
             Action = "service.read",
-            Target = "whaledeck",
+            TargetType = "service",
+            TargetId = "whaledeck",
+            TraceId = "test-trace",
         };
 
         Assert.NotEqual(Guid.Empty, auditEvent.Id);

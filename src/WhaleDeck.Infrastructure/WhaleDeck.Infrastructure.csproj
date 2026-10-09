@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WhaleDeck.Application\WhaleDeck.Application.csproj" />
+    <ProjectReference Include="..\WhaleDeck.Contracts\WhaleDeck.Contracts.csproj" />
     <ProjectReference Include="..\WhaleDeck.Domain\WhaleDeck.Domain.csproj" />
   </ItemGroup>
 
@@ -11,6 +12,9 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.84.0" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.8" />
     <PackageReference Include="Valkey.Glide" Version="1.1.0" />
   </ItemGroup>
 
