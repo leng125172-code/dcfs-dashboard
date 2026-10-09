@@ -8,6 +8,23 @@
 
 SSH 用户没有非交互 sudo，符合不开放 `NOPASSWD:ALL` 的约定。安装宿主服务及切换更新 timer 需要一次交互式 sudo；不得将已提供的密码写入脚本、命令输出或日志。
 
+本轮恢复后的实际进展：
+
+- `database-platform` 已同步到 `4fb26dd`；Whale Deck `dev` 源码已克隆到 `/data/GitRepos/whale-deck`。
+- `scripts/check-all.sh` 全部通过，数据库、缓存及 Authentik 内部健康和端口边界符合检查规则。
+- 已收紧并持久化 Whale Deck 专用 Valkey ACL：清除旧授权、排除危险命令，防止 `FLUSHALL/FLUSHDB` 等无键命令绕过键前缀限制。
+- `validation/check-whaledeck-credentials.sh` 在真实依赖上通过：PostgreSQL 专用身份和最小角色权限、Valkey 专用认证与允许/拒绝规则。验证使用只读 SQL 和 `ACL DRYRUN`，不执行危险命令、不写入业务数据。
+- 未重启基础容器，未删除旧容器或旧网络，未安装 Agent/MaintenanceHost，也未构建 Whale Deck 镜像。
+- Linux 自包含发布尚未完成：从 NuGet 下载 .NET 10.0.8 Linux 运行库时出现 TLS/EOF 中断，重试仍失败；已停止失败的发布进程。未降低 TLS 校验，也未修改持久代理配置。
+
+更新 timer 的脚本已同步，但尚需操作人员在工作站终端执行：
+
+```bash
+sudo /data/GitRepos/database-platform/bootstrap/install-workstation-update-systemd.sh
+```
+
+该命令只切换为新名称 timer，不部署 Whale Deck 或删除旧容器。持久 timer 的补执行行为按 systemd 配置生效；执行后检查列出的下一次更新时间。
+
 离线前最后一次成功记录：
 
 - 8 个 `database-platform-*` 基础容器健康，Whale Deck PostgreSQL 数据库/角色及 Valkey ACL 已初始化。
