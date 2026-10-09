@@ -43,13 +43,19 @@ describe('WhaleDeck entry flow', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('运行流畅')
+    expect(wrapper.text()).toContain('主机资源正常')
     expect(wrapper.text()).toContain('流量监控')
     expect(wrapper.text()).toContain('磁盘 IO')
     expect(wrapper.find('.telemetry-chart').exists()).toBe(true)
+    expect(wrapper.findAll('.system-item__copy')).toHaveLength(2)
+    expect(wrapper.text()).not.toContain('演示值')
     expect(wrapper.findAll('.application-card')).toHaveLength(6)
-    expect(wrapper.find('.application-card--installed').text()).toContain('关闭')
-    expect(wrapper.find('.application-card--installed').text()).toContain('重启')
+    const installedApplication = wrapper.find('.application-card--installed')
+    expect(installedApplication.text()).toContain('运行中')
+    expect(installedApplication.text()).toContain('关闭')
+    expect(installedApplication.text()).toContain('重启')
+    expect(installedApplication.text()).toContain('管理')
+    expect(installedApplication.text()).not.toContain('安装')
   })
 
   it('delegates login to Authentik without collecting a password', async () => {

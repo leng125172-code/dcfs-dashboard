@@ -79,8 +79,8 @@ export const demoWorkstationOverview: WorkstationOverviewSnapshot = {
     { key: 'databases', label: '数据库', value: 5, unit: '个', detail: '全部限制在容器网络' },
     { key: 'containers', label: '容器', value: 12, unit: '个', detail: '11 运行 · 1 已停止' },
   ],
-  healthMessage: '运行流畅',
-  healthDetail: '负载稳定，未发现资源瓶颈',
+  healthMessage: '主机资源正常',
+  healthDetail: 'CPU、内存与磁盘均处于正常范围',
   usage: [
     { key: 'cpu', label: 'CPU 使用率', percentage: 18.6, value: '18.6%', detail: '5 秒采样窗口' },
     {
@@ -200,13 +200,13 @@ export const demoWorkstationOverview: WorkstationOverviewSnapshot = {
   },
   system: [
     { label: '主机名称', value: 'Precision-7920-Tower' },
-    { label: '发行版本', value: 'Ubuntu 24.04 LTS', hint: '演示值' },
-    { label: '内核版本', value: '6.8.0-generic', hint: '演示值' },
+    { label: '发行版本', value: 'Ubuntu 24.04 LTS' },
+    { label: '内核版本', value: '6.8.0-generic' },
     { label: '系统类型', value: 'Linux · x86_64' },
     { label: '内网地址', value: '192.168.22.19', hint: '容器访问' },
     { label: '外网地址', value: '192.168.100.13', hint: '下载与本机访问' },
-    { label: '启动时间', value: '2026-10-06 08:42', hint: '演示值' },
-    { label: '运行时间', value: '3 天 12 小时 18 分', hint: '演示值' },
+    { label: '启动时间', value: '2026-10-06 08:42' },
+    { label: '运行时间', value: '3 天 12 小时 18 分' },
   ],
   applications: [
     {

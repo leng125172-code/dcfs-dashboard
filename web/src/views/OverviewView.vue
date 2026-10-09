@@ -6,6 +6,7 @@ import {
   Box,
   CircleCheckFilled,
   Coin,
+  CopyDocument,
   Cpu,
   DataAnalysis,
   MagicStick,
@@ -92,9 +93,29 @@ async function loadOverview() {
   snapshot.value = await fetchWorkstationOverview()
 }
 
-function showDeferredAction(action: 'details' | 'install', app: RecommendedApplication) {
-  const actionLabel = action === 'details' ? '更多详情' : '安装'
+function showDeferredAction(action: 'details' | 'install' | 'manage', app: RecommendedApplication) {
+  const actionLabel = action === 'details' ? '更多详情' : action === 'manage' ? '管理' : '安装'
   ElMessage.info(`${app.name}：${actionLabel}将在后端服务接入后开放`)
+}
+
+async function copySystemValue(label: string, value: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = value
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      textarea.remove()
+    }
+    ElMessage.success(`${label}已复制`)
+  } catch {
+    ElMessage.error(`${label}复制失败`)
+  }
 }
 
 async function confirmContainerAction(
@@ -180,7 +201,7 @@ onMounted(() => {
           <header class="overview-panel__header">
             <div>
               <span class="panel__eyebrow">SYSTEM STATUS</span>
-              <h2>运行状态</h2>
+              <h2>主机资源状态</h2>
             </div>
             <el-tag type="success" effect="light" round>
               <span class="live-dot" /> 实时采样
@@ -193,7 +214,7 @@ onMounted(() => {
                 <el-icon><CircleCheckFilled /></el-icon>
               </span>
               <div>
-                <span>综合状态</span>
+                <span>资源健康度</span>
                 <strong>{{ snapshot.healthMessage }}</strong>
                 <p>{{ snapshot.healthDetail }}</p>
               </div>
@@ -278,7 +299,20 @@ onMounted(() => {
           <div class="system-grid">
             <article v-for="item in snapshot.system" :key="item.label" class="system-item">
               <span>{{ item.label }}</span>
-              <strong>{{ item.value }}</strong>
+              <div class="system-item__value">
+                <strong>{{ item.value }}</strong>
+                <el-button
+                  v-if="item.label.endsWith('地址')"
+                  class="system-item__copy"
+                  link
+                  type="primary"
+                  :aria-label="`复制${item.label}`"
+                  :title="`复制 ${item.value}`"
+                  @click="copySystemValue(item.label, item.value)"
+                >
+                  <el-icon><CopyDocument /></el-icon>
+                </el-button>
+              </div>
               <small v-if="item.hint">{{ item.hint }}</small>
             </article>
           </div>
@@ -330,6 +364,13 @@ onMounted(() => {
                 <div class="application-card__version">
                   <span>推荐 {{ app.version }}</span>
                   <span v-if="app.installedVersion">已装 {{ app.installedVersion }}</span>
+                  <span
+                    v-if="app.installedVersion"
+                    class="application-card__state-label"
+                    :class="`application-card__state-label--${app.state}`"
+                  >
+                    <i />{{ applicationStateLabels[app.state] }}
+                  </span>
                 </div>
 
                 <footer class="application-card__actions">
@@ -360,13 +401,24 @@ onMounted(() => {
               </div>
 
               <el-button
-                class="application-card__install"
+                v-if="!app.installedVersion"
+                class="application-card__primary-action"
                 type="primary"
                 plain
                 size="small"
                 @click="showDeferredAction('install', app)"
               >
                 安装
+              </el-button>
+              <el-button
+                v-else
+                class="application-card__primary-action"
+                type="primary"
+                plain
+                size="small"
+                @click="showDeferredAction('manage', app)"
+              >
+                管理
               </el-button>
             </article>
           </div>
@@ -464,7 +516,7 @@ onMounted(() => {
 
 .resource-card__copy > span {
   color: var(--el-text-color-regular);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .resource-card__copy > strong {
@@ -477,7 +529,7 @@ onMounted(() => {
 .resource-card__copy > strong small {
   margin-left: 5px;
   color: var(--el-text-color-secondary);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -485,7 +537,7 @@ onMounted(() => {
   overflow: hidden;
   margin: 0;
   color: var(--el-text-color-secondary);
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -500,7 +552,7 @@ onMounted(() => {
 
 .overview-dashboard {
   display: grid;
-  grid-template-columns: minmax(900px, 3fr) minmax(320px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
   gap: 20px;
 }
@@ -513,11 +565,11 @@ onMounted(() => {
 }
 
 .overview-dashboard__main {
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto;
 }
 
 .overview-dashboard__side {
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto;
 }
 
 .overview-panel {
@@ -535,27 +587,14 @@ onMounted(() => {
 
 .overview-panel__header h2 {
   margin: 4px 0 0;
-  font-size: 18px;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .overview-panel__header p {
   margin: 7px 0 0;
   color: var(--el-text-color-secondary);
-  font-size: 11px;
-}
-
-.overview-dashboard__side .overview-panel__header {
-  padding: 14px 16px;
-}
-
-.overview-dashboard__side .overview-panel__header h2 {
-  font-size: 16px;
-}
-
-.overview-dashboard__side .overview-panel__header p {
-  margin-top: 5px;
-  font-size: 9px;
-  line-height: 1.5;
+  font-size: 12px;
 }
 
 .live-dot {
@@ -571,20 +610,23 @@ onMounted(() => {
 .status-grid {
   display: grid;
   grid-template-columns: 1.16fr repeat(3, 1fr);
+  gap: 10px;
+  padding: 12px;
 }
 
 .health-card,
 .usage-card {
   display: flex;
   align-items: center;
-  min-height: 174px;
-  padding: 24px;
+  min-height: 158px;
+  padding: 20px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--whaledeck-soft-bg) 68%, var(--whaledeck-panel-bg));
 }
 
 .usage-card {
   justify-content: center;
   gap: 14px;
-  border-left: 1px solid var(--el-border-color-lighter);
 }
 
 .health-card__halo {
@@ -610,7 +652,7 @@ onMounted(() => {
 .health-card > div > span,
 .usage-card__copy span {
   color: var(--el-text-color-secondary);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .health-card strong {
@@ -622,7 +664,7 @@ onMounted(() => {
 .health-card p {
   margin: 0;
   color: var(--el-text-color-secondary);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.6;
 }
 
@@ -642,12 +684,12 @@ onMounted(() => {
 
 .usage-card__copy strong {
   margin: 5px 0;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .usage-card__copy small {
   color: var(--el-text-color-secondary);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .monitoring-panel__header {
@@ -699,13 +741,13 @@ onMounted(() => {
 
 .telemetry-stat span {
   color: var(--el-text-color-secondary);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .telemetry-stat strong {
   margin-top: 3px;
   color: var(--stat-color);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .telemetry-legend {
@@ -715,7 +757,7 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 14px;
   color: var(--el-text-color-secondary);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .telemetry-legend span {
@@ -732,8 +774,8 @@ onMounted(() => {
 
 .system-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  padding: 6px 12px 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 8px 14px 14px;
 }
 
 .system-item {
@@ -746,31 +788,47 @@ onMounted(() => {
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
-.system-item:nth-child(2n) {
+.system-item:nth-child(4n) {
   border-right: 0;
 }
 
-.system-item:nth-last-child(-n + 2) {
+.system-item:nth-last-child(-n + 4) {
   border-bottom: 0;
 }
 
 .system-item span {
   color: var(--el-text-color-secondary);
-  font-size: 10px;
+  font-size: 12px;
 }
 
-.system-item strong {
-  overflow: hidden;
+.system-item__value {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
   margin-top: 4px;
-  font-size: 11px;
+}
+
+.system-item__value strong {
+  overflow: hidden;
+  min-width: 0;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.system-item__copy {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  padding: 0;
+  font-size: 14px;
 }
 
 .system-item small {
   margin-top: 3px;
   color: var(--el-color-primary);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .application-header {
@@ -781,8 +839,8 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 1fr;
   align-content: start;
-  gap: 8px;
-  padding: 12px;
+  gap: 10px;
+  padding: 14px;
 }
 
 .application-card {
@@ -790,10 +848,10 @@ onMounted(() => {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   min-width: 0;
-  min-height: 0;
+  min-height: 78px;
   align-items: center;
-  gap: 10px;
-  padding: 8px;
+  gap: 14px;
+  padding: 12px 14px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 12px;
   background: color-mix(in srgb, var(--whaledeck-soft-bg) 56%, var(--whaledeck-panel-bg));
@@ -828,7 +886,7 @@ onMounted(() => {
 .application-card__headline strong {
   flex: 0 0 auto;
   color: var(--el-text-color-primary);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 800;
   white-space: nowrap;
 }
@@ -837,7 +895,7 @@ onMounted(() => {
   overflow: hidden;
   min-width: 0;
   color: var(--el-text-color-secondary);
-  font-size: 8px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -846,15 +904,15 @@ onMounted(() => {
   --app-color: var(--el-color-primary);
   position: relative;
   display: grid;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--app-color) 24%, transparent);
   border-radius: 9px;
   color: var(--app-color);
   background: color-mix(in srgb, var(--app-color) 10%, var(--whaledeck-panel-bg));
-  font-size: 17px;
+  font-size: 20px;
   box-shadow: 0 5px 14px color-mix(in srgb, var(--app-color) 10%, transparent);
 }
 
@@ -933,13 +991,41 @@ onMounted(() => {
   min-width: 0;
   margin-top: 3px;
   color: var(--el-text-color-secondary);
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .application-card__version span {
-  padding: 1px 4px;
+  padding: 2px 5px;
   border-radius: 5px;
   background: var(--whaledeck-hover-bg);
+}
+
+.application-card__version .application-card__state-label {
+  --state-label-color: var(--el-color-info);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--state-label-color);
+  background: color-mix(in srgb, var(--state-label-color) 10%, transparent);
+}
+
+.application-card__state-label i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.application-card__state-label--running {
+  --state-label-color: var(--el-color-success);
+}
+
+.application-card__state-label--stopped {
+  --state-label-color: var(--el-color-danger);
+}
+
+.application-card__state-label--restarting {
+  --state-label-color: var(--el-color-primary);
 }
 
 .application-card__actions {
@@ -953,13 +1039,13 @@ onMounted(() => {
 
 .application-card__actions :deep(.el-button) {
   height: auto;
-  padding: 0;
+  padding: 3px 0;
   margin-left: 0;
-  font-size: 9px;
+  font-size: 12px;
 }
 
-.application-card__install {
-  min-width: 50px;
+.application-card__primary-action {
+  min-width: 68px;
 }
 
 @keyframes application-state-spin {
@@ -974,38 +1060,20 @@ onMounted(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .usage-card:nth-child(3) {
-    border-top: 1px solid var(--el-border-color-lighter);
-    border-left: 0;
-  }
-
-  .usage-card:nth-child(4) {
-    border-top: 1px solid var(--el-border-color-lighter);
-  }
-}
-
-@media (max-width: 1550px) {
-  .overview-dashboard {
-    grid-template-columns: 1fr;
-  }
-
-  .overview-dashboard__main,
-  .overview-dashboard__side {
-    grid-template-rows: auto;
-  }
-}
-
-@media (max-width: 1180px) {
   .system-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .system-item:nth-child(n) {
-    border-right: 0;
+    border-right: 1px solid var(--el-border-color-lighter);
     border-bottom: 1px solid var(--el-border-color-lighter);
   }
 
-  .system-item:last-child {
+  .system-item:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .system-item:nth-last-child(-n + 2) {
     border-bottom: 0;
   }
 }
@@ -1048,23 +1116,9 @@ onMounted(() => {
   .application-grid {
     grid-template-columns: 1fr;
   }
-}
 
-@media (max-width: 560px) {
-  .resource-grid,
-  .status-grid,
   .system-grid {
     grid-template-columns: 1fr;
-  }
-
-  .resource-card {
-    min-height: 126px;
-  }
-
-  .usage-card,
-  .usage-card:nth-child(n) {
-    border-top: 1px solid var(--el-border-color-lighter);
-    border-left: 0;
   }
 
   .system-item:nth-child(n) {
@@ -1074,6 +1128,17 @@ onMounted(() => {
 
   .system-item:last-child {
     border-bottom: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .resource-grid,
+  .status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .resource-card {
+    min-height: 126px;
   }
 
   .telemetry-stat {
