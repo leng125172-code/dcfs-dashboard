@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Serilog;
 using Serilog.Formatting.Json;
@@ -11,6 +12,9 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Services(services)
     .Enrich.FromLogContext()
     .WriteTo.Console(new JsonFormatter()));
+// The stable maintenance proxy has no cookies or persisted protected state.
+// Make that explicit so it never writes key material or emits key-repository warnings.
+builder.Services.AddDataProtection().UseEphemeralDataProtectionProvider();
 
 builder.Services.AddReverseProxy()
     .LoadFromMemory(
@@ -79,7 +83,7 @@ app.MapGet("/maintenance/status", () =>
 
     using var document = JsonDocument.Parse(File.ReadAllText(statusPath));
     return Results.Json(document.RootElement.Clone());
-});
+}).WithOrder(-1000);
 app.MapReverseProxy();
 await app.RunAsync();
 

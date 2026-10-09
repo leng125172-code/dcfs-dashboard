@@ -25,6 +25,8 @@ sudo /data/GitRepos/database-platform/bootstrap/install-workstation-update-syste
 
 该命令只切换为新名称 timer，不部署 Whale Deck 或删除旧容器。持久 timer 的补执行行为按 systemd 配置生效；执行后检查列出的下一次更新时间。
 
+2026-10-09 20:13（Asia/Shanghai）后续状态：新 timer 已确认为 enabled/active，旧 timer 为 disabled/inactive；Agent 与 MaintenanceHost 已作为 systemd 服务安装并启动，均 enabled/active、`NRestarts=0`。安装后检查发现 Authentik 端口上的 `/maintenance/status` 被代理路由抢先匹配，以及离线页面刷新会重复记录 YARP Warning；修复和宿主只读验收脚本正在完成复验。在复验通过前不把宿主服务标记为最终验收完成。
+
 离线前最后一次成功记录：
 
 - 8 个 `database-platform-*` 基础容器健康，Whale Deck PostgreSQL 数据库/角色及 Valkey ACL 已初始化。
