@@ -12,9 +12,6 @@ import {
   Monitor,
   Platform,
   Promotion,
-  Refresh,
-  RefreshRight,
-  SwitchButton,
 } from '@element-plus/icons-vue'
 import TelemetryChart from '@/components/overview/TelemetryChart.vue'
 import {
@@ -30,8 +27,6 @@ const snapshot = ref(structuredClone(demoWorkstationOverview))
 const monitorMode = ref<MonitorMode>('network')
 const networkFilter = ref('all')
 const diskFilter = ref('all')
-const refreshing = ref(false)
-const updatedAt = ref('刚刚')
 
 const resourceIcons = {
   agents: MagicStick,
@@ -78,20 +73,8 @@ function gaugeColor(percentage: number) {
   return 'var(--el-color-primary)'
 }
 
-async function refreshOverview(notify = true) {
-  refreshing.value = true
-  try {
-    snapshot.value = await fetchWorkstationOverview()
-    updatedAt.value = new Intl.DateTimeFormat('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    }).format(new Date())
-    if (notify) ElMessage.success('演示数据已刷新')
-  } finally {
-    refreshing.value = false
-  }
+async function loadOverview() {
+  snapshot.value = await fetchWorkstationOverview()
 }
 
 function showDeferredAction(action: 'details' | 'install', app: RecommendedApplication) {
@@ -123,7 +106,7 @@ async function confirmContainerAction(app: RecommendedApplication, action: 'stop
 }
 
 onMounted(() => {
-  void refreshOverview(false)
+  void loadOverview()
 })
 </script>
 
@@ -139,40 +122,33 @@ onMounted(() => {
         <h1>工作站概览</h1>
         <p>集中查看资源、运行状态、实时监控、系统信息与容器应用。</p>
       </div>
-      <div class="page-heading__actions overview-heading__actions">
-        <span>更新于 {{ updatedAt }}</span>
-        <el-button :loading="refreshing" @click="refreshOverview()">
-          <el-icon><Refresh /></el-icon>
-          刷新数据
-        </el-button>
-      </div>
-    </section>
-
-    <section id="resources" class="resource-grid content-anchor" aria-label="资源概览">
-      <article
-        v-for="resource in snapshot.resources"
-        :key="resource.key"
-        class="resource-card"
-        :class="`resource-card--${resource.key}`"
-      >
-        <span class="resource-card__icon">
-          <el-icon><component :is="resourceIcons[resource.key]" /></el-icon>
-        </span>
-        <div class="resource-card__copy">
-          <span>{{ resource.label }}</span>
-          <strong
-            >{{ resource.value }}<small>{{ resource.unit }}</small></strong
-          >
-          <p>{{ resource.detail }}</p>
-        </div>
-        <span class="resource-card__arrow"
-          ><el-icon><ArrowRight /></el-icon
-        ></span>
-      </article>
     </section>
 
     <div class="overview-dashboard">
       <div class="overview-dashboard__main">
+        <section id="resources" class="resource-grid content-anchor" aria-label="资源概览">
+          <article
+            v-for="resource in snapshot.resources"
+            :key="resource.key"
+            class="resource-card"
+            :class="`resource-card--${resource.key}`"
+          >
+            <span class="resource-card__icon">
+              <el-icon><component :is="resourceIcons[resource.key]" /></el-icon>
+            </span>
+            <div class="resource-card__copy">
+              <span>{{ resource.label }}</span>
+              <strong
+                >{{ resource.value }}<small>{{ resource.unit }}</small></strong
+              >
+              <p>{{ resource.detail }}</p>
+            </div>
+            <span class="resource-card__arrow"
+              ><el-icon><ArrowRight /></el-icon
+            ></span>
+          </article>
+        </section>
+
         <section id="status" class="panel overview-panel content-anchor">
           <header class="overview-panel__header">
             <div>
@@ -288,10 +264,6 @@ onMounted(() => {
               <h2>轩辕热门应用</h2>
               <p>后端接入后从轩辕镜像服务获取并缓存，当前为 Top 6 演示内容。</p>
             </div>
-            <el-button @click="ElMessage.info('应用市场将在后端服务接入后开放')">
-              查看更多
-              <el-icon><ArrowRight /></el-icon>
-            </el-button>
           </header>
 
           <div class="application-grid">
@@ -301,52 +273,68 @@ onMounted(() => {
               class="application-card"
               :class="{ 'application-card--installed': app.installedVersion }"
             >
-              <div class="application-card__top">
-                <span class="application-card__icon" :class="`application-card__icon--${app.icon}`">
-                  <el-icon><component :is="applicationIcons[app.icon]" /></el-icon>
-                </span>
-                <span class="application-card__copy">
-                  <strong>{{ app.name }}</strong>
-                  <small>{{ app.category }}</small>
-                </span>
-                <el-tag
-                  v-if="app.installedVersion"
-                  :type="app.state === 'running' ? 'success' : 'info'"
-                  effect="light"
-                  round
-                  size="small"
-                >
-                  {{ app.state === 'running' ? '运行中' : '已停止' }}
-                </el-tag>
-              </div>
+              <span class="application-card__icon" :class="`application-card__icon--${app.icon}`">
+                <el-icon><component :is="applicationIcons[app.icon]" /></el-icon>
+              </span>
 
-              <p>{{ app.description }}</p>
-              <div class="application-card__version">
-                <span>推荐 {{ app.version }}</span>
-                <span v-if="app.installedVersion">已装 {{ app.installedVersion }}</span>
-              </div>
-
-              <footer class="application-card__actions">
-                <el-button plain @click="showDeferredAction('details', app)">更多</el-button>
-                <el-button type="primary" plain @click="showDeferredAction('install', app)">
-                  安装
-                </el-button>
-                <template v-if="app.installedVersion">
-                  <el-button
-                    plain
-                    type="danger"
-                    :disabled="app.state === 'stopped'"
-                    @click="confirmContainerAction(app, 'stop')"
+              <div class="application-card__body">
+                <div class="application-card__top">
+                  <span class="application-card__copy">
+                    <strong>{{ app.name }}</strong>
+                    <small>{{ app.category }}</small>
+                  </span>
+                  <el-tag
+                    v-if="app.installedVersion"
+                    :type="app.state === 'running' ? 'success' : 'info'"
+                    effect="light"
+                    round
+                    size="small"
                   >
-                    <el-icon><SwitchButton /></el-icon>
-                    关闭
-                  </el-button>
-                  <el-button plain type="primary" @click="confirmContainerAction(app, 'restart')">
-                    <el-icon><RefreshRight /></el-icon>
-                    重启
-                  </el-button>
-                </template>
-              </footer>
+                    {{ app.state === 'running' ? '运行' : '停止' }}
+                  </el-tag>
+                </div>
+
+                <p>{{ app.description }}</p>
+                <div class="application-card__meta">
+                  <div class="application-card__version">
+                    <span>推荐 {{ app.version }}</span>
+                    <span v-if="app.installedVersion">已装 {{ app.installedVersion }}</span>
+                  </div>
+
+                  <footer class="application-card__actions">
+                    <template v-if="app.installedVersion">
+                      <el-button
+                        link
+                        type="danger"
+                        :disabled="app.state === 'stopped'"
+                        @click="confirmContainerAction(app, 'stop')"
+                      >
+                        关闭
+                      </el-button>
+                      <el-button
+                        link
+                        type="primary"
+                        @click="confirmContainerAction(app, 'restart')"
+                      >
+                        重启
+                      </el-button>
+                    </template>
+                    <el-button link type="primary" @click="showDeferredAction('details', app)">
+                      更多
+                    </el-button>
+                  </footer>
+                </div>
+              </div>
+
+              <el-button
+                class="application-card__install"
+                type="primary"
+                plain
+                size="small"
+                @click="showDeferredAction('install', app)"
+              >
+                安装
+              </el-button>
             </article>
           </div>
         </section>
@@ -365,15 +353,6 @@ onMounted(() => {
   margin-bottom: 2px;
 }
 
-.overview-heading__actions {
-  align-items: center;
-}
-
-.overview-heading__actions > span {
-  color: var(--el-text-color-secondary);
-  font-size: 11px;
-}
-
 .resource-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -386,8 +365,8 @@ onMounted(() => {
   display: flex;
   overflow: hidden;
   align-items: center;
-  min-height: 144px;
-  padding: 20px;
+  min-height: 132px;
+  padding: 16px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: var(--whaledeck-panel-radius);
   background: var(--whaledeck-panel-bg);
@@ -488,8 +467,8 @@ onMounted(() => {
 
 .overview-dashboard {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(300px, 1fr);
-  align-items: start;
+  grid-template-columns: minmax(900px, 3fr) minmax(320px, 1fr);
+  align-items: stretch;
   gap: 20px;
 }
 
@@ -498,6 +477,14 @@ onMounted(() => {
   display: grid;
   min-width: 0;
   gap: 20px;
+}
+
+.overview-dashboard__main {
+  grid-template-rows: auto auto 1fr;
+}
+
+.overview-dashboard__side {
+  grid-template-rows: auto 1fr;
 }
 
 .overview-panel {
@@ -522,6 +509,20 @@ onMounted(() => {
   margin: 7px 0 0;
   color: var(--el-text-color-secondary);
   font-size: 11px;
+}
+
+.overview-dashboard__side .overview-panel__header {
+  padding: 14px 16px;
+}
+
+.overview-dashboard__side .overview-panel__header h2 {
+  font-size: 16px;
+}
+
+.overview-dashboard__side .overview-panel__header p {
+  margin-top: 5px;
+  font-size: 9px;
+  line-height: 1.5;
 }
 
 .live-dot {
@@ -699,15 +700,15 @@ onMounted(() => {
 .system-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  padding: 8px 16px 18px;
+  padding: 6px 12px 12px;
 }
 
 .system-item {
   display: flex;
-  min-height: 88px;
+  min-height: 64px;
   flex-direction: column;
   justify-content: center;
-  padding: 14px 12px;
+  padding: 9px 10px;
   border-right: 1px solid var(--el-border-color-lighter);
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
@@ -727,40 +728,39 @@ onMounted(() => {
 
 .system-item strong {
   overflow: hidden;
-  margin-top: 7px;
-  font-size: 13px;
+  margin-top: 4px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .system-item small {
-  margin-top: 5px;
+  margin-top: 3px;
   color: var(--el-color-primary);
   font-size: 9px;
 }
 
 .application-header {
   align-items: flex-start;
-  flex-direction: column;
-}
-
-.application-header .el-button {
-  width: 100%;
 }
 
 .application-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
-  padding: 16px;
+  align-content: start;
+  gap: 8px;
+  padding: 12px;
 }
 
 .application-card {
-  display: flex;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
-  flex-direction: column;
-  padding: 16px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 12px;
   background: color-mix(in srgb, var(--whaledeck-soft-bg) 56%, var(--whaledeck-panel-bg));
@@ -783,21 +783,32 @@ onMounted(() => {
 .application-card__top {
   display: flex;
   align-items: center;
-  gap: 11px;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.application-card__top :deep(.el-tag) {
+  height: 18px;
+  padding: 0 5px;
+  font-size: 8px;
+}
+
+.application-card__body {
+  min-width: 0;
 }
 
 .application-card__icon {
   --app-color: var(--el-color-primary);
   display: grid;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--app-color) 24%, transparent);
-  border-radius: 11px;
+  border-radius: 9px;
   color: var(--app-color);
   background: color-mix(in srgb, var(--app-color) 10%, var(--whaledeck-panel-bg));
-  font-size: 20px;
+  font-size: 17px;
   box-shadow: 0 5px 14px color-mix(in srgb, var(--app-color) 10%, transparent);
 }
 
@@ -838,50 +849,65 @@ onMounted(() => {
 
 .application-card__copy strong {
   overflow: hidden;
-  font-size: 13px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .application-card__copy small {
-  margin-top: 3px;
-  color: var(--el-text-color-secondary);
-  font-size: 9px;
+  display: none;
 }
 
-.application-card > p {
-  margin: 12px 0 9px;
+.application-card__body > p {
+  overflow: hidden;
+  margin: 2px 0 3px;
   color: var(--el-text-color-secondary);
-  font-size: 10px;
-  line-height: 1.7;
+  font-size: 9px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.application-card__meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .application-card__version {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 3px;
+  min-width: 0;
   color: var(--el-text-color-secondary);
-  font-size: 9px;
+  font-size: 8px;
 }
 
 .application-card__version span {
-  padding: 3px 7px;
+  padding: 1px 4px;
   border-radius: 5px;
   background: var(--whaledeck-hover-bg);
 }
 
 .application-card__actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 7px;
+  min-height: 18px;
 }
 
 .application-card__actions :deep(.el-button) {
-  width: 100%;
-  padding-right: 8px;
-  padding-left: 8px;
+  height: auto;
+  padding: 0;
   margin-left: 0;
+  font-size: 9px;
+}
+
+.application-card__install {
+  min-width: 50px;
 }
 
 @media (max-width: 1260px) {
@@ -900,11 +926,18 @@ onMounted(() => {
   }
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1550px) {
   .overview-dashboard {
     grid-template-columns: 1fr;
   }
 
+  .overview-dashboard__main,
+  .overview-dashboard__side {
+    grid-template-rows: auto;
+  }
+}
+
+@media (max-width: 1180px) {
   .system-grid {
     grid-template-columns: 1fr;
   }
@@ -932,10 +965,6 @@ onMounted(() => {
 }
 
 @media (max-width: 760px) {
-  .overview-heading__actions {
-    align-items: flex-start;
-  }
-
   .overview-panel__header,
   .monitoring-panel__header,
   .application-header {

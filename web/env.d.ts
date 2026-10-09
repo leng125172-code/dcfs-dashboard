@@ -3,6 +3,7 @@
 interface WhaleDeckRuntimeConfig {
   apiBaseUrl: string
   appTitle: string
+  backendVersion: string
   authentikUrl: string
   gitlabUrl: string
 }

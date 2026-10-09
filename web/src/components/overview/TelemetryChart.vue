@@ -73,8 +73,6 @@ function formatTick(value: number) {
         </linearGradient>
       </defs>
 
-      <text class="telemetry-chart__unit" x="8" y="13">{{ unit }}</text>
-
       <g v-for="grid in gridLines" :key="grid.y">
         <line
           class="telemetry-chart__grid"
@@ -144,16 +142,10 @@ function formatTick(value: number) {
 }
 
 .telemetry-chart__tick,
-.telemetry-chart__label,
-.telemetry-chart__unit {
+.telemetry-chart__label {
   fill: var(--el-text-color-secondary);
   font-family: var(--whaledeck-font-family);
   font-size: 11px;
-}
-
-.telemetry-chart__unit {
-  fill: var(--el-text-color-regular);
-  font-weight: 700;
 }
 
 @media (max-width: 680px) {

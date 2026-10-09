@@ -2,7 +2,7 @@
 set -eu
 
 envsubst \
-  '${WHALEDECK_TITLE} ${WHALEDECK_API_BASE_URL} ${WHALEDECK_AUTHENTIK_URL} ${WHALEDECK_GITLAB_URL}' \
+  '${WHALEDECK_TITLE} ${WHALEDECK_BACKEND_VERSION} ${WHALEDECK_API_BASE_URL} ${WHALEDECK_AUTHENTIK_URL} ${WHALEDECK_GITLAB_URL}' \
   < /usr/share/nginx/runtime-config.template.js \
   > /tmp/runtime-config.js
 

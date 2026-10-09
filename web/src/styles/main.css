@@ -293,6 +293,24 @@ a {
     color 180ms ease;
 }
 
+.backend-version {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  min-height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--el-color-primary) 42%, var(--el-border-color));
+  border-radius: 6px;
+  color: var(--el-color-primary);
+  background: color-mix(in srgb, var(--el-color-primary) 8%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 .command-search:hover {
   border-color: var(--el-color-primary-light-5);
   color: var(--el-text-color-secondary);
