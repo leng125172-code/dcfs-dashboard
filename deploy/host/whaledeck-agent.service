@@ -1,7 +1,7 @@
 [Unit]
 Description=Whale Deck host management agent
 Documentation=file:/opt/whaledeck-agent/README.md
-Requires=docker.service
+Wants=docker.service
 After=docker.service network-online.target
 
 [Service]
@@ -15,6 +15,7 @@ Restart=on-failure
 RestartSec=5s
 RuntimeDirectory=whaledeck whaledeck/maintenance
 RuntimeDirectoryMode=0770
+RuntimeDirectoryPreserve=yes
 StateDirectory=whaledeck-agent
 StateDirectoryMode=0750
 UMask=0007
@@ -28,7 +29,8 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
+# The .NET JIT requires executable code pages; keep the agent alive across
+# Docker shutdown/restart and report dependency health through the UDS.
 RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
 SystemCallArchitectures=native
 CapabilityBoundingSet=

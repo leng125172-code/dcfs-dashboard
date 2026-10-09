@@ -1,7 +1,9 @@
 # Secrets and local configuration
 .env
 .env.*
+.images.env
 !.env.example
+!.images.env.example
 secrets/
 appsettings.Local.json
 
@@ -31,3 +33,4 @@ Thumbs.db
 logs/
 *.log
 deploy/artifacts/
+deploy/install/install.env

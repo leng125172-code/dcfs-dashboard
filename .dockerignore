@@ -2,6 +2,13 @@
 .github
 .env
 .env.*
+.images.env
+**/.env
+**/.env.*
+deploy/install/install.env
+deploy/artifacts
+secrets
+logs
 **/bin
 **/obj
 **/node_modules

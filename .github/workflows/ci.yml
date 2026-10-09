@@ -10,6 +10,17 @@ permissions:
   contents: read
 
 jobs:
+  installer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check shell syntax and side-effect-free preview
+        run: |
+          bash -n install.sh
+          bash -n deploy/host/publish-and-install.sh
+          bash -n deploy/host/install.sh
+          bash tests/installer-cli.sh
+
   backend:
     runs-on: ubuntu-latest
     steps:

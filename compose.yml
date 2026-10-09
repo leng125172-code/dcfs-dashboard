@@ -21,6 +21,9 @@ services:
     build:
       context: .
       dockerfile: deploy/gateway/Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:24.15.0-alpine}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx:1.29-alpine}
     ports:
       - "127.0.0.1:${WHALEDECK_GATEWAY_UPSTREAM_PORT:-18080}:8080"
       - "127.0.0.1:${AUTHENTIK_UPSTREAM_PORT:-18081}:8081"
@@ -50,6 +53,9 @@ services:
     build:
       context: .
       dockerfile: src/WhaleDeck.Api/Dockerfile
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:-mcr.microsoft.com/dotnet/sdk:10.0.300}
+        ASPNET_IMAGE: ${ASPNET_IMAGE:-mcr.microsoft.com/dotnet/aspnet:10.0.8}
     expose:
       - "8080"
     environment:
@@ -69,7 +75,8 @@ services:
       Authentication__Authentik__ApiToken: ${WHALEDECK_AUTHENTIK_API_TOKEN:?set WHALEDECK_AUTHENTIK_API_TOKEN}
       Authentication__Authentik__AdministratorGroupId: ${WHALEDECK_AUTHENTIK_ADMIN_GROUP_ID:?set WHALEDECK_AUTHENTIK_ADMIN_GROUP_ID}
     volumes:
-      - /run/whaledeck/agent.sock:/run/whaledeck/agent.sock
+      # Mount the parent directory so reconnects see the new socket inode after an Agent restart.
+      - /run/whaledeck:/run/whaledeck:ro
       - /etc/whaledeck/agent-capability.key:/run/secrets/agent-capability.key:ro
     group_add:
       - "${WHALEDECK_AGENT_GID:?set WHALEDECK_AGENT_GID}"
@@ -93,6 +100,9 @@ services:
     build:
       context: .
       dockerfile: src/WhaleDeck.Worker/Dockerfile
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:-mcr.microsoft.com/dotnet/sdk:10.0.300}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:-mcr.microsoft.com/dotnet/runtime:10.0.8}
     environment:
       DOTNET_ENVIRONMENT: Production
       ConnectionStrings__WhaleDeck: Host=postgres;Port=5432;Database=${WHALEDECK_DB_NAME:-whaledeck};Username=${WHALEDECK_DB_USER:-whaledeck};Password=${WHALEDECK_DB_PASSWORD:?set WHALEDECK_DB_PASSWORD};Application Name=whaledeck-worker
@@ -102,7 +112,7 @@ services:
       Agent__SocketPath: /run/whaledeck/agent.sock
       Agent__CapabilityKeyFile: /run/secrets/agent-capability.key
     volumes:
-      - /run/whaledeck/agent.sock:/run/whaledeck/agent.sock
+      - /run/whaledeck:/run/whaledeck:ro
       - /etc/whaledeck/agent-capability.key:/run/secrets/agent-capability.key:ro
     group_add:
       - "${WHALEDECK_AGENT_GID:?set WHALEDECK_AGENT_GID}"
@@ -117,6 +127,24 @@ services:
         limits:
           cpus: "1.00"
           memory: 1g
+
+  migrator:
+    <<: *service-defaults
+    restart: "no"
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: src/WhaleDeck.Migrator/Dockerfile
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:-mcr.microsoft.com/dotnet/sdk:10.0.300}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:-mcr.microsoft.com/dotnet/runtime:10.0.8}
+    environment:
+      ConnectionStrings__WhaleDeck: Host=postgres;Port=5432;Database=${WHALEDECK_DB_NAME:-whaledeck};Username=${WHALEDECK_DB_USER:-whaledeck};Password=${WHALEDECK_DB_PASSWORD:?set WHALEDECK_DB_PASSWORD};Application Name=whaledeck-migrator
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks:
+      - postgres_backend
 
 networks:
   whaledeck_frontend:

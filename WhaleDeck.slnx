@@ -6,7 +6,8 @@
     <Project Path="src/WhaleDeck.Contracts/WhaleDeck.Contracts.csproj" />
     <Project Path="src/WhaleDeck.Domain/WhaleDeck.Domain.csproj" />
     <Project Path="src/WhaleDeck.Infrastructure/WhaleDeck.Infrastructure.csproj" />
-    <Project Path="src/WhaleDeck.MaintenanceHost/WhaleDeck.MaintenanceHost.csproj" />
+  <Project Path="src/WhaleDeck.MaintenanceHost/WhaleDeck.MaintenanceHost.csproj" />
+  <Project Path="src/WhaleDeck.Migrator/WhaleDeck.Migrator.csproj" />
     <Project Path="src/WhaleDeck.Worker/WhaleDeck.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">

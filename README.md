@@ -1,12 +1,14 @@
 # WhaleDeck
 
-WhaleDeck is the containerized control plane for the Precision 7920 workstation. It provides a single IP-based entry point for platform status, Authentik-backed login and user identity, GitLab, user synchronization, and later restricted container operations.
+Whale Deck is a containerized control plane for the Precision 7920 workstation, with a host-side Agent and maintenance entry point. It is under active development: platform status, Authentik identity, portals and restricted container management are being implemented. GitLab integration is deferred.
+
+See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the distinction between implemented code, placeholders and pending workstation acceptance. A passing build does not mean the complete backend is ready for production.
 
 ## Technology
 
 - ASP.NET Core 10 Web API and .NET Worker Service
 - EF Core 10 with Npgsql for PostgreSQL 18
-- Valkey 9 through the official `Valkey.Glide` client
+- Valkey 9 for expiring cache and authorization snapshots via the Redis-compatible distributed-cache interface
 - Vue 3, TypeScript, Vite, Pinia, Vue Router, and Element Plus
 - Nginx gateway serving the Vue build and proxying API and Authentik traffic
 
@@ -24,12 +26,19 @@ The product baseline starts in [docs/FEATURES.md](docs/FEATURES.md). The complet
 src/
   WhaleDeck.Api/
   WhaleDeck.Application/
+  WhaleDeck.Contracts/
   WhaleDeck.Domain/
   WhaleDeck.Infrastructure/
   WhaleDeck.Worker/
+  WhaleDeck.Agent/
+  WhaleDeck.MaintenanceHost/
+  WhaleDeck.Migrator/
 web/
 tests/
 deploy/gateway/
+deploy/host/
+deploy/install/
+install.sh
 ```
 
 ## Branch model
@@ -67,14 +76,21 @@ The intended canonical URLs are:
 - Authentik: `http://192.168.22.19:8081`
 - GitLab: `http://192.168.22.19:8082` (added when GitLab is deployed)
 
-Only the gateway publishes host ports. The API and Worker are internal containers. The API must never mount `/var/run/docker.sock`; future container actions go through a separate allow-listed agent.
+The host-side MaintenanceHost binds both `192.168.22.19` and `192.168.100.13`. The gateway publishes only loopback upstream ports (`18080` and `18081`). API, Worker, databases, cache and Authentik do not publish host ports. API and Worker must never mount `/var/run/docker.sock`; container operations use the Agent Unix socket and an allow-listed resource registry.
+
+## Staged installation
+
+The [installation guide](deploy/install/README.md) describes the seven-stage Linux workflow: tool/source checks, optional Docker accelerator configuration, dependency repository deployment, then source build and deployment. `bash install.sh --dry-run` previews the workflow without network or system changes. `--dependencies-only` excludes the Whale Deck build/deployment stage.
+
+The scripts are not a production-acceptance claim. Workstation acceptance is pending and no Whale Deck container image has been built or started as part of the current implementation.
 
 ## Container boundaries
 
 - `whaledeck-gateway`: `whaledeck-app-ui` and `database-platform-app-authentik`
 - `whaledeck-api`: `whaledeck-app-ui`, `database-platform-app-authentik`, `database-platform-db-postgres`, and `database-platform-cache-general`
 - `whaledeck-worker`: `database-platform-db-postgres` and `database-platform-cache-general`
+- `migrator`: one-shot tool on `database-platform-db-postgres`, run before API/Worker start
 
 Docker uses the `local` logging driver with a maximum of five compressed 10 MiB files per container. Application request logs below server errors are emitted at debug level to avoid repeating the previous log-volume incident.
 
-The Dockerfiles currently pin exact base-image tags. Before the first workstation deployment, resolve and append immutable manifest digests through the configured Xuanyuan/MCR mirrors and commit those digests with the deployment change.
+The Dockerfiles provide pinned development tag defaults. Before a formal installation, create `.images.env` from `.images.env.example` with immutable base-image digests. The installer rejects missing digests before the image-build stage. Record approved digests in release configuration; never mix credentials into image-version files.

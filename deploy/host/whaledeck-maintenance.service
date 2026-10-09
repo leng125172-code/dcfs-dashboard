@@ -21,9 +21,8 @@ ProtectControlGroups=true
 NoNewPrivileges=true
 RestrictSUIDSGID=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadOnlyPaths=/run/whaledeck/maintenance/status.json
+ReadOnlyPaths=-/run/whaledeck/maintenance
 
 [Install]
 WantedBy=multi-user.target
