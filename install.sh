@@ -274,6 +274,7 @@ write_runtime_environment() {
   {
     printf 'WHALEDECK_GATEWAY_UPSTREAM_PORT=18080\nAUTHENTIK_UPSTREAM_PORT=18081\n'
     printf 'WHALEDECK_AGENT_GID=%s\n' "$agent_gid"
+    printf 'WHALEDECK_RUNTIME_UID=%s\n' "${WHALEDECK_RUNTIME_UID:-1654}"
     printf 'WHALEDECK_DB_NAME=whaledeck\nWHALEDECK_DB_USER=whaledeck\nWHALEDECK_VALKEY_USER=whaledeck\n'
     write_secret_setting WHALEDECK_DB_PASSWORD "$database_password"
     write_secret_setting WHALEDECK_VALKEY_PASSWORD "$valkey_password"

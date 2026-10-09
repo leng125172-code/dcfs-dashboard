@@ -50,6 +50,10 @@ services:
   api:
     <<: *service-defaults
     container_name: whaledeck-api
+    # The Agent authenticates SO_PEERCRED effective credentials, therefore the
+    # host whaledeck group must be this process' primary group, not only a
+    # supplementary group added for filesystem access.
+    user: "${WHALEDECK_RUNTIME_UID:-1654}:${WHALEDECK_AGENT_GID:?set WHALEDECK_AGENT_GID}"
     build:
       context: .
       dockerfile: src/WhaleDeck.Api/Dockerfile
@@ -78,8 +82,6 @@ services:
       # Mount the parent directory so reconnects see the new socket inode after an Agent restart.
       - /run/whaledeck:/run/whaledeck:ro
       - /etc/whaledeck/agent-capability.key:/run/secrets/agent-capability.key:ro
-    group_add:
-      - "${WHALEDECK_AGENT_GID:?set WHALEDECK_AGENT_GID}"
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -97,6 +99,7 @@ services:
   worker:
     <<: *service-defaults
     container_name: whaledeck-worker
+    user: "${WHALEDECK_RUNTIME_UID:-1654}:${WHALEDECK_AGENT_GID:?set WHALEDECK_AGENT_GID}"
     build:
       context: .
       dockerfile: src/WhaleDeck.Worker/Dockerfile
@@ -114,8 +117,6 @@ services:
     volumes:
       - /run/whaledeck:/run/whaledeck:ro
       - /etc/whaledeck/agent-capability.key:/run/secrets/agent-capability.key:ro
-    group_add:
-      - "${WHALEDECK_AGENT_GID:?set WHALEDECK_AGENT_GID}"
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
