@@ -167,6 +167,16 @@ public sealed class OutboxMessage
     public string? LastErrorCode { get; set; }
 }
 
+public sealed class ResourceOperationLease
+{
+    public required string LockKey { get; init; }
+    public Guid JobId { get; set; }
+    public required string OwnerId { get; set; }
+    public DateTimeOffset AcquiredAtUtc { get; set; }
+    public DateTimeOffset LeaseExpiresAtUtc { get; set; }
+    public long Version { get; set; }
+}
+
 public sealed class MetricSeries
 {
     public Guid Id { get; init; } = Guid.NewGuid();

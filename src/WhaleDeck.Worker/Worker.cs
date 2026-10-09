@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using WhaleDeck.Application.Abstractions;
 using WhaleDeck.Application.Models;
@@ -17,6 +19,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
 
     private DateTimeOffset _nextCatalogRefresh = DateTimeOffset.MinValue;
     private DateTimeOffset _nextRetentionSweep = DateTimeOffset.MinValue;
+    private readonly string _workerInstanceId = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -40,9 +43,10 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var agent = scope.ServiceProvider.GetRequiredService<IAgentGateway>();
+        var leases = scope.ServiceProvider.GetRequiredService<ResourceLeaseManager>();
         await CollectMetrics(db, agent, cancellationToken);
-        await DispatchOutbox(db, agent, cancellationToken);
-        await ReconcileAgentOperations(db, agent, cancellationToken);
+        await DispatchOutbox(db, agent, leases, _workerInstanceId, cancellationToken);
+        await ReconcileAgentOperations(db, agent, leases, _workerInstanceId, cancellationToken);
 
         if (_nextCatalogRefresh <= DateTimeOffset.UtcNow)
         {
@@ -82,7 +86,12 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private static async Task DispatchOutbox(PlatformDbContext db, IAgentGateway agent, CancellationToken cancellationToken)
+    private static async Task DispatchOutbox(
+        PlatformDbContext db,
+        IAgentGateway agent,
+        ResourceLeaseManager leases,
+        string workerInstanceId,
+        CancellationToken cancellationToken)
     {
         var messages = await db.OutboxMessages.Where(item => item.ProcessedAtUtc == null && item.AvailableAtUtc <= DateTimeOffset.UtcNow)
             .OrderBy(item => item.OccurredAtUtc).Take(10).ToArrayAsync(cancellationToken);
@@ -95,6 +104,13 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                     using var payload = JsonDocument.Parse(message.PayloadJson);
                     var jobId = payload.RootElement.GetProperty("jobId").GetGuid();
                     var job = await db.OperationJobs.SingleAsync(item => item.Id == jobId, cancellationToken);
+                    var lockKey = GetResourceLockKey(job);
+                    if (!await leases.TryAcquireAsync(lockKey, job.Id, workerInstanceId, cancellationToken))
+                    {
+                        message.AvailableAtUtc = DateTimeOffset.UtcNow.AddSeconds(6);
+                        await db.SaveChangesAsync(cancellationToken);
+                        continue;
+                    }
                     if (job.CancelRequestedAtUtc is not null)
                     {
                         await Complete(db, job, "Canceled", "Canceled", null, cancellationToken);
@@ -119,12 +135,23 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                         job.AgentOperationId = Guid.TryParse(operation.OperationId, out var operationId) ? operationId : null;
                         await ApplyAgentState(db, job, operation, cancellationToken);
                     }
+                    if (job.CompletedAtUtc is not null)
+                    {
+                        await leases.ReleaseAsync(lockKey, job.Id, workerInstanceId, cancellationToken);
+                    }
                 }
                 else if (message.MessageType == "OperationCancellationRequested")
                 {
                     using var payload = JsonDocument.Parse(message.PayloadJson);
                     var jobId = payload.RootElement.GetProperty("jobId").GetGuid();
                     var job = await db.OperationJobs.SingleAsync(item => item.Id == jobId, cancellationToken);
+                    var lockKey = GetResourceLockKey(job);
+                    if (!await leases.TryAcquireAsync(lockKey, job.Id, workerInstanceId, cancellationToken))
+                    {
+                        message.AvailableAtUtc = DateTimeOffset.UtcNow.AddSeconds(6);
+                        await db.SaveChangesAsync(cancellationToken);
+                        continue;
+                    }
                     if (job.CompletedAtUtc is null)
                     {
                         if (job.AgentOperationId is { } operationId)
@@ -136,6 +163,10 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                         {
                             await Complete(db, job, "Canceled", "CanceledBeforeDispatch", null, cancellationToken);
                         }
+                    }
+                    if (job.CompletedAtUtc is not null)
+                    {
+                        await leases.ReleaseAsync(lockKey, job.Id, workerInstanceId, cancellationToken);
                     }
                 }
                 message.ProcessedAtUtc = DateTimeOffset.UtcNow;
@@ -152,7 +183,12 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         }
     }
 
-    private static async Task ReconcileAgentOperations(PlatformDbContext db, IAgentGateway agent, CancellationToken cancellationToken)
+    private static async Task ReconcileAgentOperations(
+        PlatformDbContext db,
+        IAgentGateway agent,
+        ResourceLeaseManager leases,
+        string workerInstanceId,
+        CancellationToken cancellationToken)
     {
         var jobs = await db.OperationJobs
             .Where(item => item.AgentOperationId != null && item.CompletedAtUtc == null)
@@ -162,12 +198,29 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
 
         foreach (var job in jobs)
         {
+            var lockKey = GetResourceLockKey(job);
+            if (!await leases.TryAcquireAsync(lockKey, job.Id, workerInstanceId, cancellationToken)) continue;
             var operationId = job.AgentOperationId!.Value.ToString("D");
             var operation = job.CancelRequestedAtUtc is not null
                 ? await agent.CancelOperationAsync(operationId, cancellationToken)
                 : await agent.GetOperationAsync(operationId, cancellationToken);
             await ApplyAgentState(db, job, operation, cancellationToken);
+            if (job.CompletedAtUtc is not null)
+            {
+                await leases.ReleaseAsync(lockKey, job.Id, workerInstanceId, cancellationToken);
+            }
         }
+    }
+
+    private static string GetResourceLockKey(OperationJob job)
+    {
+        using var request = JsonDocument.Parse(job.RequestJson);
+        var resourceId = request.RootElement.TryGetProperty("resourceId", out var resource) && resource.ValueKind == JsonValueKind.String
+            ? resource.GetString()
+            : null;
+        var area = job.JobType.Split('.', 2)[0];
+        var identity = $"{area}:{resourceId ?? "global"}";
+        return $"{area}:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)))}";
     }
 
     private static Task ApplyAgentState(

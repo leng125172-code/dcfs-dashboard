@@ -50,7 +50,9 @@
 
 ## 仍需实现或实测
 
-Worker 已能在重启后根据持久化的 Agent operation id 恢复轮询，持续同步进度和终态，并把取消请求传播到 Agent；未知的未来 Agent 状态按等待处理，避免错误地报告成功。Worker 向 Agent 传递 job id 与幂等键，Agent 以 SHA-256 索引将请求绑定到持久化 operation；API/Worker 或 Agent 在响应前重启时，重试返回原 operation，不会重复执行同一容器动作。下列项目仍不能标记为完成：六类数据库管理适配器与真实 CRUD/授权/轮换验收，应用安装/更新/回滚执行器，备份与定时调度，完整资源租约/锁，指标日分区/聚合，告警和配置推送，完整 Authentik 用户与 SSO 写操作，Agent Unix peer credentials 校验，Docker 配置维护的业务端到端回滚。
+Worker 已能在重启后根据持久化的 Agent operation id 恢复轮询，持续同步进度和终态，并把取消请求传播到 Agent；未知的未来 Agent 状态按等待处理，避免错误地报告成功。Worker 向 Agent 传递 job id 与幂等键，Agent 以 SHA-256 索引将请求绑定到持久化 operation；API/Worker 或 Agent 在响应前重启时，重试返回原 operation，不会重复执行同一容器动作。下列项目仍不能标记为完成：六类数据库管理适配器与真实 CRUD/授权/轮换验收，应用安装/更新/回滚执行器，备份与定时调度，指标日分区/聚合，告警和配置推送，完整 Authentik 用户与 SSO 写操作，Agent Unix peer credentials 校验，Docker 配置维护的业务端到端回滚。
+
+资源写操作现已增加 PostgreSQL 持久租约：同一逻辑资源一次只允许一个 job 持有，Worker 每 6 秒续租，进程失联 30 秒后可由其他实例接管，终态主动释放。初始 migration 与资源租约 migration 已在工作站的空 `whaledeck` 数据库中由独立 Migrator 成功应用，共创建 27 张表；API/Worker 仍未部署或启动。Agent 幂等版本已原位升级并再次通过宿主验证。
 
 Agent capability 已限制为最长 60 秒、调用方法签名绑定和一次性 nonce；签发端使用 45 秒有效期，并增加过期、错方法、超长有效期及重放测试。Unix socket peer credentials 的进程级校验仍未实现，不能用 socket 文件权限替代该未完成项。
 

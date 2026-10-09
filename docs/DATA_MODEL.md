@@ -145,6 +145,10 @@
 
 保存同事务产生的后台事件：`id`、`message_type`、`payload_json`、`occurred_at_utc`、`available_at_utc`、`attempts`、`processed_at_utc` 和 `last_error_code`。Worker 使用租约处理，防止数据库提交成功但任务未发布。
 
+### `DM-RESOURCE-LEASE` `resource_operation_leases`
+
+持久化同一逻辑资源上的写操作互斥：`lock_key`、`job_id`、`owner_id`、`acquired_at_utc`、`lease_expires_at_utc` 和 `version`。`lock_key` 为操作区域与资源稳定标识的 SHA-256 派生值，不保存敏感连接信息。Worker 每 6 秒续租，租约 30 秒失效，任务进入终态时主动释放；Worker 异常退出后其他实例可接管。PostgreSQL 是资源锁的权威存储，Valkey 清空不会解除尚未过期的写操作互斥。
+
 ## 6. 指标与资源状态
 
 ### `DM-METRIC-SERIES` `metric_series`
@@ -219,7 +223,6 @@ Valkey 使用 `noeviction`，所有临时键必须设置 TTL，并对写失败�
 | `whaledeck:agent:heartbeat` | 20 秒 | Agent 心跳与能力摘要 |
 | `whaledeck:resource:{id}:state` | 30 秒 | 最近容器/数据库状态 |
 | `whaledeck:job:{id}:progress` | 24 小时 | 实时任务进度，最终结果仍写 PostgreSQL |
-| `whaledeck:lock:{resourceId}` | 操作超时 + 心跳 | 分布式资源锁 |
 | `whaledeck:catalog:xuanyuan` | 1 小时 | 热门应用缓存 |
 | `whaledeck:ratelimit:*` | 按窗口 | 登录回调和高成本查询限流 |
 

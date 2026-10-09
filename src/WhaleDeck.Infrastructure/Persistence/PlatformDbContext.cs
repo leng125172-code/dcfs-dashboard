@@ -20,6 +20,7 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
     public DbSet<ScheduledTask> ScheduledTasks => Set<ScheduledTask>();
     public DbSet<ScheduledTaskRun> ScheduledTaskRuns => Set<ScheduledTaskRun>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+    public DbSet<ResourceOperationLease> ResourceOperationLeases => Set<ResourceOperationLease>();
     public DbSet<MetricSeries> MetricSeries => Set<MetricSeries>();
     public DbSet<MetricSample> MetricSamples => Set<MetricSample>();
     public DbSet<MetricRollup> MetricRollups => Set<MetricRollup>();
@@ -161,6 +162,16 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             entity.HasKey(item => item.Id);
             entity.Property(item => item.PayloadJson).HasColumnType("jsonb");
             entity.HasIndex(item => new { item.ProcessedAtUtc, item.AvailableAtUtc });
+        });
+        modelBuilder.Entity<ResourceOperationLease>(entity =>
+        {
+            entity.ToTable("resource_operation_leases");
+            entity.HasKey(item => item.LockKey);
+            entity.Property(item => item.LockKey).HasMaxLength(192);
+            entity.Property(item => item.OwnerId).HasMaxLength(192);
+            entity.Property(item => item.Version).IsConcurrencyToken();
+            entity.HasIndex(item => item.JobId).IsUnique();
+            entity.HasIndex(item => item.LeaseExpiresAtUtc);
         });
         modelBuilder.Entity<ScheduledTask>(entity =>
         {

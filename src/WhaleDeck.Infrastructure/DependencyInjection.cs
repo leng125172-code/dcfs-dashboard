@@ -53,6 +53,7 @@ public static class DependencyInjection
 
         services.AddScoped<IPortalRepository, PortalRepository>();
         services.AddScoped<IJobRepository, JobRepository>();
+        services.AddScoped<ResourceLeaseManager>();
         services.AddScoped<IIdentityDirectory, AuthentikIdentityDirectory>();
         services.AddScoped<ICatalogProvider, XuanyuanCatalogProvider>();
         services.AddSingleton<AgentGateway>();
