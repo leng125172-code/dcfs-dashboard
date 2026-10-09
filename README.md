@@ -16,7 +16,7 @@ WhaleDeck has no local password store and does not duplicate Authentik user prof
 
 ## Product scope
 
-The living frontend/backend feature baseline, implementation status, security levels, and staged roadmap are documented in [docs/FEATURES.md](docs/FEATURES.md).
+The product baseline starts in [docs/FEATURES.md](docs/FEATURES.md). The complete page, use-case, Agent RPC, permission, data-model, and delivery breakdown is indexed in [docs/README.md](docs/README.md).
 
 ## Repository layout
 
