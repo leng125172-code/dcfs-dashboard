@@ -37,6 +37,12 @@ public interface ICatalogProvider
     Task<CatalogResultDto> GetPopularAsync(CancellationToken cancellationToken);
 }
 
+public interface IOneTimeSecretStore
+{
+    Task<OneTimeSecretTicketDto> StoreAsync(string ownerSubject, string secret, CancellationToken cancellationToken);
+    Task<string?> ConsumeAsync(string ownerSubject, string token, CancellationToken cancellationToken);
+}
+
 public interface IIdentityDirectory
 {
     Task<CurrentUserDto> ResolveCurrentAsync(string subject, string? name, IReadOnlyCollection<string> claimGroups, CancellationToken cancellationToken);

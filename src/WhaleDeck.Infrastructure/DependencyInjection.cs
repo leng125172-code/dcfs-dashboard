@@ -7,6 +7,8 @@ using WhaleDeck.Application.Services;
 using WhaleDeck.Infrastructure.Agent;
 using WhaleDeck.Infrastructure.Catalog;
 using WhaleDeck.Infrastructure.Identity;
+using WhaleDeck.Infrastructure.Secrets;
+using StackExchange.Redis;
 
 namespace WhaleDeck.Infrastructure;
 
@@ -27,6 +29,7 @@ public static class DependencyInjection
         if (string.IsNullOrWhiteSpace(valkeyEndpoint))
         {
             services.AddDistributedMemoryCache();
+            services.AddSingleton<IOneTimeSecretStore, MemoryOneTimeSecretStore>();
         }
         else
         {
@@ -37,6 +40,14 @@ public static class DependencyInjection
                 options.InstanceName = "whaledeck:";
                 options.Configuration = $"{valkeyEndpoint},user={user},password={password},abortConnect=false";
             });
+            services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(new ConfigurationOptions
+            {
+                EndPoints = { valkeyEndpoint },
+                User = user,
+                Password = password,
+                AbortOnConnectFail = false
+            }));
+            services.AddSingleton<IOneTimeSecretStore, ValkeyOneTimeSecretStore>();
         }
 
         services.AddHttpClient("Authentik", client =>

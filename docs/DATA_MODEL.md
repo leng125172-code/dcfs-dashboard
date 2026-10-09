@@ -6,7 +6,7 @@
 
 - PostgreSQL 保存平台配置、个人门户、资源注册、任务、审计、指标、告警、备份与同步历史。
 - Valkey 保存可重建的权限快照、概览缓存、心跳、短期资源状态、锁和任务进度。
-- Secret、OIDC Token、数据库密码、私钥、SQL Server 产品密钥和 Git 凭据不得进入 PostgreSQL、Valkey、审计或日志。
+- 长期 Secret、OIDC Token、现有数据库密码、私钥、SQL Server 产品密钥和 Git 凭据不得进入 PostgreSQL、Valkey、审计或日志。数据库账号创建/轮换后生成的新密码只允许进入 5 分钟、单次消费的 Valkey Secret，读取后原子删除。
 - 所有时间使用 UTC `timestamptz`，ID 默认使用 UUID。
 - 每次 schema 变化使用 EF Core migration；生产环境禁止 `EnsureCreated`。
 - JSONB 只用于结构变化频繁的快照/详情，不用来逃避稳定业务字段建模。
@@ -223,6 +223,7 @@ Valkey 使用 `noeviction`，所有临时键必须设置 TTL，并对写失败�
 | `whaledeck:agent:heartbeat` | 20 秒 | Agent 心跳与能力摘要 |
 | `whaledeck:resource:{id}:state` | 30 秒 | 最近容器/数据库状态 |
 | `whaledeck:job:{id}:progress` | 24 小时 | 实时任务进度，最终结果仍写 PostgreSQL |
+| `whaledeck:secret:{subjectHash}:{token}` | 5 分钟 | 新生成凭据的一次性交付；`GETDEL` 原子读取后删除 |
 | `whaledeck:catalog:xuanyuan` | 1 小时 | 热门应用缓存 |
 | `whaledeck:ratelimit:*` | 按窗口 | 登录回调和高成本查询限流 |
 

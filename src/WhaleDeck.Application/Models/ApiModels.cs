@@ -115,6 +115,8 @@ public sealed record MetricValueDto(string Kind, string DeviceId, double Value, 
 
 public sealed record AgentOperationDto(string OperationId, string State, string Phase, int ProgressPercent, string? ErrorCode);
 
+public sealed record OneTimeSecretTicketDto(string Token, DateTimeOffset ExpiresAtUtc);
+
 public sealed record CatalogApplicationDto(
     string Id,
     string Name,
