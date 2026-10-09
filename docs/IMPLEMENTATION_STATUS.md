@@ -44,14 +44,16 @@ sudo /data/GitRepos/database-platform/bootstrap/install-workstation-update-syste
 ## 本地验证记录
 
 - .NET Release 构建通过：0 警告、0 错误。
-- .NET 自动化测试 15 项通过（10 项 UnitTests、5 项 IntegrationTests；其中身份测试使用离线 HTTP/cache 替身）。
+- .NET 自动化测试 18 项通过（13 项 UnitTests、5 项 IntegrationTests；其中身份测试使用离线 HTTP/cache 替身）。
 - 安装器命令行 5 项检查通过，空 PATH 下验证 dry-run 不调用系统工具。
 - 依赖环境生成测试通过：专用密码独立生成，重复执行不覆盖原文件。
 - Shell 语法检查通过；未执行正式安装流程或容器镜像构建。
 
 ## 仍需实现或实测
 
-下列项目不能标记为完成：六类数据库管理适配器与真实 CRUD/授权/轮换验收，应用安装/更新/回滚执行器，备份与定时调度，完整资源锁与任务恢复，指标日分区/聚合，告警和配置推送，完整 Authentik 用户与 SSO 写操作，Agent peer credentials 和 capability 防重放，Docker 配置维护的端到端回滚。
+下列项目不能标记为完成：六类数据库管理适配器与真实 CRUD/授权/轮换验收，应用安装/更新/回滚执行器，备份与定时调度，完整资源锁与任务恢复，指标日分区/聚合，告警和配置推送，完整 Authentik 用户与 SSO 写操作，Agent Unix peer credentials 校验，Docker 配置维护的端到端回滚。
+
+Agent capability 已限制为最长 60 秒、调用方法签名绑定和一次性 nonce；签发端使用 45 秒有效期，并增加过期、错方法、超长有效期及重放测试。Unix socket peer credentials 的进程级校验仍未实现，不能用 socket 文件权限替代该未完成项。
 
 宿主服务安装/升级、systemd 沙箱与受限 sudo helper 的兼容性仍需 Linux 实测；Authentik 的 OIDC subject 与管理 API 用户 ID 映射仍需完善。不能据当前脚本认定生产认证或宿主高权限操作已完成验收。
 

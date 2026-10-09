@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using Grpc.Core;
@@ -7,8 +8,10 @@ namespace WhaleDeck.Agent.Services;
 
 public sealed class CapabilityValidator(IConfiguration configuration)
 {
+    private const long MaximumLifetimeSeconds = 60;
     private readonly string _keyFile = configuration["Agent:CapabilityKeyFile"]
         ?? "/etc/whaledeck/agent-capability.key";
+    private readonly ConcurrentDictionary<string, long> _usedNonces = new(StringComparer.Ordinal);
 
     public bool Validate(string? token, string method)
     {
@@ -25,8 +28,10 @@ public sealed class CapabilityValidator(IConfiguration configuration)
         }
 
         var parts = token.Split('.', 3);
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         if (parts.Length != 3 || !long.TryParse(parts[0], out var expiresAt) ||
-            DateTimeOffset.UtcNow.ToUnixTimeSeconds() > expiresAt)
+            expiresAt < now || expiresAt - now > MaximumLifetimeSeconds ||
+            parts[1].Length is < 16 or > 128)
         {
             return false;
         }
@@ -34,9 +39,23 @@ public sealed class CapabilityValidator(IConfiguration configuration)
         var payload = $"{parts[0]}.{parts[1]}.{method}";
         using var hmac = new HMACSHA256(File.ReadAllBytes(_keyFile));
         var expected = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(payload)));
-        return CryptographicOperations.FixedTimeEquals(
+        var valid = CryptographicOperations.FixedTimeEquals(
             Encoding.ASCII.GetBytes(expected),
             Encoding.ASCII.GetBytes(parts[2].ToUpperInvariant()));
+        if (!valid)
+        {
+            return false;
+        }
+
+        foreach (var used in _usedNonces)
+        {
+            if (used.Value < now)
+            {
+                _usedNonces.TryRemove(used.Key, out _);
+            }
+        }
+
+        return _usedNonces.TryAdd(parts[1], expiresAt);
     }
 }
 

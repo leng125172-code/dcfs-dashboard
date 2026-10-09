@@ -166,7 +166,7 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
     private Metadata Headers(string method)
     {
         if (_capabilityKey is null) return [];
-        var expires = DateTimeOffset.UtcNow.AddMinutes(2).ToUnixTimeSeconds();
+        var expires = DateTimeOffset.UtcNow.AddSeconds(45).ToUnixTimeSeconds();
         var nonce = Guid.NewGuid().ToString("N");
         using var hmac = new HMACSHA256(_capabilityKey);
         var signature = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"{expires}.{nonce}.{method}")));
