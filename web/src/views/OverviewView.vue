@@ -10,7 +10,6 @@ import {
   DataAnalysis,
   MagicStick,
   Monitor,
-  MoreFilled,
   Platform,
   Promotion,
   Refresh,
@@ -172,182 +171,187 @@ onMounted(() => {
       </article>
     </section>
 
-    <section id="status" class="panel overview-panel content-anchor">
-      <header class="overview-panel__header">
-        <div>
-          <span class="panel__eyebrow">SYSTEM STATUS</span>
-          <h2>运行状态</h2>
-        </div>
-        <el-tag type="success" effect="light" round> <span class="live-dot" /> 实时采样 </el-tag>
-      </header>
-
-      <div class="status-grid">
-        <article class="health-card">
-          <span class="health-card__halo">
-            <el-icon><CircleCheckFilled /></el-icon>
-          </span>
-          <div>
-            <span>综合状态</span>
-            <strong>{{ snapshot.healthMessage }}</strong>
-            <p>{{ snapshot.healthDetail }}</p>
-          </div>
-        </article>
-
-        <article v-for="metric in snapshot.usage" :key="metric.key" class="usage-card">
-          <el-progress
-            type="dashboard"
-            :percentage="metric.percentage"
-            :width="116"
-            :stroke-width="8"
-            :color="gaugeColor(metric.percentage)"
-          >
-            <template #default>
-              <strong>{{ metric.percentage.toFixed(1) }}%</strong>
-            </template>
-          </el-progress>
-          <div class="usage-card__copy">
-            <span>{{ metric.label }}</span>
-            <strong>{{ metric.value }}</strong>
-            <small>{{ metric.detail }}</small>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <section id="monitoring" class="panel overview-panel monitoring-panel content-anchor">
-      <header class="overview-panel__header monitoring-panel__header">
-        <div>
-          <span class="panel__eyebrow">TELEMETRY</span>
-          <h2>实时监控</h2>
-        </div>
-        <div class="monitoring-toolbar">
-          <el-segmented v-model="monitorMode" :options="monitorOptions" />
-          <el-select v-model="selectedTelemetryFilter" class="monitoring-filter">
-            <el-option
-              v-for="option in activeTelemetry.filters"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
-          </el-select>
-        </div>
-      </header>
-
-      <div class="telemetry-summary">
-        <div
-          v-for="stat in activeFilter.stats"
-          :key="stat.label"
-          class="telemetry-stat"
-          :class="`telemetry-stat--${stat.tone}`"
-        >
-          <span>{{ stat.label }}</span>
-          <strong>{{ stat.value }}</strong>
-        </div>
-        <div class="telemetry-legend" aria-label="图例">
-          <span v-for="item in activeFilter.series" :key="item.name">
-            <i :style="{ backgroundColor: item.color }" />{{ item.name }}
-          </span>
-        </div>
-      </div>
-
-      <TelemetryChart
-        :key="`${monitorMode}-${selectedTelemetryFilter}`"
-        :labels="activeTelemetry.labels"
-        :series="activeFilter.series"
-        :unit="activeTelemetry.unit"
-      />
-    </section>
-
-    <section id="system" class="panel overview-panel content-anchor">
-      <header class="overview-panel__header">
-        <div>
-          <span class="panel__eyebrow">HOST INFORMATION</span>
-          <h2>系统信息</h2>
-        </div>
-        <el-tag effect="plain" round>Linux 工作站</el-tag>
-      </header>
-
-      <div class="system-grid">
-        <article v-for="item in snapshot.system" :key="item.label" class="system-item">
-          <span>{{ item.label }}</span>
-          <strong>{{ item.value }}</strong>
-          <small v-if="item.hint">{{ item.hint }}</small>
-        </article>
-      </div>
-    </section>
-
-    <section id="containers" class="panel overview-panel content-anchor">
-      <header class="overview-panel__header application-header">
-        <div>
-          <span class="panel__eyebrow">XUANYUAN POPULAR</span>
-          <h2>轩辕热门应用</h2>
-          <p>后端接入后从轩辕镜像服务获取并缓存，当前为 Top 6 演示内容。</p>
-        </div>
-        <el-button @click="ElMessage.info('应用市场将在后端服务接入后开放')">
-          查看更多
-          <el-icon><ArrowRight /></el-icon>
-        </el-button>
-      </header>
-
-      <div class="application-grid">
-        <article
-          v-for="app in snapshot.applications"
-          :key="app.id"
-          class="application-card"
-          :class="{ 'application-card--installed': app.installedVersion }"
-        >
-          <div class="application-card__top">
-            <span class="application-card__icon" :class="`application-card__icon--${app.icon}`">
-              <el-icon><component :is="applicationIcons[app.icon]" /></el-icon>
-            </span>
-            <span class="application-card__copy">
-              <strong>{{ app.name }}</strong>
-              <small>{{ app.category }}</small>
-            </span>
-            <el-tag
-              v-if="app.installedVersion"
-              :type="app.state === 'running' ? 'success' : 'info'"
-              effect="light"
-              round
-              size="small"
-            >
-              {{ app.state === 'running' ? '运行中' : '已停止' }}
+    <div class="overview-dashboard">
+      <div class="overview-dashboard__main">
+        <section id="status" class="panel overview-panel content-anchor">
+          <header class="overview-panel__header">
+            <div>
+              <span class="panel__eyebrow">SYSTEM STATUS</span>
+              <h2>运行状态</h2>
+            </div>
+            <el-tag type="success" effect="light" round>
+              <span class="live-dot" /> 实时采样
             </el-tag>
-          </div>
+          </header>
 
-          <p>{{ app.description }}</p>
-          <div class="application-card__version">
-            <span>推荐 {{ app.version }}</span>
-            <span v-if="app.installedVersion">已装 {{ app.installedVersion }}</span>
-          </div>
+          <div class="status-grid">
+            <article class="health-card">
+              <span class="health-card__halo">
+                <el-icon><CircleCheckFilled /></el-icon>
+              </span>
+              <div>
+                <span>综合状态</span>
+                <strong>{{ snapshot.healthMessage }}</strong>
+                <p>{{ snapshot.healthDetail }}</p>
+              </div>
+            </article>
 
-          <footer class="application-card__actions">
-            <el-button text @click="showDeferredAction('details', app)">
-              <el-icon><MoreFilled /></el-icon>
-              更多
-            </el-button>
-            <el-button type="primary" plain @click="showDeferredAction('install', app)">
-              安装
-            </el-button>
-            <template v-if="app.installedVersion">
-              <el-button
-                text
-                type="danger"
-                :disabled="app.state === 'stopped'"
-                @click="confirmContainerAction(app, 'stop')"
+            <article v-for="metric in snapshot.usage" :key="metric.key" class="usage-card">
+              <el-progress
+                type="dashboard"
+                :percentage="metric.percentage"
+                :width="116"
+                :stroke-width="8"
+                :color="gaugeColor(metric.percentage)"
               >
-                <el-icon><SwitchButton /></el-icon>
-                关闭
-              </el-button>
-              <el-button text type="primary" @click="confirmContainerAction(app, 'restart')">
-                <el-icon><RefreshRight /></el-icon>
-                重启
-              </el-button>
-            </template>
-          </footer>
-        </article>
+                <template #default>
+                  <strong>{{ metric.percentage.toFixed(1) }}%</strong>
+                </template>
+              </el-progress>
+              <div class="usage-card__copy">
+                <span>{{ metric.label }}</span>
+                <strong>{{ metric.value }}</strong>
+                <small>{{ metric.detail }}</small>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="monitoring" class="panel overview-panel monitoring-panel content-anchor">
+          <header class="overview-panel__header monitoring-panel__header">
+            <div>
+              <span class="panel__eyebrow">TELEMETRY</span>
+              <h2>实时监控</h2>
+            </div>
+            <div class="monitoring-toolbar">
+              <el-segmented v-model="monitorMode" :options="monitorOptions" />
+              <el-select v-model="selectedTelemetryFilter" class="monitoring-filter">
+                <el-option
+                  v-for="option in activeTelemetry.filters"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+            </div>
+          </header>
+
+          <div class="telemetry-summary">
+            <div
+              v-for="stat in activeFilter.stats"
+              :key="stat.label"
+              class="telemetry-stat"
+              :class="`telemetry-stat--${stat.tone}`"
+            >
+              <span>{{ stat.label }}</span>
+              <strong>{{ stat.value }}</strong>
+            </div>
+            <div class="telemetry-legend" aria-label="图例">
+              <span v-for="item in activeFilter.series" :key="item.name">
+                <i :style="{ backgroundColor: item.color }" />{{ item.name }}
+              </span>
+            </div>
+          </div>
+
+          <TelemetryChart
+            :key="`${monitorMode}-${selectedTelemetryFilter}`"
+            :labels="activeTelemetry.labels"
+            :series="activeFilter.series"
+            :unit="activeTelemetry.unit"
+          />
+        </section>
       </div>
-    </section>
+
+      <aside class="overview-dashboard__side">
+        <section id="system" class="panel overview-panel content-anchor">
+          <header class="overview-panel__header">
+            <div>
+              <span class="panel__eyebrow">HOST INFORMATION</span>
+              <h2>系统信息</h2>
+            </div>
+            <el-tag effect="plain" round>Linux 工作站</el-tag>
+          </header>
+
+          <div class="system-grid">
+            <article v-for="item in snapshot.system" :key="item.label" class="system-item">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+              <small v-if="item.hint">{{ item.hint }}</small>
+            </article>
+          </div>
+        </section>
+
+        <section id="containers" class="panel overview-panel content-anchor">
+          <header class="overview-panel__header application-header">
+            <div>
+              <span class="panel__eyebrow">XUANYUAN POPULAR</span>
+              <h2>轩辕热门应用</h2>
+              <p>后端接入后从轩辕镜像服务获取并缓存，当前为 Top 6 演示内容。</p>
+            </div>
+            <el-button @click="ElMessage.info('应用市场将在后端服务接入后开放')">
+              查看更多
+              <el-icon><ArrowRight /></el-icon>
+            </el-button>
+          </header>
+
+          <div class="application-grid">
+            <article
+              v-for="app in snapshot.applications"
+              :key="app.id"
+              class="application-card"
+              :class="{ 'application-card--installed': app.installedVersion }"
+            >
+              <div class="application-card__top">
+                <span class="application-card__icon" :class="`application-card__icon--${app.icon}`">
+                  <el-icon><component :is="applicationIcons[app.icon]" /></el-icon>
+                </span>
+                <span class="application-card__copy">
+                  <strong>{{ app.name }}</strong>
+                  <small>{{ app.category }}</small>
+                </span>
+                <el-tag
+                  v-if="app.installedVersion"
+                  :type="app.state === 'running' ? 'success' : 'info'"
+                  effect="light"
+                  round
+                  size="small"
+                >
+                  {{ app.state === 'running' ? '运行中' : '已停止' }}
+                </el-tag>
+              </div>
+
+              <p>{{ app.description }}</p>
+              <div class="application-card__version">
+                <span>推荐 {{ app.version }}</span>
+                <span v-if="app.installedVersion">已装 {{ app.installedVersion }}</span>
+              </div>
+
+              <footer class="application-card__actions">
+                <el-button plain @click="showDeferredAction('details', app)">更多</el-button>
+                <el-button type="primary" plain @click="showDeferredAction('install', app)">
+                  安装
+                </el-button>
+                <template v-if="app.installedVersion">
+                  <el-button
+                    plain
+                    type="danger"
+                    :disabled="app.state === 'stopped'"
+                    @click="confirmContainerAction(app, 'stop')"
+                  >
+                    <el-icon><SwitchButton /></el-icon>
+                    关闭
+                  </el-button>
+                  <el-button plain type="primary" @click="confirmContainerAction(app, 'restart')">
+                    <el-icon><RefreshRight /></el-icon>
+                    重启
+                  </el-button>
+                </template>
+              </footer>
+            </article>
+          </div>
+        </section>
+      </aside>
+    </div>
   </div>
 </template>
 
@@ -480,6 +484,20 @@ onMounted(() => {
   right: 16px;
   bottom: 14px;
   color: color-mix(in srgb, var(--resource-color) 70%, transparent);
+}
+
+.overview-dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(300px, 1fr);
+  align-items: start;
+  gap: 20px;
+}
+
+.overview-dashboard__main,
+.overview-dashboard__side {
+  display: grid;
+  min-width: 0;
+  gap: 20px;
 }
 
 .overview-panel {
@@ -680,25 +698,25 @@ onMounted(() => {
 
 .system-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  padding: 8px 22px 22px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 8px 16px 18px;
 }
 
 .system-item {
   display: flex;
-  min-height: 104px;
+  min-height: 88px;
   flex-direction: column;
   justify-content: center;
-  padding: 18px;
+  padding: 14px 12px;
   border-right: 1px solid var(--el-border-color-lighter);
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
-.system-item:nth-child(4n) {
+.system-item:nth-child(2n) {
   border-right: 0;
 }
 
-.system-item:nth-last-child(-n + 4) {
+.system-item:nth-last-child(-n + 2) {
   border-bottom: 0;
 }
 
@@ -722,20 +740,25 @@ onMounted(() => {
 }
 
 .application-header {
-  align-items: center;
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.application-header .el-button {
+  width: 100%;
 }
 
 .application-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
-  padding: 18px 22px 22px;
+  padding: 16px;
 }
 
 .application-card {
   display: flex;
   min-width: 0;
-  min-height: 214px;
+  min-height: 0;
   flex-direction: column;
   padding: 16px;
   border: 1px solid var(--el-border-color-lighter);
@@ -827,8 +850,7 @@ onMounted(() => {
 }
 
 .application-card > p {
-  min-height: 36px;
-  margin: 14px 0 10px;
+  margin: 12px 0 9px;
   color: var(--el-text-color-secondary);
   font-size: 10px;
   line-height: 1.7;
@@ -849,15 +871,16 @@ onMounted(() => {
 }
 
 .application-card__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px;
-  margin-top: auto;
-  padding-top: 15px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
 }
 
-.application-card__actions :deep(.el-button + .el-button) {
+.application-card__actions :deep(.el-button) {
+  width: 100%;
+  padding-right: 8px;
+  padding-left: 8px;
   margin-left: 0;
 }
 
@@ -877,28 +900,26 @@ onMounted(() => {
   }
 }
 
-@media (max-width: 1040px) {
-  .application-grid,
+@media (max-width: 1180px) {
+  .overview-dashboard {
+    grid-template-columns: 1fr;
+  }
+
   .system-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
-  .system-item:nth-child(4n) {
-    border-right: 1px solid var(--el-border-color-lighter);
-  }
-
-  .system-item:nth-child(2n) {
+  .system-item:nth-child(n) {
     border-right: 0;
-  }
-
-  .system-item:nth-last-child(-n + 4) {
     border-bottom: 1px solid var(--el-border-color-lighter);
   }
 
-  .system-item:nth-last-child(-n + 2) {
+  .system-item:last-child {
     border-bottom: 0;
   }
+}
 
+@media (max-width: 1040px) {
   .telemetry-summary {
     flex-wrap: wrap;
   }
