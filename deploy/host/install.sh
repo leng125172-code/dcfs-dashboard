@@ -35,6 +35,9 @@ visudo -cf /etc/sudoers.d/whaledeck-agent
 install -o root -g root -m 0644 "$(dirname "$0")/whaledeck-agent.service" /etc/systemd/system/whaledeck-agent.service
 install -o root -g root -m 0644 "$(dirname "$0")/whaledeck-maintenance.service" /etc/systemd/system/whaledeck-maintenance.service
 systemctl daemon-reload
-systemctl enable --now whaledeck-agent.service whaledeck-maintenance.service
+systemctl enable whaledeck-agent.service whaledeck-maintenance.service
+# `enable --now` does not restart an already active service after an upgrade.
+# Explicit restart guarantees the copied binaries and settings become active.
+systemctl restart whaledeck-agent.service whaledeck-maintenance.service
 systemctl --no-pager --full status whaledeck-agent.service whaledeck-maintenance.service
 echo "Whale Deck group id: $(getent group whaledeck | cut -d: -f3)"
