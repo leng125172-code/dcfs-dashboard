@@ -26,6 +26,7 @@ builder.WebHost.ConfigureKestrel(options =>
 
 builder.Services.AddGrpc(options => options.Interceptors.Add<CapabilityInterceptor>());
 builder.Services.AddSingleton<CapabilityValidator>();
+builder.Services.AddSingleton<PeerCredentialPolicy>();
 builder.Services.AddSingleton<DockerEngine>();
 builder.Services.AddSingleton<OperationStore>();
 builder.Services.AddSingleton<PlanStore>();
@@ -34,6 +35,7 @@ builder.Services.AddSingleton<ResourceRegistry>();
 builder.Services.AddHostedService<SocketPermissionService>();
 
 var app = builder.Build();
+app.UseMiddleware<PeerCredentialGuard>();
 app.MapGrpcService<AgentGrpcService>();
 app.MapGrpcService<HostGrpcService>();
 app.MapGrpcService<DockerGrpcService>();

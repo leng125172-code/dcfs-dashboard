@@ -31,6 +31,9 @@ fi
 chown root:whaledeck /etc/whaledeck/agent-capability.key
 chmod 0640 /etc/whaledeck/agent-capability.key
 install -o root -g whaledeck -m 0640 "$(dirname "$0")/resources.json" /etc/whaledeck/resources.json
+printf 'Agent__AllowedPeerGid=%s\n' "$(getent group whaledeck | cut -d: -f3)" > /etc/whaledeck/agent.env
+chown root:whaledeck /etc/whaledeck/agent.env
+chmod 0640 /etc/whaledeck/agent.env
 install -o root -g root -m 0750 "$(dirname "$0")/whaledeck-privileged" /usr/local/libexec/whaledeck-privileged
 printf '%s\n' 'whaledeck-agent ALL=(root) NOPASSWD: /usr/local/libexec/whaledeck-privileged *' > /etc/sudoers.d/whaledeck-agent
 chmod 0440 /etc/sudoers.d/whaledeck-agent

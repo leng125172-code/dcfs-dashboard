@@ -10,6 +10,7 @@ User=whaledeck-agent
 Group=whaledeck
 SupplementaryGroups=docker systemd-journal
 WorkingDirectory=/opt/whaledeck-agent
+EnvironmentFile=/etc/whaledeck/agent.env
 ExecStart=/opt/whaledeck-agent/WhaleDeck.Agent
 Restart=on-failure
 RestartSec=5s

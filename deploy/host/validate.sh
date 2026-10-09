@@ -30,6 +30,7 @@ assert_metadata /run/whaledeck/maintenance '770:whaledeck-agent:whaledeck'
 assert_metadata /etc/whaledeck '750:root:whaledeck'
 assert_metadata /etc/whaledeck/agent-capability.key '640:root:whaledeck'
 assert_metadata /etc/whaledeck/resources.json '640:root:whaledeck'
+assert_metadata /etc/whaledeck/agent.env '640:root:whaledeck'
 assert_metadata /usr/local/libexec/whaledeck-privileged '750:root:root'
 assert_metadata /etc/sudoers.d/whaledeck-agent '440:root:root'
 visudo -cf /etc/sudoers.d/whaledeck-agent >/dev/null
@@ -51,6 +52,17 @@ printf '\0\0\0\0\0' | curl --http2-prior-knowledge --unix-socket /run/whaledeck/
   http://localhost/whaledeck.agent.v1.AgentService/GetHealth
 grep -Eqi '^grpc-status: *0' "$temporary/grpc-headers"
 (( $(stat -c '%s' "$temporary/grpc-body") >= 5 ))
+
+# A process that can reach the socket through an unrelated group must still be
+# rejected by SO_PEERCRED. `nobody` is intentionally not added to whaledeck.
+set +e
+runuser -u nobody -G whaledeck -- curl --fail --http2-prior-knowledge --unix-socket /run/whaledeck/agent.sock \
+  --silent --output /dev/null --header 'Content-Type: application/grpc' \
+  --header 'TE: trailers' --data-binary $'\0\0\0\0\0' \
+  http://localhost/whaledeck.agent.v1.AgentService/GetHealth
+untrusted_status=$?
+set -e
+(( untrusted_status != 0 ))
 
 for address in 192.168.22.19 192.168.100.13; do
   for port in 8080 8081; do
