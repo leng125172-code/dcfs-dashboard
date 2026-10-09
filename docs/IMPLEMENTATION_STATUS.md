@@ -18,7 +18,7 @@
 - 已完成 Agent UDS、固定 helper、双网卡维护入口、文件权限和 Docker 访问验收；Agent 不监听 TCP，API/Worker 也不需要挂载 `docker.sock`。
 - 已执行受控 Docker 重启验收：Agent 与 MaintenanceHost 进程未重启，8 个基础容器重启后全部恢复健康，数据库平台完整检查通过。
 - 已将 Docker 默认日志切换为有界 `local` 驱动（10 MiB、5 个文件、压缩），启用 `live-restore`，并保留轩辕镜像加速配置。
-- 工作站现有 Docker Buildx、BuildKit 与 Compose 已验证可用，支持 `linux/amd64`；没有创建多余的 BuildKit 容器，也没有构建 Whale Deck 镜像。
+- 工作站现有 Docker Buildx、BuildKit 与 Compose 已验证可用，支持 `linux/amd64`；实际完成了无基础层的临时 smoke image 构建、加载、标签检查和删除。没有创建多余的 BuildKit 容器，也没有构建 Whale Deck 产品镜像。工作站宿主机未额外安装 .NET SDK，正式镜像构建继续使用 Dockerfile 固定的 SDK 构建阶段。
 
 更新 timer 已完成切换：`database-platform-workstation-update.timer` 为 enabled/active，旧 timer 为 disabled/inactive，下一次计划执行时间为 2026-10-11 20:00 CST。
 

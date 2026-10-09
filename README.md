@@ -82,7 +82,7 @@ The host-side MaintenanceHost binds both `192.168.22.19` and `192.168.100.13`. T
 
 The [installation guide](deploy/install/README.md) describes the seven-stage Linux workflow: tool/source checks, optional Docker accelerator configuration, dependency repository deployment, then source build and deployment. `bash install.sh --dry-run` previews the workflow without network or system changes. `--dependencies-only` excludes the Whale Deck build/deployment stage.
 
-The scripts are not a production-acceptance claim. Workstation acceptance is pending and no Whale Deck container image has been built or started as part of the current implementation.
+Agent、MaintenanceHost、UDS 权限/对端身份、受限 helper、双网卡入口以及 Docker 重启韧性已在目标工作站验收通过。完整 API/Worker 业务验收仍未完成；当前没有构建或启动任何 Whale Deck 产品容器镜像。实际完成边界见 [实施状态](docs/IMPLEMENTATION_STATUS.md)。
 
 ## Container boundaries
 
