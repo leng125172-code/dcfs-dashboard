@@ -158,6 +158,36 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
             string.IsNullOrWhiteSpace(response.ErrorCode) ? null : response.ErrorCode);
     }
 
+    public async Task<AgentOperationDto> GetOperationAsync(string operationId, CancellationToken cancellationToken)
+    {
+        var response = await _operations.GetOperationAsync(
+            new OperationRequest { OperationId = operationId },
+            Headers("/whaledeck.agent.v1.OperationService/GetOperation"),
+            cancellationToken: cancellationToken);
+        return Map(response);
+    }
+
+    public async Task<AgentOperationDto> CancelOperationAsync(string operationId, CancellationToken cancellationToken)
+    {
+        var request = new OperationRequest { OperationId = operationId };
+        try
+        {
+            var response = await _operations.CancelOperationAsync(
+                request,
+                Headers("/whaledeck.agent.v1.OperationService/CancelOperation"),
+                cancellationToken: cancellationToken);
+            return Map(response);
+        }
+        catch (RpcException exception) when (exception.StatusCode == StatusCode.FailedPrecondition)
+        {
+            var response = await _operations.GetOperationAsync(
+                request,
+                Headers("/whaledeck.agent.v1.OperationService/GetOperation"),
+                cancellationToken: cancellationToken);
+            return Map(response);
+        }
+    }
+
     public Task<IReadOnlyCollection<ManagedResourceDto>> ListAsync(string area, CancellationToken cancellationToken) =>
         ListResourcesAsync(area, cancellationToken);
 
@@ -176,4 +206,8 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
     private static ManagedResourceDto[] Map(ResourceCollectionResponse response) =>
         response.Resources.Select(item => new ManagedResourceDto(item.ResourceId, item.DisplayName, item.ResourceType,
             item.State, item.Version, item.ProtectedResource, item.Attributes)).ToArray();
+
+    private static AgentOperationDto Map(OperationHandle response) =>
+        new(response.OperationId, response.State.ToString(), response.Phase, response.ProgressPercent,
+            string.IsNullOrWhiteSpace(response.ErrorCode) ? null : response.ErrorCode);
 }

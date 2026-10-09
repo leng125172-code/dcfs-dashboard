@@ -6,7 +6,7 @@
 
 工作站离线期间暂停了 SSH、部署、重启和清理。用户确认重新连接后，2026-10-09 18:25（Asia/Shanghai）的只读检查确认：8 个基础容器仍健康、旧容器停止、SHA256SUMS 校验通过、两个 IP 在线，磁盘容量充足。远程配置仓库仍为 `06e0e94`，未提交的 `.migration-state/` 属于迁移状态，不删除或提交。
 
-SSH 用户没有非交互 sudo，符合不开放 `NOPASSWD:ALL` 的约定。安装宿主服务及切换更新 timer 需要一次交互式 sudo；不得将已提供的密码写入脚本、命令输出或日志。
+为无人值守验收，SSH 用户当前临时启用了 `NOPASSWD:ALL`。该规则只作为本轮实施期间的临时入口，完成需要 root 的验收后必须删除 `/etc/sudoers.d/whaledeck-temporary-user` 并重新执行 `visudo -cf /etc/sudoers`；长期保留的 Agent 权限仍仅允许调用固定 helper。用户提供的密码没有写入脚本、仓库、日志或命令输出。
 
 本轮恢复后的实际进展：
 
@@ -14,18 +14,15 @@ SSH 用户没有非交互 sudo，符合不开放 `NOPASSWD:ALL` 的约定。安�
 - `scripts/check-all.sh` 全部通过，数据库、缓存及 Authentik 内部健康和端口边界符合检查规则。
 - 已收紧并持久化 Whale Deck 专用 Valkey ACL：清除旧授权、排除危险命令，防止 `FLUSHALL/FLUSHDB` 等无键命令绕过键前缀限制。
 - `validation/check-whaledeck-credentials.sh` 在真实依赖上通过：PostgreSQL 专用身份和最小角色权限、Valkey 专用认证与允许/拒绝规则。验证使用只读 SQL 和 `ACL DRYRUN`，不执行危险命令、不写入业务数据。
-- 未重启基础容器，未删除旧容器或旧网络，未安装 Agent/MaintenanceHost，也未构建 Whale Deck 镜像。
-- Linux 自包含发布尚未完成：从 NuGet 下载 .NET 10.0.8 Linux 运行库时出现 TLS/EOF 中断，重试仍失败；已停止失败的发布进程。未降低 TLS 校验，也未修改持久代理配置。
+- 已完成 Linux x64 自包含发布与宿主安装。Agent 和 MaintenanceHost 均由 systemd 管理、开机自启，安装升级脚本使用替换 inode 的方式覆盖运行中二进制，避免 `ETXTBSY`。
+- 已完成 Agent UDS、固定 helper、双网卡维护入口、文件权限和 Docker 访问验收；Agent 不监听 TCP，API/Worker 也不需要挂载 `docker.sock`。
+- 已执行受控 Docker 重启验收：Agent 与 MaintenanceHost 进程未重启，8 个基础容器重启后全部恢复健康，数据库平台完整检查通过。
+- 已将 Docker 默认日志切换为有界 `local` 驱动（10 MiB、5 个文件、压缩），启用 `live-restore`，并保留轩辕镜像加速配置。
+- 工作站现有 Docker Buildx、BuildKit 与 Compose 已验证可用，支持 `linux/amd64`；没有创建多余的 BuildKit 容器，也没有构建 Whale Deck 镜像。
 
-更新 timer 的脚本已同步，但尚需操作人员在工作站终端执行：
+更新 timer 已完成切换：`database-platform-workstation-update.timer` 为 enabled/active，旧 timer 为 disabled/inactive，下一次计划执行时间为 2026-10-11 20:00 CST。
 
-```bash
-sudo /data/GitRepos/database-platform/bootstrap/install-workstation-update-systemd.sh
-```
-
-该命令只切换为新名称 timer，不部署 Whale Deck 或删除旧容器。持久 timer 的补执行行为按 systemd 配置生效；执行后检查列出的下一次更新时间。
-
-2026-10-09 20:13（Asia/Shanghai）后续状态：新 timer 已确认为 enabled/active，旧 timer 为 disabled/inactive；Agent 与 MaintenanceHost 已作为 systemd 服务安装并启动，均 enabled/active、`NRestarts=0`。安装后检查发现 Authentik 端口上的 `/maintenance/status` 被代理路由抢先匹配，以及离线页面刷新会重复记录 YARP Warning；修复和宿主只读验收脚本正在完成复验。在复验通过前不把宿主服务标记为最终验收完成。
+2026-10-09 20:13（Asia/Shanghai）后续状态：Agent 与 MaintenanceHost 已作为 systemd 服务安装并启动，均 enabled/active、`NRestarts=0`。后续已修复 Authentik 端口上的维护状态路由优先级、离线页 YARP Warning、运行中二进制升级和 UDS 启动竞态；宿主验证脚本与 Docker 重启韧性脚本均通过。
 
 离线前最后一次成功记录：
 
@@ -33,7 +30,7 @@ sudo /data/GitRepos/database-platform/bootstrap/install-workstation-update-syste
 - 旧容器保持停止状态，旧网络保留；未执行最终删除。
 - 安全备份：`/data/DockerData/migration-dcfs-20261009_163559`。
 - 保留 `/data/GitRepos/DCFS -> /data/GitRepos/database-platform` 兼容链接用于旧容器配置挂载回滚。仅在完成验收和旧容器清理后移除此链接。
-- Agent、MaintenanceHost 尚未安装验收；新名称更新 timer 尚未安装验收。
+- Agent、MaintenanceHost 和新名称更新 timer 已完成安装验收。
 - 本次未构建、启动或推送 Whale Deck 容器镜像。
 
 ## 当前本地实现
@@ -46,27 +43,28 @@ sudo /data/GitRepos/database-platform/bootstrap/install-workstation-update-syste
 ## 本地验证记录
 
 - .NET Release 构建通过：0 警告、0 错误。
-- .NET 自动化测试 18 项通过（13 项 UnitTests、5 项 IntegrationTests；其中身份测试使用离线 HTTP/cache 替身）。
+- .NET 自动化测试 29 项通过（24 项 UnitTests、5 项 IntegrationTests；其中身份测试使用离线 HTTP/cache 替身）。
 - 安装器命令行 5 项检查通过，空 PATH 下验证 dry-run 不调用系统工具。
 - 依赖环境生成测试通过：专用密码独立生成，重复执行不覆盖原文件。
-- Shell 语法检查通过；未执行正式安装流程或容器镜像构建。
+- Shell 语法检查通过；已完成宿主组件正式安装与工作站验收，但未执行 API/Worker 镜像构建。
 
 ## 仍需实现或实测
 
-下列项目不能标记为完成：六类数据库管理适配器与真实 CRUD/授权/轮换验收，应用安装/更新/回滚执行器，备份与定时调度，完整资源锁与任务恢复，指标日分区/聚合，告警和配置推送，完整 Authentik 用户与 SSO 写操作，Agent Unix peer credentials 校验，Docker 配置维护的端到端回滚。
+Worker 已能在重启后根据持久化的 Agent operation id 恢复轮询，持续同步进度和终态，并把取消请求传播到 Agent；未知的未来 Agent 状态按等待处理，避免错误地报告成功。下列项目仍不能标记为完成：六类数据库管理适配器与真实 CRUD/授权/轮换验收，应用安装/更新/回滚执行器，备份与定时调度，完整资源租约/锁，指标日分区/聚合，告警和配置推送，完整 Authentik 用户与 SSO 写操作，Agent Unix peer credentials 校验，Docker 配置维护的业务端到端回滚。
 
 Agent capability 已限制为最长 60 秒、调用方法签名绑定和一次性 nonce；签发端使用 45 秒有效期，并增加过期、错方法、超长有效期及重放测试。Unix socket peer credentials 的进程级校验仍未实现，不能用 socket 文件权限替代该未完成项。
 
-宿主服务安装/升级、systemd 沙箱与受限 sudo helper 的兼容性仍需 Linux 实测；Authentik 的 OIDC subject 与管理 API 用户 ID 映射仍需完善。不能据当前脚本认定生产认证或宿主高权限操作已完成验收。
+宿主服务安装/升级、systemd 沙箱、受限 sudo helper、UDS 与 Docker 重启韧性已在目标 Linux 工作站实测通过。Authentik 的 OIDC subject 与管理 API 用户 ID 映射仍需完善；不能据宿主验收结果认定生产认证已完成。
 
 部分管理端点与 RPC 目前只是受控入队或注册信息查询，不能当作上述业务已可执行。现有测试包括离线替身测试，不代表 PostgreSQL、Valkey、Docker 或 Authentik 真实依赖集成测试已通过。
 
-## 连接恢复后的顺序
+## 后续顺序
 
-1. 只读检查当前容器、挂载、备份校验清单和 Git 状态。
-2. 对比并同步离线期间的脚本变更，复核 ACL 和专用数据库权限。
-3. 安装受限 helper、Agent、MaintenanceHost 和新 timer，验证 UDS/进程权限与双网卡入口。
-4. 临时测试资源上的集成验收和维护恢复验证。
-5. 完整验收通过后才能清理旧容器对象/旧网络，保留所有 NVMe/HDD 数据。
+1. 补齐异步任务执行、租约、资源锁、Agent 操作轮询与重启恢复。
+2. 实现六类数据库管理适配器、备份/调度和临时资源真实集成验收。
+3. 实现应用安装、更新、回滚执行器和其余 P1 写操作。
+4. 完成 Authentik 管理写操作、指标分区/聚合、告警与配置推送。
+5. 完整业务验收通过后清理旧容器对象/旧网络及兼容链接，保留所有 NVMe/HDD 数据。
+6. 删除临时全量 sudo 规则并复验 Agent 固定 helper 的最小权限路径。
 
 API/Worker 不临时安装成 systemd 服务。生成正式镜像与正式部署在安装脚本中定义，当前开发任务不执行镜像阶段。

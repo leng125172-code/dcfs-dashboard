@@ -28,6 +28,8 @@ public interface IAgentGateway
     Task<PlanDto> PlanAsync(string area, string action, string? resourceId, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<MetricValueDto>> GetMetricsSnapshotAsync(CancellationToken cancellationToken);
     Task<AgentOperationDto> ExecuteAsync(string area, string action, string resourceId, IReadOnlyDictionary<string, string> parameters, string? planHash, CancellationToken cancellationToken);
+    Task<AgentOperationDto> GetOperationAsync(string operationId, CancellationToken cancellationToken);
+    Task<AgentOperationDto> CancelOperationAsync(string operationId, CancellationToken cancellationToken);
 }
 
 public interface ICatalogProvider

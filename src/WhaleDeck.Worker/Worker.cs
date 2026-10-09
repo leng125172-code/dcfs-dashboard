@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using WhaleDeck.Application.Abstractions;
+using WhaleDeck.Application.Models;
+using WhaleDeck.Application.Services;
 using WhaleDeck.Domain.Entities;
 using WhaleDeck.Infrastructure.Persistence;
 
@@ -40,6 +42,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         var agent = scope.ServiceProvider.GetRequiredService<IAgentGateway>();
         await CollectMetrics(db, agent, cancellationToken);
         await DispatchOutbox(db, agent, cancellationToken);
+        await ReconcileAgentOperations(db, agent, cancellationToken);
 
         if (_nextCatalogRefresh <= DateTimeOffset.UtcNow)
         {
@@ -114,7 +117,25 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                         await db.SaveChangesAsync(cancellationToken);
                         var operation = await agent.ExecuteAsync(split[0], split[1], resourceId, parameters, planHash, cancellationToken);
                         job.AgentOperationId = Guid.TryParse(operation.OperationId, out var operationId) ? operationId : null;
-                        await Complete(db, job, operation.State.Contains("Succeeded", StringComparison.OrdinalIgnoreCase) ? "Succeeded" : "Waiting", operation.Phase, operation.ErrorCode, cancellationToken);
+                        await ApplyAgentState(db, job, operation, cancellationToken);
+                    }
+                }
+                else if (message.MessageType == "OperationCancellationRequested")
+                {
+                    using var payload = JsonDocument.Parse(message.PayloadJson);
+                    var jobId = payload.RootElement.GetProperty("jobId").GetGuid();
+                    var job = await db.OperationJobs.SingleAsync(item => item.Id == jobId, cancellationToken);
+                    if (job.CompletedAtUtc is null)
+                    {
+                        if (job.AgentOperationId is { } operationId)
+                        {
+                            var operation = await agent.CancelOperationAsync(operationId.ToString("D"), cancellationToken);
+                            await ApplyAgentState(db, job, operation, cancellationToken);
+                        }
+                        else
+                        {
+                            await Complete(db, job, "Canceled", "CanceledBeforeDispatch", null, cancellationToken);
+                        }
                     }
                 }
                 message.ProcessedAtUtc = DateTimeOffset.UtcNow;
@@ -131,12 +152,51 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         }
     }
 
-    private static async Task Complete(PlatformDbContext db, OperationJob job, string state, string phase, string? errorCode, CancellationToken cancellationToken)
+    private static async Task ReconcileAgentOperations(PlatformDbContext db, IAgentGateway agent, CancellationToken cancellationToken)
     {
+        var jobs = await db.OperationJobs
+            .Where(item => item.AgentOperationId != null && item.CompletedAtUtc == null)
+            .OrderBy(item => item.StartedAtUtc)
+            .Take(50)
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var job in jobs)
+        {
+            var operationId = job.AgentOperationId!.Value.ToString("D");
+            var operation = job.CancelRequestedAtUtc is not null
+                ? await agent.CancelOperationAsync(operationId, cancellationToken)
+                : await agent.GetOperationAsync(operationId, cancellationToken);
+            await ApplyAgentState(db, job, operation, cancellationToken);
+        }
+    }
+
+    private static Task ApplyAgentState(
+        PlatformDbContext db,
+        OperationJob job,
+        AgentOperationDto operation,
+        CancellationToken cancellationToken)
+    {
+        var transition = AgentOperationStateMapper.Map(operation);
+        return Complete(db, job, transition.State, transition.Phase, transition.ErrorCode, cancellationToken, transition.ProgressPercent);
+    }
+
+    private static async Task Complete(
+        PlatformDbContext db,
+        OperationJob job,
+        string state,
+        string phase,
+        string? errorCode,
+        CancellationToken cancellationToken,
+        short? progressPercent = null)
+    {
+        if (job.State == state && job.Phase == phase && job.ProgressPercent == progressPercent && job.ErrorCode == errorCode)
+        {
+            return;
+        }
         job.State = state;
         job.Phase = phase;
         job.ErrorCode = errorCode;
-        job.ProgressPercent = state == "Succeeded" ? (short)100 : null;
+        job.ProgressPercent = state == "Succeeded" ? (short)100 : progressPercent;
         if (state is "Succeeded" or "Failed" or "Canceled") job.CompletedAtUtc = DateTimeOffset.UtcNow;
         job.Version++;
         var sequence = await db.OperationJobEvents.Where(item => item.JobId == job.Id).MaxAsync(item => (long?)item.Sequence, cancellationToken) ?? 0;
