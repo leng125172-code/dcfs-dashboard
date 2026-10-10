@@ -24,7 +24,9 @@ interface Container {
 }
 
 const items = ref<Container[]>([])
+const selectedIds = ref<string[]>([])
 const loading = ref(false)
+const batchBusy = ref(false)
 const createVisible = ref(false)
 const submitting = ref(false)
 const form = reactive({
@@ -90,8 +92,49 @@ async function load() {
   loading.value = true
   try {
     items.value = await apiRequest<Container[]>('containers?includeStopped=true')
+    selectedIds.value = selectedIds.value.filter((id) => items.value.some((item) => item.id === id))
   } finally {
     loading.value = false
+  }
+}
+
+function toggleSelected(id: string, selected: boolean) {
+  selectedIds.value = selected
+    ? [...new Set([...selectedIds.value, id])]
+    : selectedIds.value.filter((item) => item !== id)
+}
+
+async function batchLifecycle(action: 'start' | 'stop' | 'restart' | 'delete') {
+  if (!selectedIds.value.length) return
+  batchBusy.value = true
+  try {
+    const labels = { start: '启动', stop: '停止', restart: '重启', delete: '删除' } as const
+    const parameters = {
+      containerIds: JSON.stringify(selectedIds.value),
+      timeoutSeconds: '10',
+      preserveVolumes: 'true',
+    }
+    const operation = `batch-${action}`
+    const plan = await planOperation('containers', operation, 'batch', parameters)
+    await ElMessageBox.confirm(
+      [...plan.changes, ...plan.warnings, action === 'delete' ? '数据卷与镜像默认保留。' : '']
+        .filter(Boolean)
+        .join('\n'),
+      `批量${labels[action]}确认`,
+      { type: action === 'delete' ? 'error' : 'warning', confirmButtonText: labels[action] },
+    )
+    const job = await enqueueOperation(
+      'containers',
+      operation,
+      'batch',
+      parameters,
+      true,
+      plan.planHash,
+    )
+    selectedIds.value = []
+    ElMessage.success(`批量任务已提交：${job.id}`)
+  } finally {
+    batchBusy.value = false
   }
 }
 
@@ -317,8 +360,25 @@ onMounted(load)
         >
       </div>
     </header>
+    <section v-if="selectedIds.length" class="panel batch-toolbar">
+      <strong>已选择 {{ selectedIds.length }} 个容器</strong>
+      <div>
+        <el-button :loading="batchBusy" @click="batchLifecycle('start')">批量启动</el-button>
+        <el-button :loading="batchBusy" @click="batchLifecycle('stop')">批量停止</el-button>
+        <el-button :loading="batchBusy" @click="batchLifecycle('restart')">批量重启</el-button>
+        <el-button type="danger" :loading="batchBusy" @click="batchLifecycle('delete')"
+          >批量删除</el-button
+        >
+        <el-button link @click="selectedIds = []">清除选择</el-button>
+      </div>
+    </section>
     <section class="container-grid" v-loading="loading">
       <article v-for="item in items" :key="item.id" class="panel container-card">
+        <el-checkbox
+          :model-value="selectedIds.includes(item.id)"
+          :aria-label="`选择容器 ${item.name}`"
+          @change="toggleSelected(item.id, Boolean($event))"
+        />
         <span class="container-card__icon"
           ><el-icon><Box /></el-icon
         ></span>
@@ -581,9 +641,21 @@ onMounted(load)
   gap: 10px;
   min-height: 240px;
 }
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+}
+.batch-toolbar > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .container-card {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 14px;
   padding: 14px 16px;
@@ -597,7 +669,7 @@ onMounted(load)
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
 }
-.container-card > div:nth-child(2) {
+.container-card > div:nth-child(3) {
   display: grid;
   min-width: 0;
 }
@@ -673,13 +745,17 @@ onMounted(load)
 }
 @media (max-width: 760px) {
   .container-card {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
   }
   .container-card > .el-tag:nth-of-type(2) {
     display: none;
   }
   .container-card__actions {
-    grid-column: 2 / -1;
+    grid-column: 3 / -1;
+  }
+  .batch-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
   }
   .container-form__resources {
     grid-template-columns: 1fr;

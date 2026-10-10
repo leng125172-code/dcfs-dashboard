@@ -92,6 +92,7 @@ public sealed class DockerEngine : IDisposable
     {
         ContainerConfiguration? createConfiguration = null;
         ContainerUpdatePlan? updatePlan = null;
+        BatchContainerPlan? batchPlan = null;
         string? dockerResourceChange = null;
         string? dockerResourceWarning = null;
         string? deleteName = null;
@@ -115,6 +116,10 @@ public sealed class DockerEngine : IDisposable
         else if (action == "prune")
         {
             unusedImageBytes = (await ListImagesAsync(cancellationToken)).Where(item => item.Containers == 0).Sum(item => item.Size);
+        }
+        else if (action is "batch-start" or "batch-stop" or "batch-restart" or "batch-delete")
+        {
+            batchPlan = await ValidateBatchAsync(action, parameters, cancellationToken);
         }
         else if (action == "network-create")
         {
@@ -177,6 +182,15 @@ public sealed class DockerEngine : IDisposable
             response.Changes.Clear();
             response.Changes.Add($"清理未使用镜像，预计最多回收 {unusedImageBytes.Value} 字节");
         }
+        else if (batchPlan is not null)
+        {
+            response.Changes.Clear();
+            response.Changes.Add($"批量{BatchActionLabel(batchPlan.Action)} {batchPlan.Affected.Count} 个普通容器");
+            response.Changes.Add(string.Join("、", batchPlan.Affected.Take(12)) +
+                (batchPlan.Affected.Count > 12 ? $" 等 {batchPlan.Affected.Count} 个" : string.Empty));
+            if (batchPlan.Skipped.Count > 0)
+                response.Warnings.Add($"将跳过 {batchPlan.Skipped.Count} 个受保护或不存在的容器：{string.Join("、", batchPlan.Skipped.Take(8))}");
+        }
         else if (dockerResourceChange is not null)
         {
             response.Changes.Clear();
@@ -207,7 +221,8 @@ public sealed class DockerEngine : IDisposable
 
         try
         {
-            if (action is "create" or "prune" or "update" or "network-create" or "network-delete" or "volume-delete")
+            if (action is "create" or "prune" or "update" or "network-create" or "network-delete" or "volume-delete" or
+                "batch-start" or "batch-stop" or "batch-restart" or "batch-delete")
                 _plans.VerifyAndConsume(planHash ?? string.Empty, resourceId, action, NormalizePlanParameters(parameters));
             switch (action)
             {
@@ -222,6 +237,12 @@ public sealed class DockerEngine : IDisposable
                     break;
                 case "prune":
                     await PruneAsync(parameters, cancellationToken);
+                    break;
+                case "batch-start":
+                case "batch-stop":
+                case "batch-restart":
+                case "batch-delete":
+                    operation.ResultJson = await ExecuteBatchAsync(action, parameters, cancellationToken);
                     break;
                 case "network-create":
                     operation.ResultJson = await CreateNetworkAsync(parameters, cancellationToken);
@@ -753,6 +774,130 @@ public sealed class DockerEngine : IDisposable
 
     public void Dispose() => _client.Dispose();
 
+    private async Task<BatchContainerPlan> ValidateBatchAsync(
+        string action,
+        IReadOnlyDictionary<string, string> parameters,
+        CancellationToken cancellationToken)
+    {
+        var requested = ParseBatchContainerIds(parameters);
+        var containers = await ListContainersAsync(true, cancellationToken);
+        var affected = new List<string>();
+        var skipped = new List<string>();
+        foreach (var requestedId in requested)
+        {
+            var container = FindContainer(containers, requestedId);
+            if (container is null)
+            {
+                skipped.Add(requestedId);
+                continue;
+            }
+            var name = container.Names.FirstOrDefault()?.TrimStart('/') ?? container.ID;
+            if (_registry.IsProtectedContainer(name, container.Labels))
+            {
+                skipped.Add(name);
+                continue;
+            }
+            affected.Add(name);
+        }
+        if (affected.Count == 0) throw new InvalidOperationException("The batch does not contain an eligible container.");
+        return new BatchContainerPlan(action["batch-".Length..], affected, skipped);
+    }
+
+    private async Task<string> ExecuteBatchAsync(
+        string action,
+        IReadOnlyDictionary<string, string> parameters,
+        CancellationToken cancellationToken)
+    {
+        var requested = ParseBatchContainerIds(parameters);
+        var containers = await ListContainersAsync(true, cancellationToken);
+        var completed = new List<string>();
+        var skipped = new List<string>();
+        var failures = new List<object>();
+        var timeout = checked((uint)ParseLong(parameters, "timeoutSeconds", 10, 1, 300));
+        var preserveVolumes = ParseBoolean(parameters, "preserveVolumes", true);
+        foreach (var requestedId in requested)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var container = FindContainer(containers, requestedId);
+            if (container is null)
+            {
+                skipped.Add(requestedId);
+                continue;
+            }
+            var name = container.Names.FirstOrDefault()?.TrimStart('/') ?? container.ID;
+            if (_registry.IsProtectedContainer(name, container.Labels))
+            {
+                skipped.Add(name);
+                continue;
+            }
+            try
+            {
+                switch (action)
+                {
+                    case "batch-start":
+                        await _client.Containers.StartContainerAsync(container.ID, new ContainerStartParameters(), cancellationToken);
+                        break;
+                    case "batch-stop":
+                        await _client.Containers.StopContainerAsync(container.ID,
+                            new ContainerStopParameters { WaitBeforeKillSeconds = timeout }, cancellationToken);
+                        break;
+                    case "batch-restart":
+                        await _client.Containers.RestartContainerAsync(container.ID,
+                            new ContainerRestartParameters { WaitBeforeKillSeconds = timeout }, cancellationToken);
+                        break;
+                    case "batch-delete":
+                        await _client.Containers.RemoveContainerAsync(container.ID,
+                            new ContainerRemoveParameters { RemoveVolumes = !preserveVolumes, Force = false }, cancellationToken);
+                        break;
+                    default:
+                        throw new InvalidOperationException("Unsupported batch container action.");
+                }
+                completed.Add(name);
+            }
+            catch (DockerApiException exception)
+            {
+                failures.Add(new { container = name, status = (int)exception.StatusCode });
+            }
+        }
+        return JsonSerializer.Serialize(new
+        {
+            action = action["batch-".Length..],
+            completed,
+            skipped,
+            failures,
+            partial = failures.Count > 0 || skipped.Count > 0
+        });
+    }
+
+    private static string[] ParseBatchContainerIds(IReadOnlyDictionary<string, string> parameters)
+    {
+        try
+        {
+            var values = JsonSerializer.Deserialize<string[]>(Required(parameters, "containerIds")) ?? [];
+            if (values.Length is < 1 or > 50 || values.Any(item => string.IsNullOrWhiteSpace(item) || item.Length > 128 ||
+                item.Any(character => !(char.IsAsciiLetterOrDigit(character) || character is '_' or '.' or '-'))))
+                throw new InvalidOperationException("Batch container ids are invalid.");
+            return values.Distinct(StringComparer.Ordinal).ToArray();
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidOperationException("containerIds must be a JSON string array.", exception);
+        }
+    }
+
+    private static ContainerListResponse? FindContainer(IEnumerable<ContainerListResponse> containers, string value) =>
+        containers.SingleOrDefault(item => item.ID.StartsWith(value, StringComparison.OrdinalIgnoreCase) ||
+            item.Names.Any(name => string.Equals(name.TrimStart('/'), value.TrimStart('/'), StringComparison.Ordinal)));
+
+    private static string BatchActionLabel(string action) => action switch
+    {
+        "start" => "启动",
+        "stop" => "停止",
+        "restart" => "重启",
+        "delete" => "删除",
+        _ => throw new InvalidOperationException("Unsupported batch container action.")
+    };
+
     private async Task ValidateContainerCreationAsync(ContainerConfiguration configuration, CancellationToken cancellationToken)
     {
         var containers = await ListContainersAsync(true, cancellationToken);
@@ -1119,6 +1264,11 @@ public sealed class DockerEngine : IDisposable
         string Image,
         string OldImageId,
         string VersionPolicy);
+
+    private sealed record BatchContainerPlan(
+        string Action,
+        IReadOnlyCollection<string> Affected,
+        IReadOnlyCollection<string> Skipped);
 
     private sealed class ContainerUpdateException(string message, string resultJson, bool rolledBack, Exception innerException)
         : InvalidOperationException(message, innerException)

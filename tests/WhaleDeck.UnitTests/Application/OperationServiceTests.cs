@@ -66,6 +66,21 @@ public sealed class OperationServiceTests
     }
 
     [Theory]
+    [InlineData("batch-start")]
+    [InlineData("batch-stop")]
+    [InlineData("batch-restart")]
+    [InlineData("batch-delete")]
+    public async Task ContainerBatchActionsRequireConfirmationAndPlan(string action)
+    {
+        var service = new OperationService(new RecordingJobRepository());
+        var command = new OperationCommand("containers", action, "batch", "key-1",
+            "{\"parameters\":{\"containerIds\":\"[\\\"container-1\\\"]\"}}", null, false);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command, default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command with { Confirmed = true }, default));
+    }
+
+    [Theory]
     [InlineData("network-delete")]
     [InlineData("volume-delete")]
     public async Task DockerResourceDeletionRequiresConfirmationAndPlan(string action)
