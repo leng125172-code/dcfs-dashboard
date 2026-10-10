@@ -30,7 +30,10 @@ public sealed class JobRepository(PlatformDbContext dbContext) : IJobRepository
             using var request = JsonDocument.Parse(job.RequestJson);
             var resourceExternalId = request.RootElement.GetProperty("resourceId").GetString();
             var resource = await dbContext.ManagedResources
-                .SingleOrDefaultAsync(item => item.ResourceType == "Database" && item.ExternalId == resourceExternalId, cancellationToken)
+                .Where(item => (item.ResourceType == "Database" || item.ResourceType == "Container") &&
+                               item.ExternalId == resourceExternalId)
+                .OrderByDescending(item => item.ResourceType == "Database")
+                .FirstOrDefaultAsync(cancellationToken)
                 ?? throw new KeyNotFoundException("Managed database resource was not found.");
             var retentionDays = 14;
             if (request.RootElement.TryGetProperty("parameters", out var parameters) &&

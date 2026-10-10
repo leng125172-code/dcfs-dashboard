@@ -71,9 +71,11 @@ public sealed class GovernanceRepository(PlatformDbContext db) : IGovernanceRepo
         if (!string.IsNullOrWhiteSpace(instanceResourceId))
         {
             var resourceId = await db.ManagedResources
-                .Where(item => item.ResourceType == "Database" && item.ExternalId == instanceResourceId)
+                .Where(item => (item.ResourceType == "Database" || item.ResourceType == "Container") &&
+                               item.ExternalId == instanceResourceId)
+                .OrderByDescending(item => item.ResourceType == "Database")
                 .Select(item => (Guid?)item.Id)
-                .SingleOrDefaultAsync(cancellationToken)
+                .FirstOrDefaultAsync(cancellationToken)
                 ?? throw new KeyNotFoundException("Managed database resource was not found.");
             query = query.Where(item => item.InstanceResourceId == resourceId);
         }
@@ -108,8 +110,10 @@ public sealed class GovernanceRepository(PlatformDbContext db) : IGovernanceRepo
         else
         {
             var resourceId = await db.ManagedResources
-                .Where(value => value.ResourceType == "Database" && value.ExternalId == command.InstanceResourceId)
-                .Select(value => (Guid?)value.Id).SingleOrDefaultAsync(cancellationToken)
+                .Where(value => (value.ResourceType == "Database" || value.ResourceType == "Container") &&
+                                value.ExternalId == command.InstanceResourceId)
+                .OrderByDescending(value => value.ResourceType == "Database")
+                .Select(value => (Guid?)value.Id).FirstOrDefaultAsync(cancellationToken)
                 ?? throw new KeyNotFoundException("Managed database resource was not found.");
             item = new BackupPolicy
             {
