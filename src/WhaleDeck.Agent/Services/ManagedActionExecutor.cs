@@ -402,7 +402,7 @@ public sealed partial class ManagedActionExecutor(
         {
             var full = Path.GetFullPath(Path.Combine(path, relative));
             if (!full.StartsWith(Path.GetFullPath(path) + Path.DirectorySeparatorChar, StringComparison.Ordinal) || !File.Exists(full)) continue;
-            if (SensitiveFileNamePattern().IsMatch(relative)) throw new InvalidOperationException("A sensitive file cannot be committed.");
+            if (IsSensitiveRepositoryFile(relative)) throw new InvalidOperationException("A sensitive file cannot be committed.");
             if (new FileInfo(full).Length <= 1024 * 1024)
             {
                 var content = await File.ReadAllTextAsync(full, cancellationToken);
@@ -474,6 +474,10 @@ public sealed partial class ManagedActionExecutor(
             throw new InvalidOperationException("The commit message is invalid.");
     }
 
+    private static bool IsSensitiveRepositoryFile(string relativePath) =>
+        !relativePath.EndsWith(".example", StringComparison.OrdinalIgnoreCase) &&
+        SensitiveFileNamePattern().IsMatch(relativePath);
+
     private static string PostgresGrantSql(string principal, string database, string role) => role switch
     {
         "readonly" => $"GRANT CONNECT ON DATABASE {PgIdentifier(database)} TO {PgIdentifier(principal)};",
@@ -537,6 +541,6 @@ public sealed partial class ManagedActionExecutor(
     [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9./_:@-]{0,254}$", RegexOptions.CultureInvariant)] private static partial Regex ImagePattern();
     [GeneratedRegex("^(0\\.0\\.0\\.0|127\\.0\\.0\\.1):[1-9][0-9]{0,4}:[1-9][0-9]{0,4}(/(tcp|udp))?$", RegexOptions.CultureInvariant)] private static partial Regex PortPattern();
     [GeneratedRegex("^[A-Z_][A-Z0-9_]{0,127}$", RegexOptions.CultureInvariant)] private static partial Regex EnvironmentNamePattern();
-    [GeneratedRegex("(^|/)(\\.env($|\\.)|.*(password|secret|token|private[-_.]?key|credential).*)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)] private static partial Regex SensitiveFileNamePattern();
+    [GeneratedRegex("(^|/)(\\.env($|\\.)|.*\\.(pem|key|p12|pfx)$|id_(rsa|ed25519)(\\.pub)?$|.*(password|secret|token|credential).*\\.(json|ya?ml|txt|ini|conf)$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)] private static partial Regex SensitiveFileNamePattern();
     [GeneratedRegex("(?im)(password|secret|token|client_secret|private_key)\\s*[:=]\\s*[^$<{\\s][^\\r\\n]{5,}", RegexOptions.CultureInvariant)] private static partial Regex SensitiveContentPattern();
 }

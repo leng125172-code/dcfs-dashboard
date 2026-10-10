@@ -36,6 +36,20 @@ public sealed class ManagedActionExecutorTests
         Assert.IsType<InvalidOperationException>(exception.InnerException);
     }
 
+    [Theory]
+    [InlineData(".env", true)]
+    [InlineData("authentik/.env.production", true)]
+    [InlineData("certificates/server.key", true)]
+    [InlineData("settings/client-secret.json", true)]
+    [InlineData(".env.example", false)]
+    [InlineData("validation/check-whaledeck-credentials.sh", false)]
+    public void RepositoryFileValidationDistinguishesSecretsFromTemplatesAndTools(string path, bool expected)
+    {
+        var method = typeof(ManagedActionExecutor).GetMethod("IsSensitiveRepositoryFile", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("IsSensitiveRepositoryFile was not found.");
+        Assert.Equal(expected, method.Invoke(null, [path]));
+    }
+
     private static void InvokeValidateImage(string image)
         => InvokePrivate("ValidateImage", image);
 
