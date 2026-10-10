@@ -1,9 +1,23 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import {
+  ElAlert,
   ElBadge,
   ElButton,
+  ElDescriptions,
+  ElDescriptionsItem,
+  ElDialog,
+  ElDrawer,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
+  ElEmpty,
+  ElForm,
+  ElFormItem,
   ElIcon,
+  ElInput,
+  ElInputNumber,
+  ElLoading,
   ElMenu,
   ElMenuItem,
   ElOption,
@@ -11,7 +25,13 @@ import {
   ElSegmented,
   ElSelect,
   ElSwitch,
+  ElTabPane,
+  ElTable,
+  ElTableColumn,
+  ElTabs,
   ElTag,
+  ElTimeline,
+  ElTimelineItem,
   ElTooltip,
 } from 'element-plus'
 import 'element-plus/dist/index.css'
@@ -25,17 +45,41 @@ const app = createApp(App)
 
 app.use(createPinia())
 app.use(router)
-app.component(ElBadge.name!, ElBadge)
-app.component(ElButton.name!, ElButton)
-app.component(ElIcon.name!, ElIcon)
-app.component(ElMenu.name!, ElMenu)
-app.component(ElMenuItem.name!, ElMenuItem)
-app.component(ElOption.name!, ElOption)
-app.component(ElProgress.name!, ElProgress)
-app.component(ElSegmented.name!, ElSegmented)
-app.component(ElSelect.name!, ElSelect)
-app.component(ElSwitch.name!, ElSwitch)
-app.component(ElTag.name!, ElTag)
-app.component(ElTooltip.name!, ElTooltip)
+for (const component of [
+  ElAlert,
+  ElBadge,
+  ElButton,
+  ElDescriptions,
+  ElDescriptionsItem,
+  ElDialog,
+  ElDrawer,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
+  ElEmpty,
+  ElForm,
+  ElFormItem,
+  ElIcon,
+  ElInput,
+  ElInputNumber,
+  ElMenu,
+  ElMenuItem,
+  ElOption,
+  ElProgress,
+  ElSegmented,
+  ElSelect,
+  ElSwitch,
+  ElTabPane,
+  ElTable,
+  ElTableColumn,
+  ElTabs,
+  ElTag,
+  ElTimeline,
+  ElTimelineItem,
+  ElTooltip,
+]) {
+  app.component(component.name!, component)
+}
+app.directive('loading', ElLoading.directive)
 
 app.mount('#app')
