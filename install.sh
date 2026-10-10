@@ -211,9 +211,14 @@ clone_or_update() {
     actual_origin=$(as_owner git -C "$destination" remote get-url origin)
     [[ $(canonical_repository "$actual_origin") == $(canonical_repository "$repository") ]] || fail "Repository origin does not match the configured source: $destination"
     [[ -z $(as_owner git -C "$destination" status --porcelain) ]] || fail "Repository has local changes: $destination"
-    as_owner git -C "$destination" fetch origin "$branch"
-    as_owner git -C "$destination" checkout "$branch"
-    as_owner git -C "$destination" merge --ff-only FETCH_HEAD
+    if as_owner timeout 30 git -C "$destination" fetch origin "$branch"; then
+      as_owner git -C "$destination" checkout "$branch"
+      as_owner git -C "$destination" merge --ff-only FETCH_HEAD
+    else
+      [[ $(as_owner git -C "$destination" branch --show-current) == "$branch" ]] || fail "Remote is unavailable and the existing checkout is not on $branch: $destination"
+      as_owner git -C "$destination" rev-parse --verify HEAD >/dev/null
+      log "Remote update unavailable; using the existing clean $branch checkout at $destination."
+    fi
   elif [[ -e $destination ]]; then
     fail "Destination exists but is not a Git repository: $destination"
   else
