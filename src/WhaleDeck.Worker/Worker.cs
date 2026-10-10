@@ -16,6 +16,10 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         LogLevel.Error,
         new EventId(1001, "WorkerCycleFailed"),
         "Worker cycle failed with diagnostic code WORKER_CYCLE_FAILED");
+    private static readonly Action<ILogger, Guid, int, Exception?> LogOutboxRetry = LoggerMessage.Define<Guid, int>(
+        LogLevel.Warning,
+        new EventId(1002, "OutboxDispatchRetry"),
+        "Outbox message {MessageId} dispatch failed; retry attempt {Attempt} is scheduled");
 
     private DateTimeOffset _nextCatalogRefresh = DateTimeOffset.MinValue;
     private DateTimeOffset _nextRetentionSweep = DateTimeOffset.MinValue;
@@ -50,7 +54,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         await SyncManagedResources(db, agent, cancellationToken);
         await DispatchScheduledTasks(db, agent, cancellationToken);
         await DispatchBackupPolicies(db, cancellationToken);
-        await DispatchOutbox(db, agent, secrets, identity, leases, _workerInstanceId, cancellationToken);
+        await DispatchOutbox(db, agent, secrets, identity, leases, _workerInstanceId, logger, cancellationToken);
         await ReconcileAgentOperations(db, agent, leases, _workerInstanceId, cancellationToken);
         await EvaluateAlerts(db, cancellationToken);
 
@@ -247,6 +251,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         IIdentityManager identity,
         ResourceLeaseManager leases,
         string workerInstanceId,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         var messages = await db.OutboxMessages.Where(item => item.ProcessedAtUtc == null && item.AvailableAtUtc <= DateTimeOffset.UtcNow)
@@ -356,8 +361,11 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             {
                 message.Attempts++;
                 var secretExpired = exception is InvalidOperationException && exception.Message.Contains("staged secret expired", StringComparison.Ordinal);
-                var terminal = secretExpired || message.Attempts >= 8;
-                message.LastErrorCode = secretExpired ? "ONE_TIME_SECRET_EXPIRED" : "OUTBOX_DISPATCH_FAILED";
+                var providerRejected = exception is HttpRequestException { StatusCode: { } status } &&
+                    (int)status is >= 400 and < 500 and not 408 and not 429;
+                var terminal = secretExpired || providerRejected || message.Attempts >= 8;
+                message.LastErrorCode = secretExpired ? "ONE_TIME_SECRET_EXPIRED" :
+                    providerRejected ? "IDENTITY_PROVIDER_REJECTED" : "OUTBOX_DISPATCH_FAILED";
                 if (terminal)
                 {
                     message.ProcessedAtUtc = DateTimeOffset.UtcNow;
@@ -366,7 +374,8 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                         using var failedPayload = JsonDocument.Parse(message.PayloadJson);
                         var failedJobId = failedPayload.RootElement.GetProperty("jobId").GetGuid();
                         var failedJob = await db.OperationJobs.SingleAsync(item => item.Id == failedJobId, cancellationToken);
-                        await Complete(db, failedJob, "Failed", secretExpired ? "SecretExpired" : "DispatchRetriesExhausted", message.LastErrorCode, cancellationToken);
+                        var phase = secretExpired ? "SecretExpired" : providerRejected ? "ProviderRejected" : "DispatchRetriesExhausted";
+                        await Complete(db, failedJob, "Failed", phase, message.LastErrorCode, cancellationToken);
                     }
                 }
                 else
@@ -374,7 +383,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                     message.AvailableAtUtc = DateTimeOffset.UtcNow.AddSeconds(Math.Min(300, 5 * Math.Pow(2, message.Attempts)));
                 }
                 await db.SaveChangesAsync(cancellationToken);
-                if (!terminal) throw;
+                if (!terminal) LogOutboxRetry(logger, message.Id, message.Attempts, null);
             }
         }
     }
