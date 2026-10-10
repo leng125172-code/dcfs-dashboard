@@ -42,6 +42,10 @@ builder.Services.AddReverseProxy()
         new Yarp.ReverseProxy.Configuration.ClusterConfig
         {
             ClusterId = "gateway",
+            HttpRequest = new Yarp.ReverseProxy.Forwarder.ForwarderRequestConfig
+            {
+                ActivityTimeout = TimeSpan.FromSeconds(5)
+            },
             Destinations = new Dictionary<string, Yarp.ReverseProxy.Configuration.DestinationConfig>
             {
                 ["gateway"] = new() { Address = "http://127.0.0.1:18080/" }
@@ -50,6 +54,10 @@ builder.Services.AddReverseProxy()
         new Yarp.ReverseProxy.Configuration.ClusterConfig
         {
             ClusterId = "authentik",
+            HttpRequest = new Yarp.ReverseProxy.Forwarder.ForwarderRequestConfig
+            {
+                ActivityTimeout = TimeSpan.FromSeconds(5)
+            },
             Destinations = new Dictionary<string, Yarp.ReverseProxy.Configuration.DestinationConfig>
             {
                 ["authentik"] = new() { Address = "http://127.0.0.1:18081/" }
