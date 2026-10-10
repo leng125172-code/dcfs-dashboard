@@ -9,6 +9,7 @@ type DbAction =
   | 'create'
   | 'delete'
   | 'create-principal'
+  | 'delete-principal'
   | 'disable-principal'
   | 'grant'
   | 'rotate'
@@ -71,14 +72,16 @@ async function submit() {
       parameters.inputKind = 'password'
     }
     let planHash: string | null = null
-    if (action.value === 'delete') {
+    if (['create', 'delete', 'delete-principal'].includes(action.value)) {
       const plan = await planOperation('databases', action.value, selected.value.id, parameters)
       planHash = plan.planHash
-      await ElMessageBox.confirm(
-        [...plan.changes, ...plan.warnings].join('\n') || `将删除数据库 ${form.name}`,
-        '危险操作确认',
-        { type: 'error', confirmButtonText: '删除', cancelButtonText: '取消' },
-      )
+      if (action.value !== 'create') {
+        await ElMessageBox.confirm(
+          [...plan.changes, ...plan.warnings].join('\n') || '将永久删除所选资源。',
+          '危险操作确认',
+          { type: 'error', confirmButtonText: '删除', cancelButtonText: '取消' },
+        )
+      }
     } else if (['disable-principal', 'rotate', 'terminate-connection'].includes(action.value)) {
       await ElMessageBox.confirm(
         `确认执行 ${action.value}？该操作会影响现有连接或凭据。`,
@@ -156,6 +159,7 @@ onMounted(load)
                 ><el-dropdown-item command="grant">授权</el-dropdown-item
                 ><el-dropdown-item command="rotate">轮换密码</el-dropdown-item
                 ><el-dropdown-item command="disable-principal">禁用账号</el-dropdown-item
+                ><el-dropdown-item command="delete-principal" divided>删除账号</el-dropdown-item
                 ><el-dropdown-item command="terminate-connection"
                   >终止连接</el-dropdown-item
                 ></el-dropdown-menu
@@ -189,7 +193,7 @@ onMounted(load)
           ><el-input v-model="form.principal" autocomplete="off"
         /></el-form-item>
         <el-form-item
-          v-if="!isValkey && ['create-principal', 'grant', 'terminate-connection'].includes(action)"
+          v-if="!isValkey && ['create-principal', 'delete-principal', 'grant', 'terminate-connection'].includes(action)"
           label="数据库"
           ><el-input v-model="form.database"
         /></el-form-item>

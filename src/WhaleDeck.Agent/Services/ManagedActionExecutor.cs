@@ -66,6 +66,7 @@ public sealed partial class ManagedActionExecutor(
             "delete" => $"DROP DATABASE IF EXISTS {PgIdentifier(Required(name, "name"))} WITH (FORCE);",
             "create-principal" => $"CREATE ROLE {PgIdentifier(Required(principal, "principal"))} LOGIN PASSWORD {SqlLiteral(Required(password, "password"))};" +
                 PostgresGrantSql(principal!, Required(database, "database"), role),
+            "delete-principal" => $"DROP ROLE IF EXISTS {PgIdentifier(Required(principal, "principal"))};",
             "disable-principal" => $"ALTER ROLE {PgIdentifier(Required(principal, "principal"))} NOLOGIN;",
             "grant" => PostgresGrantSql(Required(principal, "principal"), Required(database, "database"), role),
             "rotate" => $"ALTER ROLE {PgIdentifier(Required(principal, "principal"))} PASSWORD {SqlLiteral(Required(password, "password"))};",
@@ -88,6 +89,7 @@ public sealed partial class ManagedActionExecutor(
             "create" => $"CREATE DATABASE IF NOT EXISTS {MySqlIdentifier(Required(name, "name"))};",
             "delete" => $"DROP DATABASE IF EXISTS {MySqlIdentifier(Required(name, "name"))};",
             "create-principal" => $"CREATE USER IF NOT EXISTS {account} IDENTIFIED BY {SqlLiteral(Required(password, "password"))};" + MariaGrantSql(account!, Required(database, "database"), role),
+            "delete-principal" => $"DROP USER IF EXISTS {account};",
             "disable-principal" => $"ALTER USER {account} ACCOUNT LOCK;",
             "grant" => MariaGrantSql(account!, Required(database, "database"), role),
             "rotate" => $"ALTER USER {account} IDENTIFIED BY {SqlLiteral(Required(password, "password"))};",
@@ -111,6 +113,8 @@ public sealed partial class ManagedActionExecutor(
             "delete" => $"IF DB_ID({SqlLiteral(Required(name, "name"))}) IS NOT NULL BEGIN ALTER DATABASE {SqlServerIdentifier(name!)} SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE {SqlServerIdentifier(name!)}; END;",
             "create-principal" => $"IF SUSER_ID({SqlLiteral(Required(principal, "principal"))}) IS NULL CREATE LOGIN {SqlServerIdentifier(principal!)} WITH PASSWORD={SqlLiteral(Required(password, "password"))}, CHECK_POLICY=ON;\n" +
                 $"USE {SqlServerIdentifier(Required(database, "database"))}; IF USER_ID({SqlLiteral(principal!)}) IS NULL CREATE USER {SqlServerIdentifier(principal!)} FOR LOGIN {SqlServerIdentifier(principal!)}; ALTER ROLE {SqlServerIdentifier(role)} ADD MEMBER {SqlServerIdentifier(principal!)};",
+            "delete-principal" => $"USE {SqlServerIdentifier(Required(database, "database"))}; IF USER_ID({SqlLiteral(Required(principal, "principal"))}) IS NOT NULL DROP USER {SqlServerIdentifier(principal!)}; " +
+                $"USE [master]; IF SUSER_ID({SqlLiteral(principal!)}) IS NOT NULL DROP LOGIN {SqlServerIdentifier(principal!)};",
             "disable-principal" => $"ALTER LOGIN {SqlServerIdentifier(Required(principal, "principal"))} DISABLE;",
             "grant" => $"USE {SqlServerIdentifier(Required(database, "database"))}; IF USER_ID({SqlLiteral(Required(principal, "principal"))}) IS NULL CREATE USER {SqlServerIdentifier(principal!)} FOR LOGIN {SqlServerIdentifier(principal!)}; ALTER ROLE {SqlServerIdentifier(role)} ADD MEMBER {SqlServerIdentifier(principal!)};",
             "rotate" => $"ALTER LOGIN {SqlServerIdentifier(Required(principal, "principal"))} WITH PASSWORD={SqlLiteral(Required(password, "password"))};",
@@ -133,6 +137,7 @@ public sealed partial class ManagedActionExecutor(
             "create" => $"db.getSiblingDB({Json(name ?? throw new InvalidOperationException("name is required."))}).createCollection('_whaledeck_meta');",
             "delete" => $"db.getSiblingDB({Json(name ?? throw new InvalidOperationException("name is required."))}).dropDatabase();",
             "create-principal" => $"db.getSiblingDB({Json(Required(database, "database"))}).createUser({{user:{Json(Required(principal, "principal"))},pwd:{Json(Required(password, "password"))},roles:[{{role:{Json(role)},db:{Json(database!)}}}]}});",
+            "delete-principal" => $"db.getSiblingDB({Json(Required(database, "database"))}).dropUser({Json(Required(principal, "principal"))});",
             "disable-principal" => $"db.getSiblingDB({Json(Required(database, "database"))}).updateUser({Json(Required(principal, "principal"))},{{roles:[]}});",
             "grant" => $"db.getSiblingDB({Json(Required(database, "database"))}).updateUser({Json(Required(principal, "principal"))},{{roles:[{{role:{Json(role)},db:{Json(database!)}}}]}});",
             "rotate" => $"db.getSiblingDB({Json(Required(database, "database"))}).updateUser({Json(Required(principal, "principal"))},{{pwd:{Json(Required(password, "password"))}}});",
@@ -153,6 +158,7 @@ public sealed partial class ManagedActionExecutor(
         string[] command = action switch
         {
             "create-principal" => ["ACL", "SETUSER", principal, "on", "resetpass", $">{Required(password, "password")}", "resetkeys", $"~{prefix}*", "resetchannels", "resetcommands", .. ValkeyPermissions(role)],
+            "delete-principal" => ["ACL", "DELUSER", principal],
             "disable-principal" => ["ACL", "SETUSER", principal, "off"],
             "grant" => ["ACL", "SETUSER", principal, "on", "resetkeys", $"~{prefix}*", "resetchannels", "resetcommands", .. ValkeyPermissions(role)],
             "rotate" => ["ACL", "SETUSER", principal, "resetpass", $">{Required(password, "password")}"],

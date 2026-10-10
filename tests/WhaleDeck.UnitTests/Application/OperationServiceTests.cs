@@ -54,6 +54,17 @@ public sealed class OperationServiceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command, default));
     }
 
+    [Fact]
+    public async Task DatabasePrincipalDeletionRequiresConfirmationAndPlan()
+    {
+        var service = new OperationService(new RecordingJobRepository());
+        var command = new OperationCommand("databases", "delete-principal", "database-platform.postgres", "key-1",
+            "{\"parameters\":{\"principal\":\"temporary_user\"}}", null, false);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command, default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command with { Confirmed = true }, default));
+    }
+
     [Theory]
     [InlineData("password")]
     [InlineData("apiToken")]

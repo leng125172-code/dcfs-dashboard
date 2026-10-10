@@ -148,7 +148,7 @@ public sealed class ManagedResourceGrpcService(
             : $"{context.JobId}:{context.IdempotencyKey}:{category}:{action}:{resourceId}";
 
     private static bool RequiresPlan(string action) => action is
-        "delete" or "prune" or "apply-settings" or "install" or "update" or "reinstall" or "uninstall" or
+        "delete" or "delete-principal" or "prune" or "apply-settings" or "install" or "update" or "reinstall" or "uninstall" or
         "update-install" or "reboot" or "commit-push" or "apply-update" or "rollback";
 
     private static Dictionary<string, string> PlanParameters(IReadOnlyDictionary<string, string> parameters) =>

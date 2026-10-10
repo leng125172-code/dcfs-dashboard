@@ -12,7 +12,7 @@ public sealed class OperationService(IJobRepository jobs)
         {
             ["containers"] = new(StringComparer.OrdinalIgnoreCase) { "create", "start", "stop", "restart", "delete", "pull", "prune" },
             ["docker"] = new(StringComparer.OrdinalIgnoreCase) { "validate-settings", "apply-settings" },
-            ["databases"] = new(StringComparer.OrdinalIgnoreCase) { "create", "delete", "create-principal", "disable-principal", "grant", "rotate", "terminate-connection" },
+            ["databases"] = new(StringComparer.OrdinalIgnoreCase) { "create", "delete", "create-principal", "delete-principal", "disable-principal", "grant", "rotate", "terminate-connection" },
             ["backups"] = new(StringComparer.OrdinalIgnoreCase) { "run", "verify", "cancel", "save-policy" },
             ["applications"] = new(StringComparer.OrdinalIgnoreCase) { "install", "start", "stop", "restart", "update", "reinstall", "uninstall" },
             ["host"] = new(StringComparer.OrdinalIgnoreCase) { "update-check", "update-install", "reboot", "systemd-start", "systemd-stop", "systemd-restart" },
@@ -81,11 +81,11 @@ public sealed class OperationService(IJobRepository jobs)
         jobs.RequestCancellationAsync(id, actorSubject, cancellationToken);
 
     private static bool RequiresConfirmation(OperationCommand command) => command.Action is
-        "stop" or "restart" or "delete" or "prune" or "apply-settings" or "uninstall" or
+        "stop" or "restart" or "delete" or "delete-principal" or "prune" or "apply-settings" or "uninstall" or
         "update" or "reinstall" or "reboot" or "update-install" or "commit-push" or "apply-update" or "rollback";
 
     private static bool RequiresPlan(OperationCommand command) => command.Action is
-        "create" or "delete" or "prune" or "apply-settings" or "install" or "update" or "reinstall" or "uninstall" or
+        "create" or "delete" or "delete-principal" or "prune" or "apply-settings" or "install" or "update" or "reinstall" or "uninstall" or
         "update-install" or "reboot" or "commit-push" or "apply-update" or "rollback";
 
     private static JobDto Map(OperationJob job) => new(job.Id, job.JobType, job.State, job.Phase, job.ProgressPercent, job.ErrorCode,
