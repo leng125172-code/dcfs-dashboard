@@ -21,7 +21,10 @@ ProtectControlGroups=true
 NoNewPrivileges=true
 RestrictSUIDSGID=true
 LockPersonality=true
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# AF_NETLINK is read-only here and is required to resolve which local
+# interface owns the request destination address. Container bridge interfaces
+# are then rejected by the application before proxying.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 ReadOnlyPaths=-/run/whaledeck/maintenance
 
 [Install]
