@@ -67,7 +67,9 @@ function authenticatePreview() {
 
 function redirectToAuthentik(returnUrl = '/') {
   const safeReturnUrl = returnUrl.startsWith('/') && !returnUrl.startsWith('//') ? returnUrl : '/'
-  window.location.assign(`${runtimeConfig.apiBaseUrl}/auth/login?returnUrl=${encodeURIComponent(safeReturnUrl)}`)
+  window.location.assign(
+    `${runtimeConfig.apiBaseUrl}/auth/login?returnUrl=${encodeURIComponent(safeReturnUrl)}`,
+  )
 }
 
 async function logout() {

@@ -39,6 +39,7 @@ const navigationGroups = [
     label: '运行与监控',
     items: [
       { index: '/containers', label: '容器', icon: DataAnalysis, administratorOnly: true },
+      { index: '/docker/settings', label: 'Docker 设置', icon: Setting, administratorOnly: true },
       { index: '/databases', label: '数据库', icon: Odometer, administratorOnly: true },
       { index: '/systemd', label: '系统服务', icon: Monitor, administratorOnly: true },
       { index: '/jobs', label: '任务中心', icon: Setting, administratorOnly: true },
@@ -50,6 +51,8 @@ const navigationGroups = [
     items: [
       { index: '/applications', label: '应用管理', icon: Box, administratorOnly: true },
       { index: '/backups', label: '备份策略', icon: Document, administratorOnly: true },
+      { index: '/identity/users', label: '身份用户', icon: UserFilled, administratorOnly: true },
+      { index: '/identity/sso', label: 'SSO 应用', icon: Link, administratorOnly: true },
     ],
   },
   {
@@ -58,13 +61,30 @@ const navigationGroups = [
       { index: '/alerts', label: '告警', icon: BellFilled, administratorOnly: true },
       { index: '/audit', label: '审计日志', icon: Document, administratorOnly: true },
       { index: '/settings', label: '平台设置', icon: Setting, administratorOnly: true },
+      {
+        index: '/settings/config-repository',
+        label: '配置仓库',
+        icon: Document,
+        administratorOnly: true,
+      },
+      {
+        index: '/platform/maintenance',
+        label: '平台维护',
+        icon: Operation,
+        administratorOnly: true,
+      },
     ],
   },
 ] as const
 
-const visibleNavigationGroups = computed(() => navigationGroups
-  .map((group) => ({ ...group, items: group.items.filter((item) => !item.administratorOnly || isAdministrator.value) }))
-  .filter((group) => group.items.length > 0))
+const visibleNavigationGroups = computed(() =>
+  navigationGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.administratorOnly || isAdministrator.value),
+    }))
+    .filter((group) => group.items.length > 0),
+)
 
 function toggleMobileNavigation() {
   isMobileNavigationOpen.value = !isMobileNavigationOpen.value
@@ -116,17 +136,24 @@ async function userCommand(command: string) {
             </span>
           </div>
           <el-dropdown trigger="click" placement="top-start" @command="userCommand">
-          <button class="sidebar-user" type="button" aria-label="打开用户菜单">
-            <span class="sidebar-user__avatar">
-              <el-icon><UserFilled /></el-icon>
-            </span>
-            <span class="sidebar-user__copy">
-              <strong>{{ currentUserName }}</strong>
-              <small>{{ isAdministrator ? '管理员' : '普通用户' }} · Authentik</small>
-            </span>
-            <el-icon class="sidebar-user__arrow"><ArrowDown /></el-icon>
-          </button>
-          <template #dropdown><el-dropdown-menu><el-dropdown-item command="portal">我的门户</el-dropdown-item><el-dropdown-item divided command="logout">退出登录</el-dropdown-item></el-dropdown-menu></template>
+            <button class="sidebar-user" type="button" aria-label="打开用户菜单">
+              <span class="sidebar-user__avatar">
+                <el-icon><UserFilled /></el-icon>
+              </span>
+              <span class="sidebar-user__copy">
+                <strong>{{ currentUserName }}</strong>
+                <small>{{ isAdministrator ? '管理员' : '普通用户' }} · Authentik</small>
+              </span>
+              <el-icon class="sidebar-user__arrow"><ArrowDown /></el-icon>
+            </button>
+            <template #dropdown
+              ><el-dropdown-menu
+                ><el-dropdown-item command="portal">我的门户</el-dropdown-item
+                ><el-dropdown-item divided command="logout"
+                  >退出登录</el-dropdown-item
+                ></el-dropdown-menu
+              ></template
+            >
           </el-dropdown>
         </div>
       </aside>

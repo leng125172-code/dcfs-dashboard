@@ -21,7 +21,7 @@ export class ApiError extends Error {
 
 let csrf: { headerName: string; token: string } | null = null
 
-function apiUrl(path: string) {
+export function apiUrl(path: string) {
   const base = runtimeConfig.apiBaseUrl.replace(/\/$/, '')
   return `${base}/${path.replace(/^\//, '')}`
 }

@@ -98,4 +98,44 @@ export interface Job {
   errorCode: string | null
   createdAtUtc: string
   completedAtUtc: string | null
+  resultJson: string | null
+}
+
+export interface JobEvent {
+  sequence: number
+  state: string
+  phase: string
+  progressPercent: number | null
+  messageCode: string
+  occurredAtUtc: string
+}
+
+export interface ScheduledTask {
+  id: string
+  taskType: string
+  name: string
+  scheduleKind: string
+  scheduleExpression: string
+  timezone: string
+  concurrencyPolicy: string
+  timeoutSeconds: number
+  isEnabled: boolean
+  nextRunAtUtc: string | null
+  version: number
+}
+
+export interface BackupPolicy {
+  id: string
+  instanceResourceId: string
+  isEnabled: boolean
+  scheduleExpression: string
+  timezone: string
+  retentionCount: number
+  retentionDays: number
+  targetDirectoryId: string
+  compression: string
+  verifyAfterBackup: boolean
+  capacityWarningPercent: number
+  capacityCriticalPercent: number
+  version: number
 }

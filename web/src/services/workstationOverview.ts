@@ -289,14 +289,19 @@ export async function fetchWorkstationOverview(): Promise<WorkstationOverviewSna
       sampledAtUtc: response.sampledAtUtc,
       platformStatus: response.platformStatus,
       portals: response.portals,
-      resources: [], usage: [], system: [], applications: [],
+      resources: [],
+      usage: [],
+      system: [],
+      applications: [],
       healthMessage: '平台在线',
       healthDetail: '当前账号可访问个人门户与已发布入口',
     }
   }
 
   const resources = response.resources ?? []
-  const history = await apiRequest<MetricSeriesSnapshot[]>('metrics?kinds=network.receive&kinds=network.send&kinds=network.receive.total&kinds=network.send.total&kinds=disk.read&kinds=disk.write&kinds=disk.utilization&take=60')
+  const history = await apiRequest<MetricSeriesSnapshot[]>(
+    'metrics?kinds=network.receive&kinds=network.send&kinds=network.receive.total&kinds=network.send.total&kinds=disk.read&kinds=disk.write&kinds=disk.utilization&take=60',
+  )
   const metric = (kind: string) => response.metrics?.find((item) => item.kind === kind)?.value ?? 0
   const cpu = metric('cpu.utilization')
   const memory = metric('memory.utilization')
@@ -304,7 +309,9 @@ export async function fetchWorkstationOverview(): Promise<WorkstationOverviewSna
   const containers = resources.filter((item) => item.type === 'Container')
   const running = containers.filter((item) => item.state.toLowerCase() === 'running').length
   const uptime = response.host?.uptime || '未知'
-  const bootTime = response.host?.bootTimeUtc ? new Date(response.host.bootTimeUtc).toLocaleString() : '未知'
+  const bootTime = response.host?.bootTimeUtc
+    ? new Date(response.host.bootTimeUtc).toLocaleString()
+    : '未知'
   const applications = (response.applications ?? []).slice(0, 6).map((app, index) => ({
     id: app.id,
     name: app.name,
@@ -312,43 +319,86 @@ export async function fetchWorkstationOverview(): Promise<WorkstationOverviewSna
     description: app.description,
     category: '容器应用',
     icon: (['gateway', 'database', 'cache', 'ai', 'runtime', 'developer'] as const)[index % 6]!,
-    state: (app.installed ? (app.state?.toLowerCase() === 'stopped' ? 'stopped' : 'running') : 'available') as ContainerState,
+    state: (app.installed
+      ? app.state?.toLowerCase() === 'stopped'
+        ? 'stopped'
+        : 'running'
+      : 'available') as ContainerState,
     installedVersion: app.installed ? app.version : undefined,
   }))
   const makeTelemetry = (mode: 'network' | 'disk'): TelemetryDataset => {
     const firstKind = mode === 'network' ? 'network.receive' : 'disk.read'
     const secondKind = mode === 'network' ? 'network.send' : 'disk.write'
-    const devices = [...new Set(history.filter((series) => series.kind === firstKind || series.kind === secondKind).map((series) => series.deviceId))]
-    const labels = history.find((series) => series.kind === firstKind)?.points.map((point) => new Date(point.sampledAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })) ?? []
+    const devices = [
+      ...new Set(
+        history
+          .filter((series) => series.kind === firstKind || series.kind === secondKind)
+          .map((series) => series.deviceId),
+      ),
+    ]
+    const labels =
+      history
+        .find((series) => series.kind === firstKind)
+        ?.points.map((point) =>
+          new Date(point.sampledAtUtc).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          }),
+        ) ?? []
     const filters = devices.map((device) => {
-      const first = history.find((series) => series.kind === firstKind && series.deviceId === device)?.points ?? []
-      const second = history.find((series) => series.kind === secondKind && series.deviceId === device)?.points ?? []
+      const first =
+        history.find((series) => series.kind === firstKind && series.deviceId === device)?.points ??
+        []
+      const second =
+        history.find((series) => series.kind === secondKind && series.deviceId === device)
+          ?.points ?? []
       const firstValue = first[first.length - 1]?.value ?? 0
       const secondValue = second[second.length - 1]?.value ?? 0
       return {
         value: device,
         label: device,
-        stats: mode === 'network'
-          ? [
-              { label: '当前下行', value: formatRate(firstValue), tone: 'success' as const },
-              { label: '当前上行', value: formatRate(secondValue), tone: 'primary' as const },
-              { label: '采样点', value: String(Math.max(first.length, second.length)), tone: 'info' as const },
-            ]
-          : [
-              { label: '读取', value: formatRate(firstValue), tone: 'success' as const },
-              { label: '写入', value: formatRate(secondValue), tone: 'warning' as const },
-              { label: '采样点', value: String(Math.max(first.length, second.length)), tone: 'info' as const },
-            ],
+        stats:
+          mode === 'network'
+            ? [
+                { label: '当前下行', value: formatRate(firstValue), tone: 'success' as const },
+                { label: '当前上行', value: formatRate(secondValue), tone: 'primary' as const },
+                {
+                  label: '采样点',
+                  value: String(Math.max(first.length, second.length)),
+                  tone: 'info' as const,
+                },
+              ]
+            : [
+                { label: '读取', value: formatRate(firstValue), tone: 'success' as const },
+                { label: '写入', value: formatRate(secondValue), tone: 'warning' as const },
+                {
+                  label: '采样点',
+                  value: String(Math.max(first.length, second.length)),
+                  tone: 'info' as const,
+                },
+              ],
         series: [
-          { name: mode === 'network' ? '下行' : '读取', color: '#409eff', values: first.map((point) => (point.value ?? 0) / 1024 / 1024) },
-          { name: mode === 'network' ? '上行' : '写入', color: mode === 'network' ? '#67c23a' : '#e6a23c', values: second.map((point) => (point.value ?? 0) / 1024 / 1024) },
+          {
+            name: mode === 'network' ? '下行' : '读取',
+            color: '#409eff',
+            values: first.map((point) => (point.value ?? 0) / 1024 / 1024),
+          },
+          {
+            name: mode === 'network' ? '上行' : '写入',
+            color: mode === 'network' ? '#67c23a' : '#e6a23c',
+            values: second.map((point) => (point.value ?? 0) / 1024 / 1024),
+          },
         ],
       }
     })
     return {
       unit: 'MB/s',
       labels,
-      filters: filters.length > 0 ? filters : [{ value: 'none', label: '暂无设备采样', stats: [], series: [] }],
+      filters:
+        filters.length > 0
+          ? filters
+          : [{ value: 'none', label: '暂无设备采样', stats: [], series: [] }],
     }
   }
 
@@ -359,17 +409,62 @@ export async function fetchWorkstationOverview(): Promise<WorkstationOverviewSna
     platformStatus: response.platformStatus,
     portals: response.portals,
     resources: [
-      { key: 'agents', label: '智能体', value: response.agent?.available ? 1 : 0, unit: '个', detail: response.agent?.status || '不可用' },
-      { key: 'websites', label: '网站', value: response.portals.length, unit: '个', detail: '可访问门户入口' },
-      { key: 'databases', label: '数据库', value: containers.filter((item) => item.name.includes('database-platform')).length, unit: '个', detail: '基础依赖容器' },
-      { key: 'containers', label: '容器', value: containers.length, unit: '个', detail: `${running} 运行 · ${containers.length - running} 未运行` },
+      {
+        key: 'agents',
+        label: '智能体',
+        value: response.agent?.available ? 1 : 0,
+        unit: '个',
+        detail: response.agent?.status || '不可用',
+      },
+      {
+        key: 'websites',
+        label: '网站',
+        value: response.portals.length,
+        unit: '个',
+        detail: '可访问门户入口',
+      },
+      {
+        key: 'databases',
+        label: '数据库',
+        value: containers.filter((item) => item.name.includes('database-platform')).length,
+        unit: '个',
+        detail: '基础依赖容器',
+      },
+      {
+        key: 'containers',
+        label: '容器',
+        value: containers.length,
+        unit: '个',
+        detail: `${running} 运行 · ${containers.length - running} 未运行`,
+      },
     ],
-    healthMessage: response.agent?.available && response.agent.dockerAvailable ? '主机资源正常' : '管理服务降级',
+    healthMessage:
+      response.agent?.available && response.agent.dockerAvailable ? '主机资源正常' : '管理服务降级',
     healthDetail: `Agent ${response.agent?.status || '不可用'} · 采样 ${new Date(response.sampledAtUtc).toLocaleTimeString()}`,
     usage: [
-      { key: 'cpu', label: 'CPU 使用率', percentage: cpu, value: `${cpu.toFixed(1)}%`, detail: '6 秒采样' },
-      { key: 'memory', label: '内存使用率', percentage: memory, value: `${memory.toFixed(1)}%`, detail: response.host ? `${(response.host.totalMemoryBytes / 1024 ** 3).toFixed(1)} GB 总内存` : '无主机数据' },
-      { key: 'disk', label: '硬盘使用率', percentage: disk, value: `${disk.toFixed(1)}%`, detail: '首个已挂载文件系统' },
+      {
+        key: 'cpu',
+        label: 'CPU 使用率',
+        percentage: cpu,
+        value: `${cpu.toFixed(1)}%`,
+        detail: '6 秒采样',
+      },
+      {
+        key: 'memory',
+        label: '内存使用率',
+        percentage: memory,
+        value: `${memory.toFixed(1)}%`,
+        detail: response.host
+          ? `${(response.host.totalMemoryBytes / 1024 ** 3).toFixed(1)} GB 总内存`
+          : '无主机数据',
+      },
+      {
+        key: 'disk',
+        label: '硬盘使用率',
+        percentage: disk,
+        value: `${disk.toFixed(1)}%`,
+        detail: '首个已挂载文件系统',
+      },
     ],
     system: [
       { label: '主机名称', value: response.host?.hostName || '未知' },
