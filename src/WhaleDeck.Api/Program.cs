@@ -233,6 +233,13 @@ static void ConfigureOidc(OpenIdConnectOptions options, OidcEndpointSettings set
     options.TokenValidationParameters.RoleClaimType = "groups";
     options.Events.OnRedirectToIdentityProvider = context =>
     {
+        if (OidcChallengeBehavior.ShouldReturnUnauthorized(context.Request))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.HandleResponse();
+            return Task.CompletedTask;
+        }
+
         var host = context.Request.Host.Host;
         if (!IPAddress.TryParse(host, out var address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any))
         {
