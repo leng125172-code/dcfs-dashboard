@@ -50,6 +50,19 @@ public sealed class ManagedActionExecutorTests
         Assert.Equal(expected, method.Invoke(null, [path]));
     }
 
+    [Theory]
+    [InlineData("compose.yml", true)]
+    [InlineData("settings.json", true)]
+    [InlineData("service.toml", true)]
+    [InlineData("scripts/backup.sh", false)]
+    [InlineData("docs/README.md", false)]
+    public void RepositoryContentInspectionTargetsConfigurationFormats(string path, bool expected)
+    {
+        var method = typeof(ManagedActionExecutor).GetMethod("ShouldInspectRepositoryContent", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("ShouldInspectRepositoryContent was not found.");
+        Assert.Equal(expected, method.Invoke(null, [path]));
+    }
+
     private static void InvokeValidateImage(string image)
         => InvokePrivate("ValidateImage", image);
 

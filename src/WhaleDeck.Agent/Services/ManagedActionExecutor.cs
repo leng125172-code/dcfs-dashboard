@@ -403,7 +403,7 @@ public sealed partial class ManagedActionExecutor(
             var full = Path.GetFullPath(Path.Combine(path, relative));
             if (!full.StartsWith(Path.GetFullPath(path) + Path.DirectorySeparatorChar, StringComparison.Ordinal) || !File.Exists(full)) continue;
             if (IsSensitiveRepositoryFile(relative)) throw new InvalidOperationException("A sensitive file cannot be committed.");
-            if (new FileInfo(full).Length <= 1024 * 1024)
+            if (ShouldInspectRepositoryContent(relative) && new FileInfo(full).Length <= 1024 * 1024)
             {
                 var content = await File.ReadAllTextAsync(full, cancellationToken);
                 if (SensitiveContentPattern().IsMatch(content)) throw new InvalidOperationException("Sensitive-looking content blocked the configuration snapshot.");
@@ -477,6 +477,10 @@ public sealed partial class ManagedActionExecutor(
     private static bool IsSensitiveRepositoryFile(string relativePath) =>
         !relativePath.EndsWith(".example", StringComparison.OrdinalIgnoreCase) &&
         SensitiveFileNamePattern().IsMatch(relativePath);
+
+    private static bool ShouldInspectRepositoryContent(string relativePath) =>
+        Path.GetExtension(relativePath).ToLowerInvariant() is
+            ".json" or ".yaml" or ".yml" or ".toml" or ".ini" or ".conf" or ".config" or ".xml" or ".properties";
 
     private static string PostgresGrantSql(string principal, string database, string role) => role switch
     {
