@@ -141,6 +141,7 @@ public sealed partial class ManagedActionExecutor(
             "disable-principal" => $"db.getSiblingDB({Json(Required(database, "database"))}).updateUser({Json(Required(principal, "principal"))},{{roles:[]}});",
             "grant" => $"db.getSiblingDB({Json(Required(database, "database"))}).updateUser({Json(Required(principal, "principal"))},{{roles:[{{role:{Json(role)},db:{Json(database!)}}}]}});",
             "rotate" => $"db.getSiblingDB({Json(Required(database, "database"))}).updateUser({Json(Required(principal, "principal"))},{{pwd:{Json(Required(password, "password"))}}});",
+            "terminate-connection" => $"db.getSiblingDB('admin').aggregate([{{$currentOp:{{allUsers:true,idleConnections:true}}}},{{$match:{{'effectiveUsers.user':{Json(Required(principal, "principal"))}}}}}]).forEach(op => {{ if (op.opid) db.getSiblingDB('admin').killOp(op.opid); }});",
             _ => throw new InvalidOperationException("The MongoDB action is unsupported.")
         };
         const string shell = "exec mongosh --quiet --username \"$MONGO_INITDB_ROOT_USERNAME\" --password \"$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin";

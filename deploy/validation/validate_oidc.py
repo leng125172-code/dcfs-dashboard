@@ -167,10 +167,11 @@ def solve_flow(session: requests.Session, flow_url: str, username: str, password
     raise RuntimeError("Authentik stage limit exceeded")
 
 
-def main() -> int:
-    base_url = os.environ.get("WHALEDECK_URL", "http://192.168.100.13:8080").rstrip("/")
-    username = required_environment("VALIDATION_USERNAME")
-    password = required_environment("VALIDATION_PASSWORD")
+def authenticate(
+    base_url: str,
+    username: str,
+    password: str,
+) -> tuple[requests.Session, dict[str, object]]:
     session = requests.Session()
     # Workstation shell profiles may point HTTP(S)_PROXY at a local desktop
     # proxy.  Acceptance traffic is entirely local and must never depend on it.
@@ -227,6 +228,15 @@ def main() -> int:
     )
     if not profile.get("subject") or not profile.get("isAdministrator"):
         raise RuntimeError("OIDC session is not an authenticated administrator")
+
+    return session, profile
+
+
+def main() -> int:
+    base_url = os.environ.get("WHALEDECK_URL", "http://192.168.100.13:8080").rstrip("/")
+    username = required_environment("VALIDATION_USERNAME")
+    password = required_environment("VALIDATION_PASSWORD")
+    session, _ = authenticate(base_url, username, password)
 
     containers = session.get(f"{base_url}/api/v1/containers", timeout=20)
     containers.raise_for_status()
