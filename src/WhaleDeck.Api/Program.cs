@@ -211,6 +211,13 @@ static void ConfigureOidc(OpenIdConnectOptions options, OidcEndpointSettings set
     options.RequireHttpsMetadata = false;
     options.CallbackPath = settings.CallbackPath;
     options.SignedOutCallbackPath = settings.SignedOutCallbackPath;
+    // Both approved front doors are HTTP IP addresses. Authentik is served on
+    // the same scheme and host (a different port), so Lax remains same-site
+    // for the form_post callback without producing unusable Secure cookies.
+    options.NonceCookie.SecurePolicy = CookieSecurePolicy.None;
+    options.NonceCookie.SameSite = SameSiteMode.Lax;
+    options.CorrelationCookie.SecurePolicy = CookieSecurePolicy.None;
+    options.CorrelationCookie.SameSite = SameSiteMode.Lax;
     options.TokenValidationParameters.NameClaimType = "name";
     options.TokenValidationParameters.RoleClaimType = "groups";
     options.Events.OnTokenValidated = context =>
