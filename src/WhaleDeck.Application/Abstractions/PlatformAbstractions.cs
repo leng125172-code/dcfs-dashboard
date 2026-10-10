@@ -88,6 +88,11 @@ public interface IContainerUpdateRepository
     Task<IReadOnlyCollection<ContainerUpdateRun>> ListAsync(string? containerIdOrName, int take, CancellationToken cancellationToken);
 }
 
+public interface IGlobalSearchRepository
+{
+    Task<IReadOnlyCollection<GlobalSearchResultDto>> SearchAdministrationAsync(string query, int take, CancellationToken cancellationToken);
+}
+
 public interface IGovernanceRepository
 {
     Task<IReadOnlyCollection<ScheduledTask>> ListSchedulesAsync(CancellationToken cancellationToken);

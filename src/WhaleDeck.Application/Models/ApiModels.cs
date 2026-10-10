@@ -272,3 +272,12 @@ public sealed record ContainerUpdateRunDto(
     string Result,
     bool WasRolledBack,
     string? ErrorSummary);
+
+public sealed record GlobalSearchResultDto(
+    string Id,
+    string Kind,
+    string Title,
+    string Subtitle,
+    string TargetUrl,
+    string? State,
+    bool External);

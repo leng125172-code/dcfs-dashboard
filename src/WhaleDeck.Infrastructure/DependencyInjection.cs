@@ -68,6 +68,7 @@ public static class DependencyInjection
         services.AddScoped<IGovernanceRepository, GovernanceRepository>();
         services.AddScoped<IApplicationRepository, ApplicationRepository>();
         services.AddScoped<IContainerUpdateRepository, ContainerUpdateRepository>();
+        services.AddScoped<IGlobalSearchRepository, GlobalSearchRepository>();
         services.AddScoped<IMetricsQuery, MetricsQuery>();
         services.AddScoped<ResourceLeaseManager>();
         services.AddScoped<IIdentityDirectory, AuthentikIdentityDirectory>();
@@ -83,6 +84,7 @@ public static class DependencyInjection
         services.AddScoped<GovernanceService>();
         services.AddScoped<ApplicationService>();
         services.AddScoped<ContainerUpdateService>();
+        services.AddScoped<GlobalSearchService>();
 
         return services;
     }

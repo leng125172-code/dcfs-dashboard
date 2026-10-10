@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   ArrowDown,
   Box,
@@ -22,7 +22,7 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import AppTopbar from '@/components/AppTopbar.vue'
 import { authSession } from '@/services/authSession'
 import { apiRequest } from '@/services/apiClient'
-import type { AlertEvent, Job } from '@/services/contracts'
+import type { AlertEvent, GlobalSearchResult, Job } from '@/services/contracts'
 
 const route = useRoute()
 const router = useRouter()
@@ -34,6 +34,8 @@ const searchQuery = ref('')
 const alerts = ref<AlertEvent[]>([])
 const jobs = ref<Job[]>([])
 const managementLoading = ref(false)
+const remoteSearchResults = ref<GlobalSearchResult[]>([])
+const searchLoading = ref(false)
 
 const activeNavigation = computed(() => route.path)
 const currentUserName = computed(() => authSession.user.value?.name || '已登录')
@@ -117,17 +119,33 @@ const visibleNavigationGroups = computed(() =>
     }))
     .filter((group) => group.items.length > 0),
 )
-const searchResults = computed(() => {
+const navigationSearchResults = computed(() => {
   const query = searchQuery.value.trim().toLocaleLowerCase()
   return visibleNavigationGroups.value
-    .flatMap((group) => group.items.map((item) => ({ ...item, group: group.label })))
+    .flatMap((group) =>
+      group.items.map((item) => ({
+        id: `navigation:${item.index}`,
+        title: item.label,
+        subtitle: group.label,
+        targetUrl: item.index,
+        external: false,
+        icon: item.icon,
+      })),
+    )
     .filter(
       (item) =>
         !query ||
-        item.label.toLocaleLowerCase().includes(query) ||
-        item.group.toLocaleLowerCase().includes(query),
+        item.title.toLocaleLowerCase().includes(query) ||
+        item.subtitle.toLocaleLowerCase().includes(query),
     )
 })
+const searchResults = computed(() => [
+  ...navigationSearchResults.value,
+  ...remoteSearchResults.value.map((item) => ({
+    ...item,
+    icon: searchIcon(item.kind),
+  })),
+])
 const activeAlertCount = computed(
   () => alerts.value.filter((item) => item.state !== 'Recovered').length,
 )
@@ -136,6 +154,8 @@ const activeJobCount = computed(
 )
 
 let managementRefreshTimer: number | undefined
+let searchTimer: number | undefined
+let searchGeneration = 0
 
 async function refreshManagementData() {
   if (!isAdministrator.value || managementLoading.value) return
@@ -155,6 +175,7 @@ async function refreshManagementData() {
 
 function openSearch() {
   searchQuery.value = ''
+  remoteSearchResults.value = []
   searchVisible.value = true
 }
 
@@ -178,10 +199,49 @@ async function openJobsPage() {
   await router.push('/jobs')
 }
 
-async function selectSearchResult(index: string) {
+async function selectSearchResult(item: { targetUrl: string; external: boolean }) {
   searchVisible.value = false
-  await selectNavigation(index)
+  if (item.external) {
+    window.open(item.targetUrl, '_blank', 'noopener,noreferrer')
+    return
+  }
+  await selectNavigation(item.targetUrl)
 }
+
+function searchIcon(kind: string) {
+  if (kind === 'Portal') return Link
+  if (kind === 'User') return UserFilled
+  if (kind === 'Job') return Setting
+  if (kind === 'Application' || kind === 'ComposeApplication') return Box
+  if (kind === 'Container') return DataAnalysis
+  if (kind === 'DockerNetwork') return Connection
+  if (kind === 'DockerVolume' || kind.includes('Database')) return Odometer
+  return Document
+}
+
+watch(searchQuery, (value) => {
+  if (searchTimer !== undefined) window.clearTimeout(searchTimer)
+  const generation = ++searchGeneration
+  const query = value.trim()
+  if (query.length < 2) {
+    remoteSearchResults.value = []
+    searchLoading.value = false
+    return
+  }
+  searchTimer = window.setTimeout(async () => {
+    searchLoading.value = true
+    try {
+      const results = await apiRequest<GlobalSearchResult[]>(
+        `search?q=${encodeURIComponent(query)}&take=30`,
+      )
+      if (generation === searchGeneration) remoteSearchResults.value = results
+    } catch {
+      if (generation === searchGeneration) remoteSearchResults.value = []
+    } finally {
+      if (generation === searchGeneration) searchLoading.value = false
+    }
+  }, 250)
+})
 
 function handleSearchShortcut(event: KeyboardEvent) {
   if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'k') {
@@ -203,6 +263,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleSearchShortcut)
   if (managementRefreshTimer !== undefined) window.clearInterval(managementRefreshTimer)
+  if (searchTimer !== undefined) window.clearTimeout(searchTimer)
 })
 
 function toggleMobileNavigation() {
@@ -311,20 +372,20 @@ async function userCommand(command: string) {
         v-model="searchQuery"
         autofocus
         clearable
-        placeholder="输入页面或功能名称"
+        placeholder="搜索页面、门户、资源、任务、应用或用户"
         size="large"
       />
-      <div class="global-search-results">
+      <div v-loading="searchLoading" class="global-search-results">
         <button
           v-for="item in searchResults"
-          :key="item.index"
+          :key="item.id"
           type="button"
-          @click="selectSearchResult(item.index)"
+          @click="selectSearchResult(item)"
         >
           <el-icon><component :is="item.icon" /></el-icon>
           <span
-            ><strong>{{ item.label }}</strong
-            ><small>{{ item.group }}</small></span
+            ><strong>{{ item.title }}</strong
+            ><small>{{ item.subtitle }}</small></span
           >
         </button>
         <el-empty

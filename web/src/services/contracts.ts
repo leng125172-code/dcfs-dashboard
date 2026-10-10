@@ -104,6 +104,16 @@ export interface ContainerUpdateRun {
   errorSummary: string | null
 }
 
+export interface GlobalSearchResult {
+  id: string
+  kind: string
+  title: string
+  subtitle: string
+  targetUrl: string
+  state: string | null
+  external: boolean
+}
+
 export interface MetricValue {
   kind: string
   deviceId: string
