@@ -128,6 +128,8 @@ describe('WhaleDeck entry flow', () => {
     expect(wrapper.find('.theme-switch .el-switch').exists()).toBe(true)
     expect(wrapper.find('.navigation-trigger--desktop').exists()).toBe(false)
     expect(wrapper.find('.sidebar-user').exists()).toBe(true)
+    expect(wrapper.text()).toContain('API 会话已连接')
+    expect(wrapper.text()).not.toContain('预览数据')
   })
 
   it('renders the startup loading state', () => {

@@ -146,8 +146,8 @@ async function userCommand(command: string) {
               ><el-icon><Operation /></el-icon
             ></span>
             <span class="sidebar-status__copy">
-              <strong>预览数据</strong>
-              <small>等待工作站 Agent</small>
+              <strong>平台服务</strong>
+              <small>API 会话已连接</small>
             </span>
           </div>
           <el-dropdown trigger="click" placement="top-start" @command="userCommand">

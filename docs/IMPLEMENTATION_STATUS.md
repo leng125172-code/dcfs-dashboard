@@ -34,7 +34,7 @@
 ## 自动化验证基线
 
 - `.NET 10` Release 构建：0 警告、0 错误。
-- 自动化测试：67 项 UnitTests、22 项 IntegrationTests 通过。
+- 自动化测试：67 项 UnitTests、26 项 IntegrationTests 通过。
 - 前端：Prettier、Oxlint、ESLint、Vue TypeScript 检查、5 项 Vitest 和 Vite 生产构建通过。
 - Agent 协议当前为 `1.3`；容器日志和统计能力分别为 `docker.logs`、`docker.stats`。
 - 工作站健康入口与 systemd 服务已复验；最近一次真实主机验收返回 40 个网络接口、8 条存储记录、20 条系统日志及有效诊断包。
@@ -49,7 +49,7 @@
 
 ## 尚未收尾
 
-1. 完成最终前端浏览器走查，尤其是窄屏、主题动画、管理员/普通用户菜单与危险操作确认。
+1. 最终发布前使用正式账号再复核危险操作确认；匿名登录、Authentik 跳转、明暗主题、1045px 导航断点、600px 搜索图标、390px 手机布局和普通用户菜单裁剪已完成浏览器走查。
 2. 决定并实施局域网正式入口：将 Whale Deck 切换到 `http://precision-7920-tower.local` 的 80 端口前，先确认与现有服务无冲突；其他服务继续按端口区分。
 3. 最终验收后删除旧的停止态 `dcfs*` 容器对象和旧网络，移除 `DCFS` 兼容链接；不得删除 NVMe/HDD 数据与迁移备份。
 4. 删除临时全量 sudo 规则，复验 `visudo`、Agent 固定 helper、服务重启和最小权限路径。
