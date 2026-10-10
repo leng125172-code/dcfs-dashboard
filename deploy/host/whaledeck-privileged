@@ -84,6 +84,41 @@ case "$action" in
     exec /usr/sbin/runuser -u user -- /usr/bin/env HOME=/home/user GIT_TERMINAL_PROMPT=0 \
       /usr/bin/git -C "$2" add --all
     ;;
+  config-repository-status)
+    [[ $# -eq 2 ]] || exit 2
+    validate_repository "$2"
+    run_transient whaledeck-config-repository-status config-repository-status-host "$2"
+    ;;
+  config-repository-status-host)
+    [[ $# -eq 2 ]] || exit 2
+    validate_repository "$2"
+    branch=$(/usr/sbin/runuser -u user -- /usr/bin/env HOME=/home/user GIT_TERMINAL_PROMPT=0 \
+      /usr/bin/git -C "$2" branch --show-current)
+    commit=$(/usr/sbin/runuser -u user -- /usr/bin/env HOME=/home/user GIT_TERMINAL_PROMPT=0 \
+      /usr/bin/git -C "$2" rev-parse HEAD)
+    status=$(/usr/sbin/runuser -u user -- /usr/bin/env HOME=/home/user GIT_TERMINAL_PROMPT=0 \
+      /usr/bin/git -C "$2" status --porcelain)
+    [[ -n "$status" ]] && dirty=true || dirty=false
+    exec /usr/bin/jq -cn --arg branch "$branch" --arg commit "$commit" --argjson dirty "$dirty" \
+      '{branch:$branch,commit:$commit,dirty:$dirty}'
+    ;;
+  config-repository-list-files)
+    [[ $# -eq 3 ]] || exit 2
+    validate_repository "$2"
+    [[ "$3" == working || "$3" == staged ]] || exit 2
+    run_transient "whaledeck-config-repository-list-$3" config-repository-list-files-host "$2" "$3"
+    ;;
+  config-repository-list-files-host)
+    [[ $# -eq 3 ]] || exit 2
+    validate_repository "$2"
+    if [[ "$3" == working ]]; then
+      exec /usr/sbin/runuser -u user -- /usr/bin/env HOME=/home/user GIT_TERMINAL_PROMPT=0 \
+        /usr/bin/git -C "$2" ls-files -co --exclude-standard -z
+    fi
+    [[ "$3" == staged ]] || exit 2
+    exec /usr/sbin/runuser -u user -- /usr/bin/env HOME=/home/user GIT_TERMINAL_PROMPT=0 \
+      /usr/bin/git -C "$2" diff --cached --name-only -z
+    ;;
   config-repository-reset-stage)
     [[ $# -eq 2 ]] || exit 2
     validate_repository "$2"
@@ -112,6 +147,18 @@ case "$action" in
     fi
     exec /usr/sbin/runuser -u user -- /usr/bin/env HOME=/home/user GIT_TERMINAL_PROMPT=0 \
       /usr/bin/git -C "$2" push origin HEAD
+    ;;
+  platform-plan-update)
+    [[ $# -eq 1 ]] || exit 2
+    run_transient whaledeck-platform-plan-update platform-plan-update-host
+    ;;
+  platform-plan-update-host)
+    [[ $# -eq 1 ]] || exit 2
+    for repository in /data/GitRepos/whale-deck /data/GitRepos/database-platform; do
+      [[ -d "$repository/.git" ]] || exit 2
+      /usr/sbin/runuser -u user -- /usr/bin/env HOME=/home/user GIT_TERMINAL_PROMPT=0 \
+        /usr/bin/git -C "$repository" status --short
+    done
     ;;
   systemd)
     [[ $# -eq 3 ]] || exit 2

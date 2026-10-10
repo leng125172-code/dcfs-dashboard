@@ -16,6 +16,7 @@ public sealed class ManagedResourceGrpcService(
     BoundedProcessRunner processes)
     : ManagedResourceService.ManagedResourceServiceBase
 {
+    private const string PrivilegedHelper = "/usr/local/libexec/whaledeck-privileged";
     private static readonly string[] EditableDockerSettings =
         ["registry-mirrors", "log-driver", "log-opts", "live-restore", "features", "dns", "proxies"];
 
@@ -102,17 +103,26 @@ public sealed class ManagedResourceGrpcService(
         return response;
     }
 
-    public override Task<ResourceSnapshot> GetConfigRepositoryStatus(RegisteredResourceRequest request, ServerCallContext context)
+    public override async Task<ResourceSnapshot> GetConfigRepositoryStatus(RegisteredResourceRequest request, ServerCallContext context)
     {
         var resource = registry.Require(request.Resource.ResourceId, "status");
-        var branch = RunReadOnlyGit(resource.Path!, "branch", "--show-current");
-        var commit = RunReadOnlyGit(resource.Path!, "rev-parse", "HEAD");
-        var status = RunReadOnlyGit(resource.Path!, "status", "--porcelain");
+        var result = await processes.RunAsync(
+            "/usr/bin/sudo",
+            ["-n", PrivilegedHelper, "config-repository-status", resource.Path!],
+            null,
+            TimeSpan.FromMinutes(2),
+            "CONFIG_REPOSITORY_STATUS_FAILED",
+            context.CancellationToken);
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        var root = document.RootElement;
+        var branch = root.GetProperty("branch").GetString() ?? string.Empty;
+        var commit = root.GetProperty("commit").GetString() ?? string.Empty;
+        var dirty = root.GetProperty("dirty").GetBoolean();
         var response = ToSnapshot(resource);
-        response.State = string.IsNullOrWhiteSpace(status) ? "Clean" : "Dirty";
+        response.State = dirty ? "Dirty" : "Clean";
         response.Version = commit;
         response.Attributes["branch"] = branch;
-        return Task.FromResult(response);
+        return response;
     }
 
     public override async Task<DockerSettingsResponse> GetDockerSettings(Empty request, ServerCallContext context)
@@ -225,23 +235,4 @@ public sealed class ManagedResourceGrpcService(
         ProtectedResource = resource.ProtectionLevel != "Managed"
     };
 
-    private static string RunReadOnlyGit(string path, params string[] arguments)
-    {
-        var start = new System.Diagnostics.ProcessStartInfo("git")
-        {
-            WorkingDirectory = path,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false
-        };
-        start.ArgumentList.Add("-c");
-        start.ArgumentList.Add($"safe.directory={Path.GetFullPath(path)}");
-        foreach (var argument in arguments) start.ArgumentList.Add(argument);
-        using var process = System.Diagnostics.Process.Start(start)
-            ?? throw new InvalidOperationException("Unable to start git.");
-        var output = process.StandardOutput.ReadToEnd();
-        process.WaitForExit(TimeSpan.FromSeconds(10));
-        if (process.ExitCode != 0) throw new InvalidOperationException("Registered repository query failed.");
-        return output.Trim();
-    }
 }

@@ -343,8 +343,7 @@ public sealed partial class ManagedActionExecutor(
                 await processes.RunAsync(Path.Combine(DatabaseRepository, "scripts", "check-all.sh"), [], null, LongTimeout, "PLATFORM_DIAGNOSTICS_FAILED", cancellationToken, DatabaseRepository);
                 return;
             case "plan-update":
-                await GitAsync("/data/GitRepos/whale-deck", ["status", "--short"], cancellationToken);
-                await GitAsync(DatabaseRepository, ["status", "--short"], cancellationToken);
+                await RunHelperAsync(["platform-plan-update"], null, ShortTimeout, "PLATFORM_UPDATE_PLAN_FAILED", cancellationToken);
                 return;
             case "apply-update":
                 await RunHelperAsync(["platform-update-schedule"], null, ShortTimeout, "PLATFORM_UPDATE_FAILED", cancellationToken);
@@ -391,25 +390,14 @@ public sealed partial class ManagedActionExecutor(
     private Task<ProcessResult> ComposeAsync(string directory, string[] arguments, CancellationToken cancellationToken) =>
         processes.RunAsync("/usr/bin/docker", ["compose", "--project-directory", directory, "--file", Path.Combine(directory, "compose.yml"), "--env-file", Path.Combine(directory, ".env"), .. arguments], null, LongTimeout, "APPLICATION_COMPOSE_FAILED", cancellationToken, directory);
 
-    private Task<ProcessResult> GitAsync(string directory, string[] arguments, CancellationToken cancellationToken, bool allowExitCodeOne = false) =>
-        RunGitInternalAsync(directory, arguments, allowExitCodeOne, cancellationToken);
-
-    private async Task<ProcessResult> RunGitInternalAsync(string directory, string[] arguments, bool allowExitCodeOne, CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await processes.RunAsync("/usr/bin/git", ["-c", $"safe.directory={Path.GetFullPath(directory)}", .. arguments], null, ShortTimeout, "CONFIG_REPOSITORY_FAILED", cancellationToken, directory,
-                new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" });
-        }
-        catch (InvalidOperationException) when (allowExitCodeOne)
-        {
-            return new ProcessResult(1, string.Empty, string.Empty);
-        }
-    }
-
     private async Task EnsureRepositorySafeAsync(string path, CancellationToken cancellationToken, bool staged = false)
     {
-        var files = await GitAsync(path, staged ? ["diff", "--cached", "--name-only", "-z"] : ["ls-files", "-co", "--exclude-standard", "-z"], cancellationToken);
+        var files = await RunHelperAsync(
+            ["config-repository-list-files", path, staged ? "staged" : "working"],
+            null,
+            ShortTimeout,
+            "CONFIG_REPOSITORY_SCAN_FAILED",
+            cancellationToken);
         foreach (var relative in files.StandardOutput.Split('\0', StringSplitOptions.RemoveEmptyEntries))
         {
             var full = Path.GetFullPath(Path.Combine(path, relative));
