@@ -1261,6 +1261,11 @@ public sealed class DockerEngine : IDisposable
     {
         if (!ImagePattern.IsMatch(image) || image.Contains("..", StringComparison.Ordinal))
             throw new InvalidOperationException("Image reference is invalid.");
+        var first = image.Split('/')[0];
+        var hasExplicitRegistry = image.Contains('/', StringComparison.Ordinal) &&
+            (first.Contains('.', StringComparison.Ordinal) || first.Contains(':', StringComparison.Ordinal) || first == "localhost");
+        if (hasExplicitRegistry && first is not ("docker.io" or "ghcr.io" or "quay.io" or "xuanyuan.cloud" or "registry.cn-hangzhou.aliyuncs.com"))
+            throw new InvalidOperationException("The image registry is not approved.");
     }
 
     private static (string Name, string Tag) SplitImage(string image)

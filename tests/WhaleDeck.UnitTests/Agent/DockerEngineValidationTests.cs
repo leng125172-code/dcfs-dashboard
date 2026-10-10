@@ -92,6 +92,19 @@ public sealed class DockerEngineValidationTests
     }
 
     [Theory]
+    [InlineData("nginx:1.29-alpine")]
+    [InlineData("docker.io/library/nginx:1.29-alpine")]
+    [InlineData("ghcr.io/example/service:v1")]
+    [InlineData("xuanyuan.cloud/team/service:v1")]
+    public void ImagesAcceptImplicitOrApprovedRegistries(string image) => Invoke("ValidateImage", image);
+
+    [Theory]
+    [InlineData("registry.example.net/team/service:v1")]
+    [InlineData("localhost:5000/private/service:v1")]
+    [InlineData("evil.example/../service:v1")]
+    public void ImagesRejectUnapprovedRegistriesAndTraversal(string image) => AssertInvalid("ValidateImage", image);
+
+    [Theory]
     [InlineData("team-apps")]
     [InlineData("project_01")]
     public void DockerResourceNamesAcceptNormalNames(string name) =>

@@ -203,6 +203,12 @@ public sealed class DockerGrpcService(
                 Version = image.ID
             };
             snapshot.Attributes["sizeBytes"] = image.Size.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            snapshot.Attributes["containerCount"] = image.Containers.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            snapshot.Attributes["tags"] = string.Join(',', (image.RepoTags ?? []).Where(item => item != "<none>:<none>").Take(20));
+            snapshot.Attributes["digests"] = string.Join(',', (image.RepoDigests ?? []).Take(20));
+            snapshot.Attributes["createdAtUtc"] = image.Created != default
+                ? image.Created.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture)
+                : string.Empty;
             response.Resources.Add(snapshot);
         }
         return response;

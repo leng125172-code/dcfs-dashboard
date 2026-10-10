@@ -31,6 +31,19 @@ const isNetworks = computed(() => endpoint.value === 'networks')
 const isVolumes = computed(() => endpoint.value === 'volumes')
 const isSystemd = computed(() => endpoint.value === 'systemd')
 
+function formatBytes(value?: string) {
+  const bytes = Number(value)
+  if (!Number.isFinite(bytes) || bytes < 0) return '容量未知'
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
+  let size = bytes
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+  return `${size >= 10 || unit === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`
+}
+
 function actionsFor(resource: ManagedResource) {
   return (resource.attributes.allowedActions || '')
     .split(',')
@@ -232,10 +245,21 @@ watch(() => route.fullPath, load)
             ><el-tag effect="plain">{{ scope.row.state }}</el-tag></template
           ></el-table-column
         >
-        <el-table-column prop="version" label="版本 / 镜像" min-width="220" show-overflow-tooltip />
-        <el-table-column v-if="isNetworks || isVolumes" label="详情" min-width="220">
+        <el-table-column label="版本 / 镜像" min-width="220" show-overflow-tooltip>
           <template #default="scope">
-            <template v-if="isNetworks">
+            {{ isImages ? scope.row.version.slice(0, 19) : scope.row.version }}
+          </template>
+        </el-table-column>
+        <el-table-column v-if="isImages || isNetworks || isVolumes" label="详情" min-width="260">
+          <template #default="scope">
+            <template v-if="isImages">
+              {{ scope.row.attributes.containerCount || '0' }} 个引用 ·
+              {{ formatBytes(scope.row.attributes.sizeBytes) }}
+              <small v-if="scope.row.attributes.createdAtUtc" class="resource-detail-time">
+                · {{ new Date(scope.row.attributes.createdAtUtc).toLocaleDateString() }}
+              </small>
+            </template>
+            <template v-else-if="isNetworks">
               {{ scope.row.attributes.containerCount || '0' }} 个容器 ·
               {{ scope.row.attributes.internal === 'true' ? '内部网络' : '外部网络' }}
             </template>
@@ -367,5 +391,9 @@ watch(() => route.fullPath, load)
 }
 .heading-actions .el-button + .el-button {
   margin-left: 0;
+}
+.resource-detail-time {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 </style>
