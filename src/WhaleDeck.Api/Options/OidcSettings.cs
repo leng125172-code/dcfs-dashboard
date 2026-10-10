@@ -14,6 +14,8 @@ public sealed class OidcSettings
 public sealed class OidcEndpointSettings
 {
     public string Authority { get; init; } = string.Empty;
+    public string BackchannelHost { get; init; } = "authentik";
+    public int BackchannelPort { get; init; } = 9000;
     public string ClientId { get; init; } = string.Empty;
     public string ClientSecret { get; init; } = string.Empty;
     public string CallbackPath { get; init; } = "/signin-oidc";

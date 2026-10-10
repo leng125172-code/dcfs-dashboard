@@ -1,4 +1,5 @@
 using System.Threading.RateLimiting;
+using System.Net.Sockets;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -171,12 +172,35 @@ finally
 
 static bool ValidEndpoint(OidcEndpointSettings settings) =>
     Uri.TryCreate(settings.Authority, UriKind.Absolute, out _) &&
+    !string.IsNullOrWhiteSpace(settings.BackchannelHost) &&
+    settings.BackchannelPort is > 0 and <= 65535 &&
     !string.IsNullOrWhiteSpace(settings.ClientId) &&
     !string.IsNullOrWhiteSpace(settings.ClientSecret);
 
 static void ConfigureOidc(OpenIdConnectOptions options, OidcEndpointSettings settings, string scheme)
 {
     options.Authority = settings.Authority;
+    // The browser must see the IP-based Authentik issuer, while containers
+    // must not hairpin through a host-published port. Connect the OIDC
+    // backchannel directly to Authentik but retain the public request URI and
+    // Host header so discovery, issuer validation and redirects stay aligned.
+    options.BackchannelHttpHandler = new SocketsHttpHandler
+    {
+        ConnectCallback = async (_, cancellationToken) =>
+        {
+            var client = new TcpClient();
+            try
+            {
+                await client.ConnectAsync(settings.BackchannelHost, settings.BackchannelPort, cancellationToken);
+                return client.GetStream();
+            }
+            catch
+            {
+                client.Dispose();
+                throw;
+            }
+        }
+    };
     options.ClientId = settings.ClientId;
     options.ClientSecret = settings.ClientSecret;
     options.ResponseType = OpenIdConnectResponseType.Code;
