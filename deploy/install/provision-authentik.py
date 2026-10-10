@@ -5,6 +5,7 @@ environment fragment consumed by the installer; callers must redirect stdout
 to a mode-0600 file and must never print it.
 """
 
+import os
 import secrets
 
 from authentik.core.models import Application, Group, Token, User
@@ -130,6 +131,9 @@ if api_token.user_id != admin.pk:
 if api_token.intent != "api" or api_token.expiring:
     api_token.intent = "api"
     api_token.expiring = False
+    changed = True
+if os.environ.get("WHALEDECK_ROTATE_API_TOKEN") == "true":
+    api_token.key = secrets.token_urlsafe(48)
     changed = True
 if changed:
     api_token.save()

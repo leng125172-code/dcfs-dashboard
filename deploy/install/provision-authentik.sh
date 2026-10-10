@@ -3,13 +3,18 @@ set -Eeuo pipefail
 umask 077
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+rotate=false
+if [[ ${1:-} == --rotate-token ]]; then
+  rotate=true
+  shift
+fi
 output=${1:-}
 [[ -n $output && $output == /* ]] || { echo 'Usage: provision-authentik.sh /absolute/private-output.env' >&2; exit 2; }
 docker inspect database-platform-authentik-server >/dev/null 2>&1 || { echo 'Authentik server is not running.' >&2; exit 1; }
 
 temporary=$(mktemp "${output}.tmp.XXXXXX")
 trap 'rm -f -- "$temporary"' EXIT
-docker exec -i database-platform-authentik-server ak shell --no-startup --no-imports \
+docker exec -e "WHALEDECK_ROTATE_API_TOKEN=$rotate" -i database-platform-authentik-server ak shell --no-startup --no-imports \
   < "$script_dir/provision-authentik.py" 2>/dev/null \
   | grep '^WHALEDECK_' > "$temporary"
 
