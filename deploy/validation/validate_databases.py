@@ -59,10 +59,16 @@ class Api:
             f"{self.base_url}/api/v1/{path.lstrip('/')}",
             json=payload,
             headers=self.headers,
+            allow_redirects=False,
             timeout=30,
         )
         if response.status_code != expected:
-            raise RuntimeError(f"POST {path} returned HTTP {response.status_code}, expected {expected}")
+            try:
+                problem = response.json()
+                detail = f" code={problem.get('code')} title={problem.get('title')} traceId={problem.get('traceId')}"
+            except (ValueError, AttributeError):
+                detail = ""
+            raise RuntimeError(f"POST {path} returned HTTP {response.status_code}, expected {expected}.{detail}")
         return response
 
     def stage_secret(self, value: str) -> str:

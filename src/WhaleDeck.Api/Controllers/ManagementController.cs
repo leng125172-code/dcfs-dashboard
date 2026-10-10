@@ -45,16 +45,16 @@ public sealed class ManagementController(
     [HttpGet("{area:regex(^(images|networks|volumes|compose-projects|databases|applications|systemd)$)}")]
     public async Task<IActionResult> Resources(string area, CancellationToken cancellationToken) => Ok(await queries.ListAsync(area, cancellationToken));
 
-    [HttpPost("{area:regex(^(containers|docker|databases|backups|applications|host|config-repository|platform)$)}/{action}/plan")]
-    public async Task<IActionResult> Plan(string area, string action, [FromBody] PlanRequest request, CancellationToken cancellationToken) =>
-        Ok(await agent.PlanAsync(area, action, request.ResourceId, request.Parameters ?? new Dictionary<string, string>(), cancellationToken));
+    [HttpPost("{area:regex(^(containers|docker|databases|backups|applications|host|config-repository|platform)$)}/{operation}/plan")]
+    public async Task<IActionResult> Plan(string area, string operation, [FromBody] PlanRequest request, CancellationToken cancellationToken) =>
+        Ok(await agent.PlanAsync(area, operation, request.ResourceId, request.Parameters ?? new Dictionary<string, string>(), cancellationToken));
 
-    [HttpPost("{area:regex(^(containers|docker|databases|backups|applications|host|config-repository|platform|identity)$)}/{action}")]
-    public async Task<IActionResult> Enqueue(string area, string action, [FromBody] OperationRequest request, CancellationToken cancellationToken)
+    [HttpPost("{area:regex(^(containers|docker|databases|backups|applications|host|config-repository|platform|identity)$)}/{operation}")]
+    public async Task<IActionResult> Enqueue(string area, string operation, [FromBody] OperationRequest request, CancellationToken cancellationToken)
     {
         var idempotencyKey = Request.Headers["Idempotency-Key"].FirstOrDefault() ?? request.IdempotencyKey;
         var requestJson = JsonSerializer.Serialize(new { resourceId = request.ResourceId, parameters = request.Parameters ?? new Dictionary<string, string>(), planHash = request.PlanHash });
-        var command = new OperationCommand(area, action, request.ResourceId, idempotencyKey, requestJson, request.PlanHash, request.Confirmed);
+        var command = new OperationCommand(area, operation, request.ResourceId, idempotencyKey, requestJson, request.PlanHash, request.Confirmed);
         var job = await operations.EnqueueAsync(User.RequireSubject(), HttpContext.TraceIdentifier, command, cancellationToken);
         return AcceptedAtAction(nameof(JobsController.Get), "Jobs", new { id = job.Id }, job);
     }
