@@ -2,6 +2,7 @@ using Docker.DotNet;
 using Docker.DotNet.Models;
 using WhaleDeck.Contracts.Agent.V1;
 using System.Text.RegularExpressions;
+using System.Net;
 
 namespace WhaleDeck.Agent.Services;
 
@@ -33,6 +34,20 @@ public sealed class DockerEngine : IDisposable
 
     public Task<IList<ImagesListResponse>> ListImagesAsync(CancellationToken cancellationToken) =>
         _client.Images.ListImagesAsync(new ImagesListParameters { All = true }, cancellationToken);
+
+    public async Task<ImageInspectResponse> InspectImageAsync(string image, bool pullIfMissing, CancellationToken cancellationToken)
+    {
+        ValidateImage(image);
+        try
+        {
+            return await _client.Images.InspectImageAsync(image, cancellationToken);
+        }
+        catch (DockerApiException exception) when (exception.StatusCode == HttpStatusCode.NotFound && pullIfMissing)
+        {
+            await PullImageAsync(image, cancellationToken);
+            return await _client.Images.InspectImageAsync(image, cancellationToken);
+        }
+    }
 
     public Task<IList<NetworkResponse>> ListNetworksAsync(CancellationToken cancellationToken) =>
         _client.Networks.ListNetworksAsync(cancellationToken: cancellationToken);

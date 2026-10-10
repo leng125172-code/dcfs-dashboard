@@ -115,6 +115,23 @@ message ListContainersResponse {
   repeated ContainerSummary containers = 1;
 }
 
+message ImageMetadataRequest {
+  RequestContext context = 1;
+  string image = 2;
+  bool pull_if_missing = 3;
+}
+
+message ImageMetadataResponse {
+  string image = 1;
+  string image_id = 2;
+  repeated string environment = 3;
+  repeated string exposed_ports = 4;
+  repeated string volumes = 5;
+  repeated string entrypoint = 6;
+  repeated string command = 7;
+  map<string, string> labels = 8;
+}
+
 enum ContainerAction {
   CONTAINER_ACTION_UNSPECIFIED = 0;
   CONTAINER_ACTION_START = 1;
@@ -194,6 +211,7 @@ service DockerService {
   rpc ListImages(google.protobuf.Empty) returns (ResourceCollectionResponse);
   rpc ListNetworks(google.protobuf.Empty) returns (ResourceCollectionResponse);
   rpc ListVolumes(google.protobuf.Empty) returns (ResourceCollectionResponse);
+  rpc InspectImage(ImageMetadataRequest) returns (ImageMetadataResponse);
   rpc PlanAction(RegisteredActionRequest) returns (PlanResponse);
   rpc RunAction(RegisteredActionRequest) returns (OperationHandle);
 }

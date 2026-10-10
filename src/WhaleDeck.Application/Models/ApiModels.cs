@@ -59,6 +59,16 @@ public sealed record ManagedResourceDto(
     bool IsProtected,
     IReadOnlyDictionary<string, string> Attributes);
 
+public sealed record ApplicationImageMetadataDto(
+    string Image,
+    string ImageId,
+    IReadOnlyCollection<string> Environment,
+    IReadOnlyCollection<string> ExposedPorts,
+    IReadOnlyCollection<string> Volumes,
+    IReadOnlyCollection<string> Entrypoint,
+    IReadOnlyCollection<string> Command,
+    IReadOnlyDictionary<string, string> Labels);
+
 public sealed record ContainerDto(
     string Id,
     string Name,

@@ -76,6 +76,17 @@ export interface CatalogApplication {
   state: string | null
 }
 
+export interface ApplicationImageMetadata {
+  image: string
+  imageId: string
+  environment: string[]
+  exposedPorts: string[]
+  volumes: string[]
+  entrypoint: string[]
+  command: string[]
+  labels: Record<string, string>
+}
+
 export interface OverviewResponse {
   scope: 'Public' | 'Administrator'
   platformStatus: string

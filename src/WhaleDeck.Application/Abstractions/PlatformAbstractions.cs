@@ -25,6 +25,8 @@ public interface IAgentGateway
     Task<HostInfoDto> GetHostInfoAsync(CancellationToken cancellationToken);
     Task<IReadOnlyCollection<ContainerDto>> ListContainersAsync(bool includeStopped, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<ManagedResourceDto>> ListResourcesAsync(string kind, CancellationToken cancellationToken);
+    Task<ManagedResourceDto> GetConfigRepositoryStatusAsync(CancellationToken cancellationToken);
+    Task<ApplicationImageMetadataDto> InspectApplicationImageAsync(string image, bool pullIfMissing, CancellationToken cancellationToken);
     Task<PlanDto> PlanAsync(string area, string action, string? resourceId, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<MetricValueDto>> GetMetricsSnapshotAsync(CancellationToken cancellationToken);
     Task<AgentOperationDto> ExecuteAsync(string area, string action, string resourceId, IReadOnlyDictionary<string, string> parameters, string? planHash, Guid jobId, string idempotencyKey, CancellationToken cancellationToken);

@@ -34,6 +34,14 @@ public sealed class ManagementController(
     [HttpGet("sso")]
     public async Task<IActionResult> Sso(CancellationToken cancellationToken) => Ok(await identity.ListSsoApplicationsAsync(cancellationToken));
 
+    [HttpGet("config-repository/status")]
+    public async Task<IActionResult> ConfigRepositoryStatus(CancellationToken cancellationToken) =>
+        Ok(await agent.GetConfigRepositoryStatusAsync(cancellationToken));
+
+    [HttpPost("applications/image-metadata")]
+    public async Task<IActionResult> ApplicationImageMetadata([FromBody] ImageMetadataRequest request, CancellationToken cancellationToken) =>
+        Ok(await agent.InspectApplicationImageAsync(request.Image, request.PullIfMissing, cancellationToken));
+
     [HttpGet("{area:regex(^(images|networks|volumes|compose-projects|databases|applications|systemd)$)}")]
     public async Task<IActionResult> Resources(string area, CancellationToken cancellationToken) => Ok(await queries.ListAsync(area, cancellationToken));
 
@@ -53,4 +61,5 @@ public sealed class ManagementController(
 
     public sealed record OperationRequest(string? ResourceId, string IdempotencyKey, IReadOnlyDictionary<string, string>? Parameters, string? PlanHash, bool Confirmed);
     public sealed record PlanRequest(string? ResourceId, IReadOnlyDictionary<string, string>? Parameters);
+    public sealed record ImageMetadataRequest(string Image, bool PullIfMissing = false);
 }

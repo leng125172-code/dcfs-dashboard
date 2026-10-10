@@ -6,6 +6,19 @@ namespace WhaleDeck.Agent.Services;
 
 public sealed class DockerGrpcService(DockerEngine docker, ResourceRegistry registry) : DockerService.DockerServiceBase
 {
+    public override async Task<ImageMetadataResponse> InspectImage(ImageMetadataRequest request, ServerCallContext context)
+    {
+        var metadata = await docker.InspectImageAsync(request.Image, request.PullIfMissing, context.CancellationToken);
+        var response = new ImageMetadataResponse { Image = request.Image, ImageId = metadata.ID ?? string.Empty };
+        response.Environment.Add(metadata.Config?.Env ?? []);
+        response.ExposedPorts.Add(metadata.Config?.ExposedPorts?.Keys ?? []);
+        response.Volumes.Add(metadata.Config?.Volumes?.Keys ?? []);
+        response.Entrypoint.Add(metadata.Config?.Entrypoint ?? []);
+        response.Command.Add(metadata.Config?.Cmd ?? []);
+        if (metadata.Config?.Labels is not null) response.Labels.Add(metadata.Config.Labels);
+        return response;
+    }
+
     public override async Task<DockerInfoResponse> GetEngineInfo(Empty request, ServerCallContext context)
     {
         var info = await docker.GetInfoAsync(context.CancellationToken);

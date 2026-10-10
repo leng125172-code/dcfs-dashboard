@@ -86,6 +86,32 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
         };
     }
 
+    public async Task<ManagedResourceDto> GetConfigRepositoryStatusAsync(CancellationToken cancellationToken)
+    {
+        var response = await _resources.GetConfigRepositoryStatusAsync(
+            new RegisteredResourceRequest
+            {
+                Resource = new ResourceReference
+                {
+                    ResourceId = "database-platform.repository",
+                    ResourceType = "ConfigRepository"
+                }
+            },
+            Headers("/whaledeck.agent.v1.ManagedResourceService/GetConfigRepositoryStatus"),
+            cancellationToken: cancellationToken);
+        return Map(response);
+    }
+
+    public async Task<ApplicationImageMetadataDto> InspectApplicationImageAsync(string image, bool pullIfMissing, CancellationToken cancellationToken)
+    {
+        var response = await _docker.InspectImageAsync(
+            new ImageMetadataRequest { Image = image, PullIfMissing = pullIfMissing },
+            Headers("/whaledeck.agent.v1.DockerService/InspectImage"),
+            cancellationToken: cancellationToken);
+        return new ApplicationImageMetadataDto(response.Image, response.ImageId, response.Environment, response.ExposedPorts,
+            response.Volumes, response.Entrypoint, response.Command, response.Labels);
+    }
+
     public async Task<PlanDto> PlanAsync(string area, string action, string? resourceId, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
     {
         var normalizedParameters = new Dictionary<string, string>(parameters, StringComparer.Ordinal);
@@ -214,6 +240,10 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
     private static ManagedResourceDto[] Map(ResourceCollectionResponse response) =>
         response.Resources.Select(item => new ManagedResourceDto(item.ResourceId, item.DisplayName, item.ResourceType,
             item.State, item.Version, item.ProtectedResource, item.Attributes)).ToArray();
+
+    private static ManagedResourceDto Map(ResourceSnapshot item) =>
+        new(item.ResourceId, item.DisplayName, item.ResourceType, item.State, item.Version,
+            item.ProtectedResource, item.Attributes);
 
     private static AgentOperationDto Map(OperationHandle response) =>
         new(response.OperationId, response.State.ToString(), response.Phase, response.ProgressPercent,

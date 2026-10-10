@@ -137,6 +137,7 @@ Agent 不提供“执行命令”“执行脚本”或任意 unit 名称接口�
 | `RPC-DKR-015` | `DockerService.ListImages` | Unary | 摘要、大小、标签和引用容器 |
 | `RPC-DKR-016` | `DockerService.ListNetworks` | Unary | 网络、范围、子网和关联容器 |
 | `RPC-DKR-017` | `DockerService.ListVolumes` | Unary | 卷、挂载、关联容器和孤立状态 |
+| `RPC-DKR-018` | `DockerService.InspectImage` | Unary | 读取或按请求拉取 OCI 镜像声明，返回 Env、Ports、Volumes、Entrypoint、Cmd 与 Labels |
 
 创建 DTO 使用类型化字段，不接受 Docker CLI 参数字符串。首期禁止通过创建页面启用 `privileged`、宿主机 PID/IPC namespace、任意设备或未批准的宿主机路径。
 

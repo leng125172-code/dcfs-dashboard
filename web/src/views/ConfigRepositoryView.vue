@@ -1,9 +1,21 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { apiRequest } from '@/services/apiClient'
+import type { ManagedResource } from '@/services/contracts'
 import { enqueueOperation, planOperation } from '@/services/operations'
 const message = ref('chore: save Whale Deck configuration')
 const running = ref(false)
+const status = ref<ManagedResource | null>(null)
+const statusLoading = ref(false)
+async function refreshStatus() {
+  statusLoading.value = true
+  try {
+    status.value = await apiRequest<ManagedResource>('config-repository/status')
+  } finally {
+    statusLoading.value = false
+  }
+}
 async function snapshot() {
   running.value = true
   try {
@@ -40,6 +52,7 @@ async function commit() {
     running.value = false
   }
 }
+onMounted(refreshStatus)
 </script>
 <template>
   <div class="config-repo-page">
@@ -51,6 +64,19 @@ async function commit() {
       </div>
     </header>
     <section class="panel repo-panel">
+      <el-descriptions v-loading="statusLoading" :column="3" border size="small">
+        <el-descriptions-item label="状态">
+          <el-tag :type="status?.state === 'Clean' ? 'success' : 'warning'">
+            {{ status?.state ?? '读取中' }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="分支">{{
+          status?.attributes.branch ?? '—'
+        }}</el-descriptions-item>
+        <el-descriptions-item label="提交">{{
+          status?.version?.slice(0, 12) ?? '—'
+        }}</el-descriptions-item>
+      </el-descriptions>
       <el-alert
         title=".env、Token、密码、私钥和疑似敏感内容会在提交前被阻止。"
         type="info"

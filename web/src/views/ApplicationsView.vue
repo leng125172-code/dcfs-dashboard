@@ -3,7 +3,11 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiRequest } from '@/services/apiClient'
 import { enqueueOperation, planOperation, stageSecret } from '@/services/operations'
-import type { CatalogApplication, ManagedResource } from '@/services/contracts'
+import type {
+  ApplicationImageMetadata,
+  CatalogApplication,
+  ManagedResource,
+} from '@/services/contracts'
 
 const catalog = ref<CatalogApplication[]>([])
 const installed = ref<ManagedResource[]>([])
@@ -11,6 +15,8 @@ const stale = ref(false)
 const loading = ref(false)
 const installVisible = ref(false)
 const submitting = ref(false)
+const inspectingImage = ref(false)
+const imageMetadata = ref<ApplicationImageMetadata | null>(null)
 const form = reactive({ slug: '', image: '', ports: '', environment: '', autoupdate: false })
 
 async function load() {
@@ -36,7 +42,29 @@ function openInstall(item?: CatalogApplication) {
     environment: '',
     autoupdate: false,
   })
+  imageMetadata.value = null
   installVisible.value = true
+}
+
+async function inspectImage() {
+  if (!form.image.trim()) return
+  inspectingImage.value = true
+  try {
+    imageMetadata.value = await apiRequest<ApplicationImageMetadata>(
+      'applications/image-metadata',
+      {
+        method: 'POST',
+        signal: AbortSignal.timeout(180_000),
+        body: JSON.stringify({ image: form.image.trim(), pullIfMissing: true }),
+      },
+    )
+    if (!form.environment.trim() && imageMetadata.value.environment.length) {
+      form.environment = imageMetadata.value.environment.join('\n')
+    }
+    ElMessage.success('已读取 OCI 镜像声明')
+  } finally {
+    inspectingImage.value = false
+  }
 }
 
 async function install() {
@@ -176,7 +204,30 @@ onMounted(load)
       <el-form label-position="top"
         ><el-form-item label="应用标识"
           ><el-input v-model="form.slug" placeholder="my-app" /></el-form-item
-        ><el-form-item label="OCI 镜像"><el-input v-model="form.image" /></el-form-item
+        ><el-form-item label="OCI 镜像"
+          ><el-input v-model="form.image"
+            ><template #append
+              ><el-button :loading="inspectingImage" @click="inspectImage"
+                >分析镜像</el-button
+              ></template
+            ></el-input
+          ></el-form-item
+        ><el-alert
+          v-if="imageMetadata"
+          class="image-metadata"
+          type="info"
+          :closable="false"
+          show-icon
+        >
+          <template #title
+            >镜像声明已载入，未显式覆盖的 Entrypoint / Cmd 会由 OCI 镜像继承。</template
+          >
+          <div class="image-metadata__grid">
+            <span>端口：{{ imageMetadata.exposedPorts.join(', ') || '无' }}</span>
+            <span>卷：{{ imageMetadata.volumes.join(', ') || '无' }}</span>
+            <span>Entrypoint：{{ imageMetadata.entrypoint.join(' ') || '默认' }}</span>
+            <span>Cmd：{{ imageMetadata.command.join(' ') || '默认' }}</span>
+          </div> </el-alert
         ><el-form-item label="端口映射"
           ><el-input v-model="form.ports" placeholder="192.168.100.13:8088:80/tcp" /><small
             class="form-tip"
@@ -271,6 +322,17 @@ onMounted(load)
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+.image-metadata {
+  margin-bottom: 14px;
+}
+.image-metadata__grid {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
 }
 @media (max-width: 760px) {
   .catalog-card,
