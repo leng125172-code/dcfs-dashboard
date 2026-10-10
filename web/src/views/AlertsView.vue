@@ -41,6 +41,11 @@ function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleString() : '—'
 }
 
+function ruleLabel(ruleId: string) {
+  const rule = rules.value.find((item) => item.id === ruleId)
+  return rule ? ruleNames[rule.ruleType] || rule.ruleType : ruleId
+}
+
 async function load() {
   loading.value = true
   error.value = ''
@@ -173,10 +178,7 @@ onMounted(load)
               <template #default="scope">
                 <div class="event-title">
                   <strong>{{ scope.row.summaryCode }}</strong
-                  ><small>{{
-                    ruleNames[rules.find((rule) => rule.id === scope.row.ruleId)?.ruleType || ''] ||
-                    scope.row.ruleId
-                  }}</small>
+                  ><small>{{ ruleLabel(scope.row.ruleId) }}</small>
                 </div>
               </template>
             </el-table-column>
