@@ -29,13 +29,15 @@ builder.Services.AddReverseProxy()
                 {
                     Hosts = ["192.168.22.19:8081", "192.168.100.13:8081"],
                     Path = "{**catch-all}"
-                }
+                },
+                Transforms = PreserveOriginalHost()
             },
             new Yarp.ReverseProxy.Configuration.RouteConfig
             {
                 RouteId = "gateway",
                 ClusterId = "gateway",
-                Match = new Yarp.ReverseProxy.Configuration.RouteMatch { Path = "{**catch-all}" }
+                Match = new Yarp.ReverseProxy.Configuration.RouteMatch { Path = "{**catch-all}" },
+                Transforms = PreserveOriginalHost()
             }
         ],
         [
@@ -117,6 +119,9 @@ app.MapGet("/maintenance/status", () =>
 }).WithOrder(-1000);
 app.MapReverseProxy();
 await app.RunAsync();
+
+static IReadOnlyList<IReadOnlyDictionary<string, string>> PreserveOriginalHost() =>
+    [new Dictionary<string, string> { ["RequestHeaderOriginalHost"] = "true" }];
 
 static string MaintenancePage(string statusPath)
 {
