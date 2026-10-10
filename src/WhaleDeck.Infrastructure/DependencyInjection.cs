@@ -87,6 +87,7 @@ public static class DependencyInjection
         services.AddScoped<GovernanceService>();
         services.AddScoped<ApplicationService>();
         services.AddScoped<ContainerUpdateService>();
+        services.AddScoped<ContainerDiagnosticService>();
         services.AddScoped<DockerEventService>();
         services.AddScoped<GlobalSearchService>();
         services.AddScoped<RoleMappingService>();

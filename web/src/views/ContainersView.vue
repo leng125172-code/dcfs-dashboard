@@ -2,7 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { Box, Delete, Plus, RefreshRight, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { apiRequest } from '@/services/apiClient'
+import { apiRequest, apiUrl } from '@/services/apiClient'
 import { enqueueOperation, planOperation, stageSecret } from '@/services/operations'
 import type {
   ContainerInspect,
@@ -212,6 +212,30 @@ async function updateContainer(item: Container) {
     plan.planHash,
   )
   ElMessage.success(`更新任务已提交：${job.id}`)
+}
+
+async function rebuildContainer(item: Container) {
+  if (item.isProtected || item.labels['com.docker.compose.project']) {
+    ElMessage.warning('受保护或 Compose 容器必须通过对应维护流程重建')
+    return
+  }
+  const plan = await planOperation('containers', 'rebuild', item.id, {})
+  await ElMessageBox.confirm(
+    [...plan.changes, ...plan.warnings].join('\n'),
+    `重建容器 ${item.name}`,
+    { type: 'warning', confirmButtonText: '重建', cancelButtonText: '取消' },
+  )
+  const job = await enqueueOperation('containers', 'rebuild', item.id, {}, true, plan.planHash)
+  ElMessage.success(`重建任务已提交：${job.id}`)
+}
+
+function downloadDiagnostics(item: Container) {
+  const anchor = document.createElement('a')
+  anchor.href = apiUrl(`containers/${encodeURIComponent(item.id)}/diagnostics`)
+  anchor.download = `whaledeck-container-${item.name}-diagnostics.zip`
+  document.body.append(anchor)
+  anchor.click()
+  anchor.remove()
 }
 
 async function createContainer() {
@@ -537,6 +561,18 @@ onMounted(load)
     >
       <div v-loading="detailLoading" class="container-detail">
         <div class="container-detail__actions">
+          <el-button :disabled="!selected" @click="selected && downloadDiagnostics(selected)"
+            >导出诊断</el-button
+          >
+          <el-button
+            :disabled="
+              !selected ||
+              selected.isProtected ||
+              Boolean(selected.labels['com.docker.compose.project'])
+            "
+            @click="selected && rebuildContainer(selected)"
+            >重建容器</el-button
+          >
           <el-button :disabled="!inspect || selected?.isProtected" @click="copyContainer"
             >复制配置创建</el-button
           >

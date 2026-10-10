@@ -11,7 +11,7 @@ public sealed class OperationService(IJobRepository jobs)
         new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase)
         {
             ["containers"] = new(StringComparer.OrdinalIgnoreCase)
-                { "create", "start", "stop", "restart", "delete", "pull", "prune", "update", "batch-start", "batch-stop", "batch-restart", "batch-delete" },
+                { "create", "start", "stop", "restart", "delete", "pull", "prune", "update", "rebuild", "batch-start", "batch-stop", "batch-restart", "batch-delete" },
             ["docker"] = new(StringComparer.OrdinalIgnoreCase) { "validate-settings", "apply-settings", "network-create", "network-delete", "volume-delete" },
             ["databases"] = new(StringComparer.OrdinalIgnoreCase) { "create", "delete", "create-principal", "delete-principal", "disable-principal", "grant", "rotate", "terminate-connection" },
             // Active backups are canceled through the job cancellation API so
@@ -85,12 +85,12 @@ public sealed class OperationService(IJobRepository jobs)
 
     private static bool RequiresConfirmation(OperationCommand command) => command.Action is
         "stop" or "restart" or "delete" or "delete-principal" or "prune" or "apply-settings" or "uninstall" or
-        "update" or "reinstall" or "reboot" or "update-install" or "commit-push" or "apply-update" or "rollback" or
+        "update" or "rebuild" or "reinstall" or "reboot" or "update-install" or "commit-push" or "apply-update" or "rollback" or
         "network-delete" or "volume-delete" or
         "batch-start" or "batch-stop" or "batch-restart" or "batch-delete";
 
     private static bool RequiresPlan(OperationCommand command) => command.Action is
-        "create" or "delete" or "delete-principal" or "prune" or "apply-settings" or "install" or "update" or "reinstall" or "uninstall" or
+        "create" or "delete" or "delete-principal" or "prune" or "apply-settings" or "install" or "update" or "rebuild" or "reinstall" or "uninstall" or
         "update-install" or "reboot" or "commit-push" or "apply-update" or "rollback" or
         "network-create" or "network-delete" or "volume-delete" or
         "batch-start" or "batch-stop" or "batch-restart" or "batch-delete";

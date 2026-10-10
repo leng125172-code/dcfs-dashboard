@@ -113,6 +113,10 @@ public sealed class DockerEngine : IDisposable
         {
             updatePlan = await ValidateContainerUpdateAsync(resourceId, parameters, cancellationToken);
         }
+        else if (action == "rebuild")
+        {
+            updatePlan = await ValidateContainerRebuildAsync(resourceId, cancellationToken);
+        }
         else if (action == "prune")
         {
             unusedImageBytes = (await ListImagesAsync(cancellationToken)).Where(item => item.Containers == 0).Sum(item => item.Size);
@@ -164,10 +168,20 @@ public sealed class DockerEngine : IDisposable
         else if (updatePlan is not null)
         {
             response.Changes.Clear();
-            response.Changes.Add($"检查并更新容器 {updatePlan.Name}");
-            response.Changes.Add($"重新拉取镜像 {updatePlan.Image}");
-            response.Changes.Add("更新成功后删除旧容器；健康检查失败时自动回滚。");
-            response.Warnings.Add("容器更新期间会有短暂服务中断。");
+            if (action == "rebuild")
+            {
+                response.Changes.Add($"按现有配置重建容器 {updatePlan.Name}");
+                response.Changes.Add($"使用宿主机当前可用的镜像 {updatePlan.Image}");
+                response.Changes.Add("重建成功后删除旧容器；健康检查失败时自动回滚。");
+                response.Warnings.Add("重建不会拉取镜像；若本地镜像标签已变化，将使用标签当前指向的镜像。服务会短暂中断。");
+            }
+            else
+            {
+                response.Changes.Add($"检查并更新容器 {updatePlan.Name}");
+                response.Changes.Add($"重新拉取镜像 {updatePlan.Image}");
+                response.Changes.Add("更新成功后删除旧容器；健康检查失败时自动回滚。");
+                response.Warnings.Add("容器更新期间会有短暂服务中断。");
+            }
         }
         else if (deleteName is not null)
         {
@@ -221,7 +235,7 @@ public sealed class DockerEngine : IDisposable
 
         try
         {
-            if (action is "create" or "prune" or "update" or "network-create" or "network-delete" or "volume-delete" or
+            if (action is "create" or "prune" or "update" or "rebuild" or "network-create" or "network-delete" or "volume-delete" or
                 "batch-start" or "batch-stop" or "batch-restart" or "batch-delete")
                 _plans.VerifyAndConsume(planHash ?? string.Empty, resourceId, action, NormalizePlanParameters(parameters));
             switch (action)
@@ -234,6 +248,9 @@ public sealed class DockerEngine : IDisposable
                     break;
                 case "update":
                     operation.ResultJson = await UpdateManagedContainerAsync(resourceId, parameters, jobId, cancellationToken);
+                    break;
+                case "rebuild":
+                    operation.ResultJson = await RebuildManagedContainerAsync(resourceId, jobId, cancellationToken);
                     break;
                 case "prune":
                     await PruneAsync(parameters, cancellationToken);
@@ -409,6 +426,26 @@ public sealed class DockerEngine : IDisposable
         return new ContainerUpdatePlan(container.ID, name, image, metadata.Image ?? string.Empty, policy);
     }
 
+    private async Task<ContainerUpdatePlan> ValidateContainerRebuildAsync(
+        string resourceId,
+        CancellationToken cancellationToken)
+    {
+        var container = await ResolveContainerAsync(resourceId, cancellationToken);
+        var name = container.Names.FirstOrDefault()?.TrimStart('/') ?? container.ID;
+        if (_registry.IsProtectedContainer(name, container.Labels))
+            throw new InvalidOperationException("Protected containers require the platform maintenance workflow.");
+        if (container.Labels.TryGetValue("com.docker.compose.project", out var composeProject) && !string.IsNullOrWhiteSpace(composeProject))
+            throw new InvalidOperationException("Compose containers must be rebuilt through their application workflow.");
+
+        var metadata = await _client.Containers.InspectContainerAsync(container.ID, cancellationToken);
+        var image = metadata.Config?.Image ?? throw new InvalidOperationException("The container image reference is unavailable.");
+        ValidateImage(image);
+        if (metadata.HostConfig?.AutoRemove == true)
+            throw new InvalidOperationException("Auto-remove containers cannot be rebuilt with rollback protection.");
+        _ = await _client.Images.InspectImageAsync(image, cancellationToken);
+        return new ContainerUpdatePlan(container.ID, name, image, metadata.Image ?? string.Empty, "manual-rebuild");
+    }
+
     private async Task<string> UpdateManagedContainerAsync(
         string resourceId,
         IReadOnlyDictionary<string, string> parameters,
@@ -434,6 +471,29 @@ public sealed class DockerEngine : IDisposable
                 rolledBack = false
             });
         }
+
+        return await ReplaceContainerAsync(plan, original, newImageId, "update", jobId, cancellationToken);
+    }
+
+    private async Task<string> RebuildManagedContainerAsync(
+        string resourceId,
+        string jobId,
+        CancellationToken cancellationToken)
+    {
+        var plan = await ValidateContainerRebuildAsync(resourceId, cancellationToken);
+        var original = await _client.Containers.InspectContainerAsync(plan.Id, cancellationToken);
+        var localImage = await _client.Images.InspectImageAsync(plan.Image, cancellationToken);
+        return await ReplaceContainerAsync(plan, original, localImage.ID ?? plan.OldImageId, "rebuild", jobId, cancellationToken);
+    }
+
+    private async Task<string> ReplaceContainerAsync(
+        ContainerUpdatePlan plan,
+        Docker.DotNet.Models.ContainerInspectResponse original,
+        string newImageId,
+        string action,
+        string jobId,
+        CancellationToken cancellationToken)
+    {
 
         var wasRunning = original.State?.Running == true;
         var rollbackName = BuildRollbackName(plan.Name, jobId);
@@ -471,6 +531,7 @@ public sealed class DockerEngine : IDisposable
                 oldImageId = plan.OldImageId,
                 imageId = newImageId,
                 versionPolicy = plan.VersionPolicy,
+                action,
                 updated = true,
                 rolledBack = false
             });
@@ -506,6 +567,7 @@ public sealed class DockerEngine : IDisposable
                 oldImageId = plan.OldImageId,
                 imageId = newImageId,
                 versionPolicy = plan.VersionPolicy,
+                action,
                 updated = false,
                 rolledBack
             });

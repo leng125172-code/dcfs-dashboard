@@ -65,6 +65,17 @@ public sealed class OperationServiceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command with { Confirmed = true }, default));
     }
 
+    [Fact]
+    public async Task ContainerRebuildRequiresConfirmationAndPlan()
+    {
+        var service = new OperationService(new RecordingJobRepository());
+        var command = new OperationCommand("containers", "rebuild", "container-1", "key-1",
+            "{\"parameters\":{}}", null, false);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command, default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command with { Confirmed = true }, default));
+    }
+
     [Theory]
     [InlineData("batch-start")]
     [InlineData("batch-stop")]

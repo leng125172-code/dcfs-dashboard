@@ -53,6 +53,10 @@
 | `UC-CON-008` | 查看实时统计 | 管理员 | 流式 | `RPC-DKR-004` |
 | `UC-CON-009` | 拉取镜像 | 管理员 | 异步 | `RPC-DKR-012` |
 | `UC-CON-010` | 清理未使用镜像/卷 | 管理员 | 预检 + 异步 | `RPC-DKR-013`、`RPC-DKR-014` |
+| `UC-CON-011` | 按现有配置重建独立容器 | 管理员 | 预检 + 异步 | `DockerService.PlanAction`、`DockerService.RunAction` |
+| `UC-CON-012` | 更新带 `autoupdate=true` 标签的独立容器 | 管理员/系统 | 预检 + 异步 | `DockerService.PlanAction`、`DockerService.RunAction` |
+| `UC-CON-013` | 批量启停、重启或删除普通容器 | 管理员 | 预检 + 异步 | `DockerService.PlanAction`、`DockerService.RunAction` |
+| `UC-CON-014` | 导出单容器脱敏诊断包 | 管理员 | 同步、有界 | `RPC-DKR-002`、`RPC-DKR-003`、`RPC-DKR-004`、`RPC-DKR-019` |
 | `UC-DKR-001` | 查询 Docker 配置 | 管理员 | 同步 | `RPC-DCFG-001` |
 | `UC-DKR-002` | 校验 Docker 配置 | 管理员 | 同步预检 | `RPC-DCFG-002` |
 | `UC-DKR-003` | 应用配置并重启 Docker | 管理员 | Agent 持久任务 | `RPC-DCFG-003` |

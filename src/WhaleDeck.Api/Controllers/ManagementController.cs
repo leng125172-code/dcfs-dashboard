@@ -19,6 +19,7 @@ public sealed class ManagementController(
     OperationService operations,
     ApplicationService applications,
     ContainerUpdateService containerUpdates,
+    ContainerDiagnosticService containerDiagnostics,
     DockerEventService dockerEvents) : ControllerBase
 {
     [HttpGet("containers")]
@@ -40,6 +41,14 @@ public sealed class ManagementController(
     [HttpGet("containers/{containerId}/inspect")]
     public async Task<IActionResult> ContainerInspect(string containerId, CancellationToken cancellationToken = default) =>
         Ok(await agent.InspectContainerAsync(containerId, cancellationToken));
+
+    /// <summary>Exports a bounded, redacted diagnostic bundle for one container.</summary>
+    [HttpGet("containers/{containerId}/diagnostics")]
+    public async Task<IActionResult> ContainerDiagnostics(string containerId, CancellationToken cancellationToken = default)
+    {
+        var bundle = await containerDiagnostics.CreateAsync(containerId, cancellationToken);
+        return File(bundle.Content, "application/zip", bundle.FileName);
+    }
 
     [HttpGet("containers/update-history")]
     public async Task<IActionResult> ContainerUpdateHistory(
