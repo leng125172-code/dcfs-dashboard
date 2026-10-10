@@ -99,9 +99,9 @@ def ensure_provider(slug: str, address: str, callback: str, signout_callback: st
     return provider
 
 
-admin = User.objects.filter(username="akadmin", is_active=True, is_superuser=True).first()
+admin = User.objects.filter(username="akadmin", is_active=True).first()
 if admin is None:
-    admin = User.objects.filter(is_superuser=True, is_active=True).order_by("pk").first()
+    admin = User.objects.filter(groups__is_superuser=True, is_active=True).order_by("pk").first()
 if admin is None:
     raise RuntimeError("No active Authentik administrator exists.")
 
@@ -110,8 +110,8 @@ if admin_group is None:
     admin_group = Group.objects.filter(is_superuser=True).order_by("name").first()
 if admin_group is None:
     raise RuntimeError("No Authentik superuser group exists.")
-if not admin.ak_groups.filter(pk=admin_group.pk).exists():
-    admin.ak_groups.add(admin_group)
+if not admin.groups.filter(pk=admin_group.pk).exists():
+    admin.groups.add(admin_group)
 
 api_token, _ = Token.objects.get_or_create(
     identifier="whaledeck-api",
