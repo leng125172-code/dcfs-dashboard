@@ -23,10 +23,10 @@ docker run --rm \
   "$sdk_image" sh -ec '
     dotnet publish src/WhaleDeck.Agent/WhaleDeck.Agent.csproj \
       --configuration Release --runtime '"$runtime_id"' --self-contained true \
-      --output /out/agent -p:BaseIntermediateOutputPath=/tmp/obj/agent/ -p:BaseOutputPath=/tmp/bin/agent/
+      --artifacts-path /tmp/artifacts/agent --output /out/agent
     dotnet publish src/WhaleDeck.MaintenanceHost/WhaleDeck.MaintenanceHost.csproj \
       --configuration Release --runtime '"$runtime_id"' --self-contained true \
-      --output /out/maintenance -p:BaseIntermediateOutputPath=/tmp/obj/maintenance/ -p:BaseOutputPath=/tmp/bin/maintenance/
+      --artifacts-path /tmp/artifacts/maintenance --output /out/maintenance
   '
 
 "$repo_root/deploy/host/install.sh" "$artifacts_root"
