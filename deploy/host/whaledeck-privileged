@@ -73,6 +73,18 @@ case "$action" in
     /usr/bin/apt-get update
     exec /usr/bin/apt-get --yes upgrade
     ;;
+  storage-smart)
+    [[ $# -eq 2 ]] || exit 2
+    device=$2
+    [[ "$device" =~ ^/dev/(sd[a-z]+|nvme[0-9]+n[0-9]+|vd[a-z]+)$ ]] || exit 2
+    [[ -b "$device" ]] || exit 2
+    if ! command -v smartctl >/dev/null 2>&1; then
+      exec /usr/bin/jq -cn '{passed:null,temperature:null,available:false}'
+    fi
+    smart_json=$(/usr/sbin/smartctl --json=c --health --attributes "$device" 2>/dev/null || true)
+    /usr/bin/printf '%s' "$smart_json" |
+      /usr/bin/jq -c '{passed:(.smart_status.passed // null),temperature:(.temperature.current // .nvme_smart_health_information_log.temperature // null),available:true}'
+    ;;
   config-repository-stage)
     [[ $# -eq 2 ]] || exit 2
     validate_repository "$2"
@@ -167,6 +179,52 @@ case "$action" in
   platform-diagnose-host)
     [[ $# -eq 1 ]] || exit 2
     exec /data/GitRepos/database-platform/scripts/check-all.sh
+    ;;
+  platform-diagnostic-bundle)
+    [[ $# -eq 1 ]] || exit 2
+    run_transient whaledeck-platform-diagnostic-bundle platform-diagnostic-bundle-host
+    ;;
+  platform-diagnostic-bundle-host)
+    [[ $# -eq 1 ]] || exit 2
+    diagnostics_root=/var/lib/whaledeck-agent/diagnostics
+    /usr/bin/install -d -o root -g whaledeck -m 0750 "$diagnostics_root"
+    /usr/bin/find "$diagnostics_root" -maxdepth 1 -type f -name '*.tar.gz' -mmin +1440 -delete
+    bundle_id=$(/usr/bin/od -An -N16 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')
+    [[ "$bundle_id" =~ ^[a-f0-9]{32}$ ]] || exit 1
+    temporary=$(/usr/bin/mktemp -d "$diagnostics_root/.bundle.XXXXXX")
+    trap '/usr/bin/rm -rf -- "$temporary"' EXIT
+
+    /usr/bin/jq -cn \
+      --arg generatedAtUtc "$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --arg hostName "$(/usr/bin/hostname)" \
+      --arg whaleDeckRevision "$(/usr/bin/git -C /data/GitRepos/whale-deck rev-parse HEAD 2>/dev/null || true)" \
+      --arg databasePlatformRevision "$(/usr/bin/git -C /data/GitRepos/database-platform rev-parse HEAD 2>/dev/null || true)" \
+      '{generatedAtUtc:$generatedAtUtc,hostName:$hostName,whaleDeckRevision:$whaleDeckRevision,databasePlatformRevision:$databasePlatformRevision}' \
+      > "$temporary/metadata.json"
+    /usr/bin/uname -a > "$temporary/kernel.txt"
+    /usr/bin/df -hT / /data /data/DockerData > "$temporary/storage.txt" 2>&1 || true
+    /usr/bin/systemctl --no-pager --plain --full is-active docker.service whaledeck-agent.service whaledeck-maintenance.service database-platform-workstation-update.timer \
+      > "$temporary/services.txt" 2>&1 || true
+    /usr/bin/docker ps --all --format '{"name":{{json .Names}},"image":{{json .Image}},"state":{{json .State}},"status":{{json .Status}}}' \
+      > "$temporary/containers.jsonl" 2>&1 || true
+    /usr/bin/docker version --format '{{json .}}' > "$temporary/docker-version.json" 2>&1 || true
+    {
+      /usr/bin/journalctl --no-pager --output=short-iso --since '-2 hours' --priority=err \
+        --unit=docker.service --unit=whaledeck-agent.service --unit=whaledeck-maintenance.service \
+        --unit=database-platform-workstation-update.service --lines=200 2>&1 || true
+    } | /usr/bin/sed -E '/(password|secret|token|authorization|cookie|api[_-]?key|credential)/Id' \
+      > "$temporary/recent-errors.txt"
+
+    archive="$diagnostics_root/$bundle_id.tar.gz"
+    /usr/bin/tar -C "$temporary" -czf "$archive" .
+    size=$(/usr/bin/stat -c %s "$archive")
+    [[ "$size" -le 10485760 ]] || { /usr/bin/rm -f -- "$archive"; exit 1; }
+    /usr/bin/chown root:whaledeck "$archive"
+    /usr/bin/chmod 0640 "$archive"
+    expires_at=$(/usr/bin/date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ)
+    /usr/bin/jq -cn --arg bundleId "$bundle_id" --arg fileName "whaledeck-diagnostics-$bundle_id.tar.gz" \
+      --argjson sizeBytes "$size" --arg expiresAtUtc "$expires_at" \
+      '{bundleId:$bundleId,fileName:$fileName,sizeBytes:$sizeBytes,expiresAtUtc:$expiresAtUtc}'
     ;;
   systemd)
     [[ $# -eq 3 ]] || exit 2

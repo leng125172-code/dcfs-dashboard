@@ -65,6 +65,27 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
             response.Addresses.Select(item => new HostAddressDto(item.InterfaceName, item.Address)).ToArray());
     }
 
+    public async Task<IReadOnlyCollection<JournalEntryDto>> QueryJournalAsync(
+        string? unit,
+        int take,
+        int sinceMinutes,
+        string? priority,
+        string? keyword,
+        CancellationToken cancellationToken)
+    {
+        var response = await _host.QueryJournalAsync(new JournalRequest
+        {
+            Unit = unit ?? string.Empty,
+            Take = checked((uint)Math.Clamp(take, 1, 500)),
+            SinceMinutes = checked((uint)Math.Clamp(sinceMinutes, 1, 10_080)),
+            Priority = priority ?? string.Empty,
+            Keyword = keyword ?? string.Empty
+        }, Headers("/whaledeck.agent.v1.HostService/QueryJournal"), cancellationToken: cancellationToken);
+        return response.Entries.Select(item => new JournalEntryDto(
+            item.OccurredAtUtc.ToDateTimeOffset(), item.Unit, item.Priority, item.Process,
+            item.ProcessId, item.Message)).ToArray();
+    }
+
     public async Task<IReadOnlyCollection<ContainerDto>> ListContainersAsync(bool includeStopped, CancellationToken cancellationToken)
     {
         var response = await _docker.ListContainersAsync(new ListContainersRequest { IncludeStopped = includeStopped }, Headers("/whaledeck.agent.v1.DockerService/ListContainers"), cancellationToken: cancellationToken);
@@ -82,6 +103,8 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
             "images" => Map(await _docker.ListImagesAsync(new Empty(), Headers("/whaledeck.agent.v1.DockerService/ListImages"), cancellationToken: cancellationToken)),
             "networks" => Map(await _docker.ListNetworksAsync(new Empty(), Headers("/whaledeck.agent.v1.DockerService/ListNetworks"), cancellationToken: cancellationToken)),
             "volumes" => Map(await _docker.ListVolumesAsync(new Empty(), Headers("/whaledeck.agent.v1.DockerService/ListVolumes"), cancellationToken: cancellationToken)),
+            "host-network-interfaces" => Map(await _host.ListNetworkInterfacesAsync(new Empty(), Headers("/whaledeck.agent.v1.HostService/ListNetworkInterfaces"), cancellationToken: cancellationToken)),
+            "host-storage-devices" => Map(await _host.ListStorageDevicesAsync(new Empty(), Headers("/whaledeck.agent.v1.HostService/ListStorageDevices"), cancellationToken: cancellationToken)),
             "overview" => (await ListContainersAsync(true, cancellationToken))
                 .Where(IsOverviewContainer)
                 .Select(item => new ManagedResourceDto(item.Id, item.Name, "Container", item.State, item.Image, item.IsProtected, item.Labels))
@@ -237,6 +260,23 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
                 cancellationToken: cancellationToken);
             return Map(response);
         }
+    }
+
+    public async Task<byte[]> DownloadDiagnosticBundleAsync(string bundleId, CancellationToken cancellationToken)
+    {
+        using var call = _resources.DownloadDiagnosticBundle(
+            new DiagnosticBundleRequest { BundleId = bundleId },
+            Headers("/whaledeck.agent.v1.ManagedResourceService/DownloadDiagnosticBundle"),
+            cancellationToken: cancellationToken);
+        using var output = new MemoryStream();
+        while (await call.ResponseStream.MoveNext(cancellationToken))
+        {
+            var content = call.ResponseStream.Current.Content;
+            if (output.Length + content.Length > 10 * 1024 * 1024)
+                throw new InvalidOperationException("The diagnostic bundle exceeds the approved size limit.");
+            content.WriteTo(output);
+        }
+        return output.ToArray();
     }
 
     public Task<IReadOnlyCollection<ManagedResourceDto>> ListAsync(string area, CancellationToken cancellationToken) =>

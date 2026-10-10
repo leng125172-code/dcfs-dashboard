@@ -14,6 +14,9 @@ import {
   Calendar,
   Document,
   UserFilled,
+  Connection,
+  Tickets,
+  UploadFilled,
 } from '@element-plus/icons-vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import AppTopbar from '@/components/AppTopbar.vue'
@@ -42,6 +45,9 @@ const navigationGroups = [
       { index: '/docker/settings', label: 'Docker 设置', icon: Setting, administratorOnly: true },
       { index: '/databases', label: '数据库', icon: Odometer, administratorOnly: true },
       { index: '/systemd', label: '系统服务', icon: Monitor, administratorOnly: true },
+      { index: '/host/resources', label: '主机设备', icon: Connection, administratorOnly: true },
+      { index: '/host/logs', label: '系统日志', icon: Tickets, administratorOnly: true },
+      { index: '/host/updates', label: '系统更新', icon: UploadFilled, administratorOnly: true },
       { index: '/jobs', label: '任务中心', icon: Setting, administratorOnly: true },
       { index: '/schedules', label: '计划任务', icon: Calendar, administratorOnly: true },
     ],

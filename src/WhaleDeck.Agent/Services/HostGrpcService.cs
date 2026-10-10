@@ -1,12 +1,26 @@
 using System.Net.NetworkInformation;
+using System.Text.Json;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using WhaleDeck.Contracts.Agent.V1;
 
 namespace WhaleDeck.Agent.Services;
 
-public sealed class HostGrpcService(HostReader host, OperationStore operations) : HostService.HostServiceBase
+public sealed class HostGrpcService(HostReader host, OperationStore operations, BoundedProcessRunner processes) : HostService.HostServiceBase
 {
+    private const string PrivilegedHelper = "/usr/local/libexec/whaledeck-privileged";
+    private static readonly HashSet<string> JournalUnits = new(StringComparer.Ordinal)
+    {
+        "docker.service",
+        "whaledeck-agent.service",
+        "whaledeck-maintenance.service",
+        "database-platform-workstation-update.service",
+        "database-platform-workstation-update.timer"
+    };
+    private static readonly HashSet<string> JournalPriorities = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"
+    };
     public override Task<HostInfoResponse> GetHostInfo(Empty request, ServerCallContext context)
     {
         var snapshot = host.Read();
@@ -64,30 +78,166 @@ public sealed class HostGrpcService(HostReader host, OperationStore operations) 
             };
             snapshot.Attributes["type"] = adapter.NetworkInterfaceType.ToString();
             snapshot.Attributes["description"] = adapter.Description;
+            snapshot.Attributes["macAddress"] = adapter.GetPhysicalAddress().ToString();
+            var properties = adapter.GetIPProperties();
+            snapshot.Attributes["addresses"] = string.Join(", ", properties.UnicastAddresses.Select(item => item.Address.ToString()));
+            snapshot.Attributes["gateways"] = string.Join(", ", properties.GatewayAddresses.Select(item => item.Address.ToString()));
+            snapshot.Attributes["dnsServers"] = string.Join(", ", properties.DnsAddresses.Select(item => item.ToString()));
+            try
+            {
+                var statistics = adapter.GetIPStatistics();
+                snapshot.Attributes["bytesReceived"] = statistics.BytesReceived.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                snapshot.Attributes["bytesSent"] = statistics.BytesSent.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            catch (NetworkInformationException)
+            {
+                snapshot.Attributes["bytesReceived"] = "0";
+                snapshot.Attributes["bytesSent"] = "0";
+            }
             response.Resources.Add(snapshot);
         }
         return Task.FromResult(response);
     }
 
-    public override Task<ResourceCollectionResponse> ListStorageDevices(Empty request, ServerCallContext context)
+    public override async Task<ResourceCollectionResponse> ListStorageDevices(Empty request, ServerCallContext context)
     {
+        var inventory = await processes.RunAsync(
+            "/usr/bin/lsblk",
+            ["--json", "--bytes", "--output", "NAME,KNAME,TYPE,SIZE,FSTYPE,MOUNTPOINTS,MODEL,ROTA,TRAN"],
+            null,
+            TimeSpan.FromSeconds(15),
+            "STORAGE_QUERY_FAILED",
+            context.CancellationToken);
         var response = new ResourceCollectionResponse();
-        foreach (var drive in DriveInfo.GetDrives().Where(item => item.IsReady))
+        using var document = JsonDocument.Parse(inventory.StandardOutput);
+        foreach (var device in FlattenDevices(document.RootElement.GetProperty("blockdevices")))
         {
+            var name = Text(device, "name");
+            var type = Text(device, "type");
+            if (string.IsNullOrWhiteSpace(name) || type is not ("disk" or "part" or "lvm")) continue;
             var snapshot = new ResourceSnapshot
             {
-                ResourceId = $"filesystem:{drive.Name}",
-                DisplayName = drive.Name,
-                ResourceType = "Filesystem",
-                State = "Ready",
-                Version = drive.DriveFormat
+                ResourceId = $"storage-device:{name}",
+                DisplayName = $"/dev/{name}",
+                ResourceType = type == "disk" ? "BlockDevice" : "Filesystem",
+                State = "Available",
+                Version = Text(device, "fstype")
             };
-            snapshot.Attributes["totalBytes"] = drive.TotalSize.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            snapshot.Attributes["availableBytes"] = drive.AvailableFreeSpace.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            snapshot.Attributes["sizeBytes"] = Number(device, "size");
+            snapshot.Attributes["mountPoints"] = ArrayText(device, "mountpoints");
+            snapshot.Attributes["model"] = Text(device, "model");
+            snapshot.Attributes["rotational"] = Scalar(device, "rota") is "1" or "true" ? "true" : "false";
+            snapshot.Attributes["transport"] = Text(device, "tran");
+            if (type == "disk")
+            {
+                try
+                {
+                    var smart = await processes.RunAsync(
+                        "/usr/bin/sudo",
+                        ["-n", PrivilegedHelper, "storage-smart", $"/dev/{name}"],
+                        null,
+                        TimeSpan.FromSeconds(20),
+                        "SMART_QUERY_FAILED",
+                        context.CancellationToken);
+                    using var smartDocument = JsonDocument.Parse(smart.StandardOutput);
+                    var root = smartDocument.RootElement;
+                    snapshot.Attributes["smartPassed"] = root.TryGetProperty("passed", out var passed) && passed.ValueKind is JsonValueKind.True or JsonValueKind.False
+                        ? passed.GetBoolean().ToString().ToLowerInvariant()
+                        : "unknown";
+                    snapshot.Attributes["temperatureCelsius"] = root.TryGetProperty("temperature", out var temperature) && temperature.TryGetInt32(out var value)
+                        ? value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        : string.Empty;
+                }
+                catch (InvalidOperationException)
+                {
+                    snapshot.Attributes["smartPassed"] = "unknown";
+                    snapshot.Attributes["temperatureCelsius"] = string.Empty;
+                }
+            }
             response.Resources.Add(snapshot);
         }
-        return Task.FromResult(response);
+        return response;
     }
+
+    public override async Task<JournalResponse> QueryJournal(JournalRequest request, ServerCallContext context)
+    {
+        var take = Math.Clamp(checked((int)request.Take), 1, 500);
+        var sinceMinutes = Math.Clamp(checked((int)request.SinceMinutes), 1, 10_080);
+        var unit = string.IsNullOrWhiteSpace(request.Unit) ? null : request.Unit;
+        if (unit is not null && !JournalUnits.Contains(unit))
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "The journal unit is not approved."));
+        var priority = string.IsNullOrWhiteSpace(request.Priority) ? null : request.Priority;
+        if (priority is not null && !JournalPriorities.Contains(priority))
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "The journal priority is invalid."));
+        if (request.Keyword.Length > 128 || request.Keyword.Any(char.IsControl))
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "The journal keyword is invalid."));
+
+        var arguments = new List<string>
+        {
+            "--no-pager", "--output=json", "--reverse", "--since", $"-{sinceMinutes} minutes", "--lines", take.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+        foreach (var approvedUnit in unit is null ? JournalUnits : [unit])
+        {
+            arguments.Add("--unit");
+            arguments.Add(approvedUnit);
+        }
+        if (priority is not null) { arguments.Add("--priority"); arguments.Add(priority); }
+        var result = await processes.RunAsync("/usr/bin/journalctl", arguments, null, TimeSpan.FromSeconds(20), "JOURNAL_QUERY_FAILED", context.CancellationToken);
+        var response = new JournalResponse();
+        foreach (var line in result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            try
+            {
+                using var entry = JsonDocument.Parse(line);
+                var root = entry.RootElement;
+                var message = Text(root, "MESSAGE");
+                if (!string.IsNullOrWhiteSpace(request.Keyword) && !message.Contains(request.Keyword, StringComparison.OrdinalIgnoreCase)) continue;
+                var timestamp = long.TryParse(Text(root, "__REALTIME_TIMESTAMP"), out var microseconds)
+                    ? DateTimeOffset.FromUnixTimeMilliseconds(microseconds / 1000)
+                    : DateTimeOffset.UtcNow;
+                response.Entries.Add(new JournalEntry
+                {
+                    OccurredAtUtc = Timestamp.FromDateTimeOffset(timestamp),
+                    Unit = Text(root, "_SYSTEMD_UNIT"),
+                    Priority = Text(root, "PRIORITY"),
+                    Process = Text(root, "_COMM"),
+                    ProcessId = int.TryParse(Text(root, "_PID"), out var processId) ? processId : 0,
+                    Message = message.Length <= 2048 ? message : message[..2048]
+                });
+            }
+            catch (JsonException)
+            {
+                // A bounded output can end midway through the final journal entry.
+            }
+        }
+        return response;
+    }
+
+    private static IEnumerable<JsonElement> FlattenDevices(JsonElement devices)
+    {
+        foreach (var device in devices.EnumerateArray())
+        {
+            yield return device;
+            if (device.TryGetProperty("children", out var children) && children.ValueKind == JsonValueKind.Array)
+                foreach (var child in FlattenDevices(children)) yield return child;
+        }
+    }
+
+    private static string Text(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
+
+    private static string Number(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number ? value.GetRawText() : string.Empty;
+
+    private static string Scalar(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind is JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False
+            ? value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : value.GetRawText()
+            : string.Empty;
+
+    private static string ArrayText(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Array
+            ? string.Join(", ", value.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString()))
+            : string.Empty;
 
     public override Task<OperationHandle> RebootHost(RegisteredActionRequest request, ServerCallContext context)
     {

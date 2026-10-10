@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { apiRequest } from '@/services/apiClient'
+import { apiRequest, apiUrl } from '@/services/apiClient'
 import { subscribeToJob } from '@/services/operations'
 import type { Job, JobEvent } from '@/services/contracts'
 
@@ -14,6 +14,18 @@ let timer: number | undefined
 let unsubscribe: (() => void) | undefined
 const terminalStates = new Set(['Succeeded', 'Failed', 'Canceled', 'RolledBack'])
 const canCancel = computed(() => selected.value && !terminalStates.has(selected.value.state))
+const diagnosticBundleId = computed(() => {
+  if (selected.value?.jobType !== 'platform.diagnostic-bundle' || !selected.value.resultJson)
+    return ''
+  try {
+    const value = JSON.parse(selected.value.resultJson) as { bundleId?: unknown }
+    return typeof value.bundleId === 'string' && /^[a-f0-9]{32}$/.test(value.bundleId)
+      ? value.bundleId
+      : ''
+  } catch {
+    return ''
+  }
+})
 
 function stateType(state: string) {
   if (state === 'Succeeded') return 'success'
@@ -63,6 +75,16 @@ async function cancelJob() {
   await apiRequest<void>(`jobs/${selected.value.id}/cancel`, { method: 'POST' })
   ElMessage.success('已提交取消请求')
   await load()
+}
+
+function downloadDiagnosticBundle() {
+  if (!diagnosticBundleId.value) return
+  const anchor = document.createElement('a')
+  anchor.href = apiUrl(`platform/diagnostics/${diagnosticBundleId.value}`)
+  anchor.download = `whaledeck-diagnostics-${diagnosticBundleId.value}.tar.gz`
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
 }
 
 onMounted(() => {
@@ -136,6 +158,13 @@ onBeforeUnmount(() => {
           }}</el-descriptions-item>
           <el-descriptions-item label="结果">
             <pre class="job-result">{{ selected.resultJson || '任务成功后显示安全结果。' }}</pre>
+            <el-button
+              v-if="diagnosticBundleId"
+              class="diagnostic-download"
+              type="primary"
+              @click="downloadDiagnosticBundle"
+              >下载诊断包</el-button
+            >
           </el-descriptions-item>
         </el-descriptions>
         <h3 class="job-events-title">实时事件</h3>
@@ -172,5 +201,8 @@ onBeforeUnmount(() => {
 .job-events-title {
   margin: 24px 0 16px;
   font-size: 16px;
+}
+.diagnostic-download {
+  margin-top: 12px;
 }
 </style>

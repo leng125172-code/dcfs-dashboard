@@ -157,6 +157,32 @@ public sealed class ManagedResourceGrpcService(
     public override Task<OperationHandle> RunPlatformMaintenance(RegisteredActionRequest request, ServerCallContext context) =>
         Task.FromResult(QueueRegistered(request, "PlatformMaintenance", maintenance: true));
 
+    public override async Task DownloadDiagnosticBundle(
+        DiagnosticBundleRequest request,
+        IServerStreamWriter<DiagnosticBundleChunk> responseStream,
+        ServerCallContext context)
+    {
+        if (request.BundleId.Length != 32 || request.BundleId.Any(character => character is not (>= 'a' and <= 'f') && character is not (>= '0' and <= '9')))
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "The diagnostic bundle id is invalid."));
+        var path = Path.Combine("/var/lib/whaledeck-agent/diagnostics", request.BundleId + ".tar.gz");
+        var info = new FileInfo(path);
+        if (!info.Exists || info.LastWriteTimeUtc < DateTime.UtcNow.AddHours(-24))
+            throw new RpcException(new Status(StatusCode.NotFound, "The diagnostic bundle is unavailable or expired."));
+        if (info.Length > 10 * 1024 * 1024)
+            throw new RpcException(new Status(StatusCode.ResourceExhausted, "The diagnostic bundle exceeds the approved size limit."));
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var buffer = new byte[64 * 1024];
+        while (true)
+        {
+            var read = await stream.ReadAsync(buffer, context.CancellationToken);
+            if (read == 0) break;
+            await responseStream.WriteAsync(new DiagnosticBundleChunk
+            {
+                Content = Google.Protobuf.ByteString.CopyFrom(buffer, 0, read)
+            });
+        }
+    }
+
     private OperationHandle QueueRegistered(RegisteredActionRequest request, string category, bool maintenance = false)
     {
         var resourceId = NormalizeResourceId(category, request.Action, request.Resource.ResourceId);
@@ -225,14 +251,20 @@ public sealed class ManagedResourceGrpcService(
         return response;
     }
 
-    private static ResourceSnapshot ToSnapshot(RegisteredResource resource) => new()
+    private static ResourceSnapshot ToSnapshot(RegisteredResource resource)
     {
-        ResourceId = resource.Id,
-        DisplayName = resource.ExternalId,
-        ResourceType = resource.Type,
-        State = "Registered",
-        Version = string.Empty,
-        ProtectedResource = resource.ProtectionLevel != "Managed"
-    };
+        var snapshot = new ResourceSnapshot
+        {
+            ResourceId = resource.Id,
+            DisplayName = resource.ExternalId,
+            ResourceType = resource.Type,
+            State = "Registered",
+            Version = string.Empty,
+            ProtectedResource = resource.ProtectionLevel != "Managed"
+        };
+        snapshot.Attributes["protectionLevel"] = resource.ProtectionLevel;
+        snapshot.Attributes["allowedActions"] = string.Join(',', resource.AllowedActions ?? []);
+        return snapshot;
+    }
 
 }

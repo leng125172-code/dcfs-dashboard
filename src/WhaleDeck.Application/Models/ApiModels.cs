@@ -53,6 +53,14 @@ public sealed record HostInfoDto(
 
 public sealed record HostAddressDto(string InterfaceName, string Address);
 
+public sealed record JournalEntryDto(
+    DateTimeOffset OccurredAtUtc,
+    string Unit,
+    string Priority,
+    string Process,
+    int ProcessId,
+    string Message);
+
 public sealed record ManagedResourceDto(
     string Id,
     string Name,

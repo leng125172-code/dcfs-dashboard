@@ -28,12 +28,18 @@ public sealed partial class ManagedActionExecutor(
         {
             return await ExecuteDatabaseOrBackupAsync(resource, action, parameters, cancellationToken);
         }
+        if (category == "Systemd")
+        {
+            return await ExecuteHostAsync(resource, action, cancellationToken);
+        }
+        if (category == "PlatformMaintenance")
+        {
+            return await ExecutePlatformAsync(resource, action, parameters, cancellationToken);
+        }
         var task = category switch
         {
-            "Systemd" => ExecuteHostAsync(resource, action, cancellationToken),
             "Compose" => ExecuteApplicationAsync(action, parameters, cancellationToken),
             "ConfigRepository" => ExecuteRepositoryAsync(resource, action, parameters, cancellationToken),
-            "PlatformMaintenance" => ExecutePlatformAsync(resource, action, parameters, cancellationToken),
             _ => throw new InvalidOperationException("The managed action category is unsupported.")
         };
         await task;
@@ -220,7 +226,7 @@ public sealed partial class ManagedActionExecutor(
         return resultJson;
     }
 
-    private async Task ExecuteHostAsync(RegisteredResource resource, string action, CancellationToken cancellationToken)
+    private async Task<string?> ExecuteHostAsync(RegisteredResource resource, string action, CancellationToken cancellationToken)
     {
         string[] helperArguments = action switch
         {
@@ -233,7 +239,11 @@ public sealed partial class ManagedActionExecutor(
             "systemd-restart" => ["systemd", resource.ExternalId, "restart"],
             _ => throw new InvalidOperationException("The host action is unsupported.")
         };
-        await RunHelperAsync(helperArguments, null, action is "update-install" ? LongTimeout : ShortTimeout, "HOST_OPERATION_FAILED", cancellationToken);
+        var result = await RunHelperAsync(helperArguments, null, action is "update-install" ? LongTimeout : ShortTimeout, "HOST_OPERATION_FAILED", cancellationToken);
+        if (action is not ("update-check" or "update-install")) return null;
+        var output = result.StandardOutput.Trim();
+        if (output.Length > 16 * 1024) output = output[..(16 * 1024)];
+        return JsonSerializer.Serialize(new { output });
     }
 
     private async Task ExecuteApplicationAsync(string action, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
@@ -330,27 +340,31 @@ public sealed partial class ManagedActionExecutor(
         await RunHelperAsync(["config-repository-commit-push", path, message], null, LongTimeout, "CONFIG_REPOSITORY_PUSH_FAILED", cancellationToken);
     }
 
-    private async Task ExecutePlatformAsync(RegisteredResource resource, string action, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
+    private async Task<string?> ExecutePlatformAsync(RegisteredResource resource, string action, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
     {
         switch (action)
         {
             case "validate-settings":
             case "apply-settings":
                 await ExecuteDockerSettingsAsync(action, parameters, cancellationToken);
-                return;
+                return null;
             case "diagnose":
-            case "diagnostic-bundle":
                 await RunHelperAsync(["platform-diagnose"], null, LongTimeout, "PLATFORM_DIAGNOSTICS_FAILED", cancellationToken);
-                return;
+                return null;
+            case "diagnostic-bundle":
+                var bundle = await RunHelperAsync(["platform-diagnostic-bundle"], null, LongTimeout, "PLATFORM_DIAGNOSTICS_FAILED", cancellationToken);
+                var resultJson = bundle.StandardOutput.Trim();
+                using (JsonDocument.Parse(resultJson)) { }
+                return resultJson;
             case "plan-update":
                 await RunHelperAsync(["platform-plan-update"], null, ShortTimeout, "PLATFORM_UPDATE_PLAN_FAILED", cancellationToken);
-                return;
+                return null;
             case "apply-update":
                 await RunHelperAsync(["platform-update-schedule"], null, ShortTimeout, "PLATFORM_UPDATE_FAILED", cancellationToken);
-                return;
+                return null;
             case "rollback":
                 await RunHelperAsync(["platform-rollback-schedule"], null, ShortTimeout, "PLATFORM_ROLLBACK_FAILED", cancellationToken);
-                return;
+                return null;
             default: throw new InvalidOperationException("The platform maintenance action is unsupported.");
         }
     }

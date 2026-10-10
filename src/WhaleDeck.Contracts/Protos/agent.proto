@@ -96,6 +96,35 @@ message MetricPoint {
   google.protobuf.Timestamp sampled_at_utc = 6;
 }
 
+message JournalRequest {
+  string unit = 1;
+  uint32 take = 2;
+  uint32 since_minutes = 3;
+  string priority = 4;
+  string keyword = 5;
+}
+
+message JournalEntry {
+  google.protobuf.Timestamp occurred_at_utc = 1;
+  string unit = 2;
+  string priority = 3;
+  string process = 4;
+  int32 process_id = 5;
+  string message = 6;
+}
+
+message JournalResponse {
+  repeated JournalEntry entries = 1;
+}
+
+message DiagnosticBundleRequest {
+  string bundle_id = 1;
+}
+
+message DiagnosticBundleChunk {
+  bytes content = 1;
+}
+
 message DockerInfoResponse {
   string server_version = 1;
   string api_version = 2;
@@ -217,6 +246,7 @@ service HostService {
   rpc StreamMetrics(MetricsRequest) returns (stream MetricPoint);
   rpc ListNetworkInterfaces(google.protobuf.Empty) returns (ResourceCollectionResponse);
   rpc ListStorageDevices(google.protobuf.Empty) returns (ResourceCollectionResponse);
+  rpc QueryJournal(JournalRequest) returns (JournalResponse);
   rpc RebootHost(RegisteredActionRequest) returns (OperationHandle);
 }
 
@@ -243,4 +273,5 @@ service ManagedResourceService {
   rpc GetDockerSettings(google.protobuf.Empty) returns (DockerSettingsResponse);
   rpc RunConfigRepositoryAction(RegisteredActionRequest) returns (OperationHandle);
   rpc RunPlatformMaintenance(RegisteredActionRequest) returns (OperationHandle);
+  rpc DownloadDiagnosticBundle(DiagnosticBundleRequest) returns (stream DiagnosticBundleChunk);
 }

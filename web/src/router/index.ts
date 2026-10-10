@@ -3,22 +3,26 @@ import AppShell from '@/layouts/AppShell.vue'
 import { authSession } from '@/services/authSession'
 import LoginView from '@/views/LoginView.vue'
 import OverviewView from '@/views/OverviewView.vue'
-import PortalView from '@/views/PortalView.vue'
-import ResourceListView from '@/views/ResourceListView.vue'
-import JobsView from '@/views/JobsView.vue'
 import StateView from '@/views/StateView.vue'
-import RecordsView from '@/views/RecordsView.vue'
-import ContainersView from '@/views/ContainersView.vue'
-import ApplicationsView from '@/views/ApplicationsView.vue'
-import BackupsView from '@/views/BackupsView.vue'
-import ConfigRepositoryView from '@/views/ConfigRepositoryView.vue'
-import DatabasesView from '@/views/DatabasesView.vue'
-import DockerSettingsView from '@/views/DockerSettingsView.vue'
-import IdentityView from '@/views/IdentityView.vue'
-import PlatformMaintenanceView from '@/views/PlatformMaintenanceView.vue'
-import SchedulesView from '@/views/SchedulesView.vue'
-import AlertsView from '@/views/AlertsView.vue'
-import SettingsView from '@/views/SettingsView.vue'
+
+const PortalView = () => import('@/views/PortalView.vue')
+const ResourceListView = () => import('@/views/ResourceListView.vue')
+const JobsView = () => import('@/views/JobsView.vue')
+const RecordsView = () => import('@/views/RecordsView.vue')
+const ContainersView = () => import('@/views/ContainersView.vue')
+const ApplicationsView = () => import('@/views/ApplicationsView.vue')
+const BackupsView = () => import('@/views/BackupsView.vue')
+const ConfigRepositoryView = () => import('@/views/ConfigRepositoryView.vue')
+const DatabasesView = () => import('@/views/DatabasesView.vue')
+const DockerSettingsView = () => import('@/views/DockerSettingsView.vue')
+const IdentityView = () => import('@/views/IdentityView.vue')
+const PlatformMaintenanceView = () => import('@/views/PlatformMaintenanceView.vue')
+const SchedulesView = () => import('@/views/SchedulesView.vue')
+const AlertsView = () => import('@/views/AlertsView.vue')
+const SettingsView = () => import('@/views/SettingsView.vue')
+const HostResourcesView = () => import('@/views/HostResourcesView.vue')
+const HostLogsView = () => import('@/views/HostLogsView.vue')
+const HostUpdatesView = () => import('@/views/HostUpdatesView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -86,6 +90,24 @@ const router = createRouter({
           name: 'systemd',
           component: ResourceListView,
           meta: { administratorOnly: true, title: '系统服务', endpoint: 'systemd' },
+        },
+        {
+          path: 'host/resources',
+          name: 'host-resources',
+          component: HostResourcesView,
+          meta: { administratorOnly: true, title: '主机设备' },
+        },
+        {
+          path: 'host/logs',
+          name: 'host-logs',
+          component: HostLogsView,
+          meta: { administratorOnly: true, title: '系统日志' },
+        },
+        {
+          path: 'host/updates',
+          name: 'host-updates',
+          component: HostUpdatesView,
+          meta: { administratorOnly: true, title: '系统更新' },
         },
         {
           path: 'identity/users',

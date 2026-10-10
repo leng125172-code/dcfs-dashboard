@@ -40,6 +40,15 @@ export interface HostInfo {
   addresses: Array<{ interfaceName: string; address: string }>
 }
 
+export interface JournalEntry {
+  occurredAtUtc: string
+  unit: string
+  priority: string
+  process: string
+  processId: number
+  message: string
+}
+
 export interface ManagedResource {
   id: string
   name: string

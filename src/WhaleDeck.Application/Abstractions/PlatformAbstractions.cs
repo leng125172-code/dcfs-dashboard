@@ -23,6 +23,7 @@ public interface IAgentGateway
 {
     Task<AgentHealthDto> GetHealthAsync(CancellationToken cancellationToken);
     Task<HostInfoDto> GetHostInfoAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<JournalEntryDto>> QueryJournalAsync(string? unit, int take, int sinceMinutes, string? priority, string? keyword, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<ContainerDto>> ListContainersAsync(bool includeStopped, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<ManagedResourceDto>> ListResourcesAsync(string kind, CancellationToken cancellationToken);
     Task<ManagedResourceDto> GetConfigRepositoryStatusAsync(CancellationToken cancellationToken);
@@ -33,6 +34,7 @@ public interface IAgentGateway
     Task<AgentOperationDto> ExecuteAsync(string area, string action, string resourceId, IReadOnlyDictionary<string, string> parameters, string? planHash, Guid jobId, string idempotencyKey, CancellationToken cancellationToken);
     Task<AgentOperationDto> GetOperationAsync(string operationId, CancellationToken cancellationToken);
     Task<AgentOperationDto> CancelOperationAsync(string operationId, CancellationToken cancellationToken);
+    Task<byte[]> DownloadDiagnosticBundleAsync(string bundleId, CancellationToken cancellationToken);
 }
 
 public interface ICatalogProvider
