@@ -205,7 +205,8 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
     private static async Task DispatchBackupPolicies(PlatformDbContext db, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        var policies = await db.BackupPolicies.Where(item => item.IsEnabled).Take(50).ToArrayAsync(cancellationToken);
+        var policies = await db.BackupPolicies.Where(item => item.IsEnabled)
+            .OrderBy(item => item.Id).Take(50).ToArrayAsync(cancellationToken);
         foreach (var policy in policies)
         {
             var latest = await db.BackupRecords.Where(item => item.PolicyId == policy.Id)

@@ -25,5 +25,8 @@ FROM ${DOTNET_RUNTIME_IMAGE} AS final
 WORKDIR /app
 ENV DOTNET_EnableDiagnostics=0
 COPY --from=build /app/publish .
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
 USER $APP_UID
 ENTRYPOINT ["dotnet", "WhaleDeck.Worker.dll"]

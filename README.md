@@ -1,6 +1,6 @@
 # WhaleDeck
 
-Whale Deck is a containerized control plane for the Precision 7920 workstation, with a host-side Agent and maintenance entry point. It is under active development: platform status, Authentik identity, portals and restricted container management are being implemented. GitLab integration is deferred.
+Whale Deck is a containerized control plane for the Precision 7920 workstation, with a host-side Agent and maintenance entry point. The current MVP/P1 backend, Vue management UI and workstation integration are deployed on the target workstation; GitLab and the explicitly marked `HOLD` features remain deferred.
 
 See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the distinction between implemented code, placeholders and pending workstation acceptance. A passing build does not mean the complete backend is ready for production.
 
@@ -70,19 +70,21 @@ If the workstation exports a SOCKS URL through `HTTP_PROXY` or `HTTPS_PROXY`, No
 
 Copy `.env.example` to `.env`, set mode `0600` on Linux, and replace every placeholder. Secrets are never committed. Infrastructure settings come from environment variables, dynamic platform settings live in PostgreSQL, and public Vue settings are written to `/tmp/runtime-config.js` when the gateway starts.
 
-The intended canonical URLs are:
+The current workstation entry points are:
 
-- WhaleDeck: `http://192.168.22.19:8080`
-- Authentik: `http://192.168.22.19:8081`
-- GitLab: `http://192.168.22.19:8082` (added when GitLab is deployed)
+- Whale Deck: `http://<reachable-workstation-address>:8080`
+- Authentik: `http://<reachable-workstation-address>:8081`
+- GitLab: deferred; no port is currently published
 
-The host-side MaintenanceHost binds both `192.168.22.19` and `192.168.100.13`. The gateway publishes only loopback upstream ports (`18080` and `18081`). API, Worker, databases, cache and Authentik do not publish host ports. API and Worker must never mount `/var/run/docker.sock`; container operations use the Agent Unix socket and an allow-listed resource registry.
+The host-side MaintenanceHost binds `0.0.0.0` on ports `8080/8081`, so wired, USB and future workstation interfaces can use the same service without hard-coded interface addresses. The gateway publishes only loopback upstream ports (`18080` and `18081`). API, Worker, databases, cache and Authentik do not publish host ports. API and Worker must never mount `/var/run/docker.sock`; container operations use the Agent Unix socket and an allow-listed resource registry.
+
+The desired friendly LAN entry is `http://precision-7920-tower.local` for Whale Deck, with other services separated by explicit ports. This is not yet the active no-port endpoint: switching the stable entry from 8080 to 80 requires a final port-conflict and client-resolution check.
 
 ## Staged installation
 
 The [installation guide](deploy/install/README.md) describes the seven-stage Linux workflow: tool/source checks, optional Docker accelerator configuration, dependency repository deployment, then source build and deployment. `bash install.sh --dry-run` previews the workflow without network or system changes. `--dependencies-only` excludes the Whale Deck build/deployment stage.
 
-Agent、MaintenanceHost、UDS 权限/对端身份、受限 helper、双网卡入口以及 Docker 重启韧性已在目标工作站验收通过。完整 API/Worker 业务验收仍未完成；当前没有构建或启动任何 Whale Deck 产品容器镜像。实际完成边界见 [实施状态](docs/IMPLEMENTATION_STATUS.md)。
+Agent、MaintenanceHost、UDS 权限/对端身份、受限 helper、全网卡入口以及 Docker 重启韧性已在目标工作站验收通过。API、Worker 与 Gateway 已构建并部署，数据库、备份、应用、身份、治理和主机管理流程已完成真实依赖验收。准确的完成边界与最终清理项见 [实施状态](docs/IMPLEMENTATION_STATUS.md)。
 
 ## Container boundaries
 
