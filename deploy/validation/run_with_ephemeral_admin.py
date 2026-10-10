@@ -103,15 +103,16 @@ def main() -> int:
     finally:
         applications = session.get(
             f"{AUTHENTIK_API}core/applications/",
-            params={"slug": sso_slug, "page_size": 20},
+            params={"search": "whaledeck-validation-", "page_size": 100},
             timeout=20,
         )
         if applications.ok:
             for item in applications.json().get("results", []):
-                if item.get("slug") != sso_slug:
+                application_slug = str(item.get("slug") or "")
+                if not application_slug.startswith("whaledeck-validation-"):
                     continue
                 provider_id = item.get("provider")
-                session.delete(f"{AUTHENTIK_API}core/applications/{item['pk']}/", timeout=20)
+                session.delete(f"{AUTHENTIK_API}core/applications/{application_slug}/", timeout=20)
                 if provider_id:
                     session.delete(f"{AUTHENTIK_API}providers/oauth2/{provider_id}/", timeout=20)
         managed = session.get(

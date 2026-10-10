@@ -47,7 +47,7 @@ public sealed class AuthentikIdentityDirectory(
         ListDirectoryAsync("core/groups/", "AuthentikGroup", cancellationToken);
 
     public Task<IReadOnlyCollection<ManagedResourceDto>> ListSsoApplicationsAsync(CancellationToken cancellationToken) =>
-        ListDirectoryAsync("core/applications/", "AuthentikApplication", cancellationToken);
+        ListDirectoryAsync("core/applications/", "AuthentikApplication", cancellationToken, "slug");
 
     public async Task ExecuteAsync(string action, string? resourceId, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
     {
@@ -187,7 +187,11 @@ public sealed class AuthentikIdentityDirectory(
         }
     }
 
-    private async Task<IReadOnlyCollection<ManagedResourceDto>> ListDirectoryAsync(string path, string type, CancellationToken cancellationToken)
+    private async Task<IReadOnlyCollection<ManagedResourceDto>> ListDirectoryAsync(
+        string path,
+        string type,
+        CancellationToken cancellationToken,
+        string idProperty = "pk")
     {
         var results = new List<ManagedResourceDto>();
         string? next = path;
@@ -198,7 +202,7 @@ public sealed class AuthentikIdentityDirectory(
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
             results.AddRange(document.RootElement.GetProperty("results").EnumerateArray().Select(item =>
             {
-                var id = item.TryGetProperty("pk", out var pk) ? pk.ToString() : string.Empty;
+                var id = item.TryGetProperty(idProperty, out var idValue) ? idValue.ToString() : string.Empty;
                 var display = item.TryGetProperty("name", out var name) ? name.GetString() : item.TryGetProperty("username", out var username) ? username.GetString() : id;
                 var active = !item.TryGetProperty("is_active", out var activeValue) || activeValue.GetBoolean();
                 return new ManagedResourceDto(id, display ?? id, type, active ? "Active" : "Disabled", string.Empty, true, new Dictionary<string, string>());
