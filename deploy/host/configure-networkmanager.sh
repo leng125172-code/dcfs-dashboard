@@ -45,8 +45,8 @@ while IFS= read -r device; do
   nmcli device set "$device" managed no || true
 done < <(find /sys/class/net -mindepth 1 -maxdepth 1 -printf '%f\n' | grep -E '^(veth|br-|docker)')
 
-configured_interface=$(nmcli -g connection.interface-name connection show "$connection")
-configured_mac=$(nmcli -g 802-3-ethernet.mac-address connection show "$connection")
+configured_interface=$(nmcli --escape no -g connection.interface-name connection show "$connection")
+configured_mac=$(nmcli --escape no -g 802-3-ethernet.mac-address connection show "$connection")
 [[ $configured_interface == "$interface" ]] || { echo 'Connection interface binding was not applied.' >&2; exit 1; }
 [[ ${configured_mac,,} == ${mac,,} ]] || { echo 'Connection MAC binding was not applied.' >&2; exit 1; }
 
