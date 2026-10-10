@@ -68,14 +68,17 @@ untrusted_status=$?
 set -e
 (( untrusted_status != 0 ))
 
-active_entry_points=0
-for address in 192.168.22.19 192.168.100.13; do
-  if ! ip -o -4 address show | awk '{print $4}' | cut -d/ -f1 | grep -Fxq "$address"; then
-    printf 'Entry point %s is not currently assigned; startup resilience verified by skipping its HTTP probe.\n' "$address"
-    continue
-  fi
+mapfile -t active_entry_addresses < <(
+  ip -o -4 address show scope global up |
+    awk '$2 !~ /^(docker0|br-|veth|virbr|cni|flannel|tun|tap)/ {sub(/\/.*/, "", $4); print $4}' |
+    sort -u
+)
+(( ${#active_entry_addresses[@]} > 0 )) || {
+  echo 'No active non-container IPv4 entry point was discovered.' >&2
+  exit 1
+}
 
-  ((active_entry_points += 1))
+for address in "${active_entry_addresses[@]}"; do
   for port in 8080 8081; do
     code=$(curl --noproxy '*' --max-time 5 --silent --show-error \
       --output "$temporary/status.json" --write-out '%{http_code}' \
@@ -83,8 +86,8 @@ for address in 192.168.22.19 192.168.100.13; do
     [[ $code == 200 || $code == 503 ]]
     jq -e '.state | type == "string"' "$temporary/status.json" >/dev/null
   done
+  printf 'Validated active entry point %s on ports 8080 and 8081.\n' "$address"
 done
-(( active_entry_points > 0 ))
 
 # Loopback remains available for local health checks, while Docker bridge
 # addresses must not expose the maintenance endpoint.
@@ -103,4 +106,4 @@ if [[ -n ${bridge_address:-} ]]; then
   [[ $code == 403 ]]
 fi
 
-echo 'Whale Deck host services passed: systemd, permissions, UDS gRPC, restricted helper, Docker access and active approved entry points.'
+echo 'Whale Deck host services passed: systemd, permissions, UDS gRPC, restricted helper, Docker access and dynamically discovered entry points.'
