@@ -43,8 +43,8 @@ def main() -> int:
     resources = selected_resources()
     for name, resource_id in resources:
         print(f"Validating {name} backup...")
-        api.run("run", resource_id, {}, timeout=1800)
-        api.run("verify", resource_id, {}, timeout=300)
+        api.run("run", resource_id, {}, area="backups", timeout=1800)
+        api.run("verify", resource_id, {}, area="backups", timeout=300)
         print(f"{name}: backup and verification operations passed")
     print(f"Backup validation passed: {', '.join(name for name, _ in resources)}")
     return 0

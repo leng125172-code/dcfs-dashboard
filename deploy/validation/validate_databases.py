@@ -74,9 +74,9 @@ class Api:
     def stage_secret(self, value: str) -> str:
         return self.post("secrets/stage", {"value": value, "generate": False}, 200).json()["token"]
 
-    def plan(self, action: str, resource_id: str, parameters: dict[str, str]) -> str:
+    def plan(self, action: str, resource_id: str, parameters: dict[str, str], *, area: str = "databases") -> str:
         payload = self.post(
-            f"databases/{action}/plan",
+            f"{area}/{action}/plan",
             {"resourceId": resource_id, "parameters": parameters},
             200,
         ).json()
@@ -90,14 +90,15 @@ class Api:
         resource_id: str,
         parameters: dict[str, str],
         *,
+        area: str = "databases",
         confirmed: bool = False,
         requires_plan: bool = False,
         timeout: int = 120,
     ) -> dict[str, object]:
-        plan_hash = self.plan(action, resource_id, parameters) if requires_plan else None
+        plan_hash = self.plan(action, resource_id, parameters, area=area) if requires_plan else None
         key = f"validation:{action}:{uuid.uuid4()}"
         job = self.post(
-            f"databases/{action}",
+            f"{area}/{action}",
             {
                 "resourceId": resource_id,
                 "idempotencyKey": key,
