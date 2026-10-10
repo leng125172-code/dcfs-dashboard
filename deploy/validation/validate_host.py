@@ -43,7 +43,8 @@ def main() -> int:
     if not isinstance(container_id, str) or not container_id:
         raise RuntimeError("The running container did not contain an id")
     stats = request(api, "GET", f"containers/{container_id}/stats").json()
-    if not isinstance(stats, dict) or not {"cpu", "memory", "network", "block", "pids"}.issubset(stats):
+    values = stats.get("values") if isinstance(stats, dict) else None
+    if not isinstance(values, dict) or not {"cpu", "memory", "network", "block", "pids"}.issubset(values):
         raise RuntimeError("The bounded container statistics did not contain the expected values")
     logs = request(api, "GET", f"containers/{container_id}/logs?tail=20&sinceMinutes=60").json()
     if not isinstance(logs.get("lines"), list) or not isinstance(logs.get("truncated"), bool):
