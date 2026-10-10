@@ -68,9 +68,40 @@ public sealed class JobRepository(PlatformDbContext dbContext) : IJobRepository
 
     private static OperationJob MatchExisting(OperationJob existing, OperationJob requested)
     {
-        if (existing.JobType != requested.JobType || existing.RequestJson != requested.RequestJson)
+        if (existing.JobType != requested.JobType || !JsonRequestsEqual(existing.RequestJson, requested.RequestJson))
             throw new InvalidOperationException("The idempotency key is already associated with a different request.");
         return existing;
+    }
+
+    internal static bool JsonRequestsEqual(string left, string right)
+    {
+        using var leftDocument = JsonDocument.Parse(left);
+        using var rightDocument = JsonDocument.Parse(right);
+        return JsonElementsEqual(leftDocument.RootElement, rightDocument.RootElement);
+    }
+
+    private static bool JsonElementsEqual(JsonElement left, JsonElement right)
+    {
+        if (left.ValueKind != right.ValueKind) return false;
+        return left.ValueKind switch
+        {
+            JsonValueKind.Object => ObjectsEqual(left, right),
+            JsonValueKind.Array => left.GetArrayLength() == right.GetArrayLength() &&
+                                   left.EnumerateArray().Zip(right.EnumerateArray()).All(pair => JsonElementsEqual(pair.First, pair.Second)),
+            JsonValueKind.String => left.GetString() == right.GetString(),
+            JsonValueKind.Number => left.GetRawText() == right.GetRawText(),
+            JsonValueKind.True or JsonValueKind.False => left.GetBoolean() == right.GetBoolean(),
+            JsonValueKind.Null or JsonValueKind.Undefined => true,
+            _ => left.GetRawText() == right.GetRawText(),
+        };
+    }
+
+    private static bool ObjectsEqual(JsonElement left, JsonElement right)
+    {
+        var leftProperties = left.EnumerateObject().ToDictionary(property => property.Name, property => property.Value, StringComparer.Ordinal);
+        var rightProperties = right.EnumerateObject().ToDictionary(property => property.Name, property => property.Value, StringComparer.Ordinal);
+        return leftProperties.Count == rightProperties.Count && leftProperties.All(pair =>
+            rightProperties.TryGetValue(pair.Key, out var rightValue) && JsonElementsEqual(pair.Value, rightValue));
     }
 
     public Task<OperationJob?> FindAsync(Guid id, CancellationToken cancellationToken) =>
