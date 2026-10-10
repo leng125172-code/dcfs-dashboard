@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using WhaleDeck.Application.Abstractions;
 using WhaleDeck.Application.Models;
 using WhaleDeck.Domain.Entities;
+using WhaleDeck.Application.Services;
 
 namespace WhaleDeck.Infrastructure.Persistence;
 
@@ -29,6 +30,7 @@ public sealed class GovernanceRepository(PlatformDbContext db) : IGovernanceRepo
             item.IsEnabled = command.IsEnabled;
             item.UpdatedBySubject = actorSubject;
             item.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            item.NextRunAtUtc = item.IsEnabled ? ScheduleCalculator.NextUtc(item.ScheduleKind, item.ScheduleExpression, item.Timezone, DateTimeOffset.UtcNow) : null;
             item.Version++;
         }
         else
@@ -39,6 +41,7 @@ public sealed class GovernanceRepository(PlatformDbContext db) : IGovernanceRepo
                 ScheduleExpression = command.ScheduleExpression.Trim(), Timezone = command.Timezone,
                 ParametersJson = command.ParametersJson, ConcurrencyPolicy = command.ConcurrencyPolicy,
                 TimeoutSeconds = command.TimeoutSeconds, IsEnabled = command.IsEnabled,
+                NextRunAtUtc = command.IsEnabled ? ScheduleCalculator.NextUtc(command.ScheduleKind, command.ScheduleExpression, command.Timezone, DateTimeOffset.UtcNow) : null,
                 CreatedBySubject = actorSubject, UpdatedBySubject = actorSubject
             };
             db.ScheduledTasks.Add(item);

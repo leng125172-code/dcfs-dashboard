@@ -21,6 +21,7 @@ public sealed class GovernanceService(IGovernanceRepository repository)
         if (!ScheduleTypes.Contains(command.TaskType)) throw new ArgumentException("Unsupported scheduled task type.");
         ValidateName(command.Name);
         ValidateSchedule(command.ScheduleKind, command.ScheduleExpression);
+        _ = ScheduleCalculator.NextUtc(command.ScheduleKind, command.ScheduleExpression, command.Timezone, DateTimeOffset.UtcNow);
         ValidateJson(command.ParametersJson);
         if (command.TimeoutSeconds is < 30 or > 86400) throw new ArgumentException("Schedule timeout is out of range.");
         if (command.ConcurrencyPolicy is not ("Forbid" or "Replace" or "Allow")) throw new ArgumentException("Invalid concurrency policy.");
