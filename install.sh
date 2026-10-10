@@ -195,10 +195,21 @@ as_owner() {
   if [[ $install_owner == root ]]; then "$@"; else runuser -u "$install_owner" -- "$@"; fi
 }
 
+canonical_repository() {
+  local value=${1%.git}
+  value=${value#git@github.com:}
+  value=${value#ssh://git@github.com/}
+  value=${value#https://github.com/}
+  value=${value#http://github.com/}
+  printf '%s\n' "${value,,}"
+}
+
 clone_or_update() {
   local repository=$1 branch=$2 destination=$3
   if [[ -d $destination/.git ]]; then
-    [[ $(as_owner git -C "$destination" remote get-url origin) == "$repository" ]] || fail "Repository origin does not match the configured source: $destination"
+    local actual_origin
+    actual_origin=$(as_owner git -C "$destination" remote get-url origin)
+    [[ $(canonical_repository "$actual_origin") == $(canonical_repository "$repository") ]] || fail "Repository origin does not match the configured source: $destination"
     [[ -z $(as_owner git -C "$destination" status --porcelain) ]] || fail "Repository has local changes: $destination"
     as_owner git -C "$destination" fetch origin "$branch"
     as_owner git -C "$destination" checkout "$branch"
