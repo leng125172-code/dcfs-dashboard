@@ -14,9 +14,9 @@ RUN dotnet publish src/WhaleDeck.Migrator/WhaleDeck.Migrator.csproj -c Release -
 
 FROM ${DOTNET_RUNTIME_IMAGE} AS final
 WORKDIR /app
-COPY --from=build /app .
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
     && rm -rf /var/lib/apt/lists/*
+COPY --from=build /app .
 USER $APP_UID
 ENTRYPOINT ["dotnet", "WhaleDeck.Migrator.dll"]
