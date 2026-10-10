@@ -34,10 +34,15 @@ public sealed class GovernanceService(IGovernanceRepository repository)
     public async Task<IReadOnlyCollection<BackupPolicyDto>> ListBackupPoliciesAsync(CancellationToken cancellationToken)
     {
         var policies = await repository.ListBackupPoliciesAsync(cancellationToken);
-        return await Task.WhenAll(policies.Select(async item => new BackupPolicyDto(item.Id,
-            await repository.ResolveResourceExternalIdAsync(item.InstanceResourceId, cancellationToken), item.IsEnabled,
-            item.ScheduleExpression, item.Timezone, item.RetentionCount, item.RetentionDays, item.TargetDirectoryId,
-            item.Compression, item.VerifyAfterBackup, item.CapacityWarningPercent, item.CapacityCriticalPercent, item.Version)));
+        var result = new List<BackupPolicyDto>(policies.Count);
+        foreach (var item in policies)
+        {
+            result.Add(new BackupPolicyDto(item.Id,
+                await repository.ResolveResourceExternalIdAsync(item.InstanceResourceId, cancellationToken), item.IsEnabled,
+                item.ScheduleExpression, item.Timezone, item.RetentionCount, item.RetentionDays, item.TargetDirectoryId,
+                item.Compression, item.VerifyAfterBackup, item.CapacityWarningPercent, item.CapacityCriticalPercent, item.Version));
+        }
+        return result;
     }
 
     public async Task<IReadOnlyCollection<BackupRecordDto>> ListBackupRecordsAsync(
@@ -46,21 +51,26 @@ public sealed class GovernanceService(IGovernanceRepository repository)
         CancellationToken cancellationToken)
     {
         var records = await repository.ListBackupRecordsAsync(instanceResourceId, Math.Clamp(take, 1, 200), cancellationToken);
-        return await Task.WhenAll(records.Select(async item => new BackupRecordDto(
-            item.Id,
-            await repository.ResolveResourceExternalIdAsync(item.InstanceResourceId, cancellationToken),
-            item.PolicyId,
-            item.JobId,
-            item.Status,
-            item.RelativePath,
-            item.SizeBytes,
-            item.ChecksumAlgorithm,
-            item.Checksum,
-            item.StartedAtUtc,
-            item.CompletedAtUtc,
-            item.VerifiedAtUtc,
-            item.ExpiresAtUtc,
-            item.ErrorCode)));
+        var result = new List<BackupRecordDto>(records.Count);
+        foreach (var item in records)
+        {
+            result.Add(new BackupRecordDto(
+                item.Id,
+                await repository.ResolveResourceExternalIdAsync(item.InstanceResourceId, cancellationToken),
+                item.PolicyId,
+                item.JobId,
+                item.Status,
+                item.RelativePath,
+                item.SizeBytes,
+                item.ChecksumAlgorithm,
+                item.Checksum,
+                item.StartedAtUtc,
+                item.CompletedAtUtc,
+                item.VerifiedAtUtc,
+                item.ExpiresAtUtc,
+                item.ErrorCode));
+        }
+        return result;
     }
 
     public async Task<BackupPolicyDto> SaveBackupPolicyAsync(SaveBackupPolicyCommand command, CancellationToken cancellationToken)
