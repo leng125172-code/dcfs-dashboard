@@ -11,6 +11,7 @@ from __future__ import annotations
 import html.parser
 import os
 import sys
+import time
 from dataclasses import dataclass, field
 from urllib.parse import parse_qs, urljoin, urlparse
 
@@ -177,6 +178,18 @@ def authenticate(
     # proxy.  Acceptance traffic is entirely local and must never depend on it.
     session.trust_env = False
     session.headers["User-Agent"] = "WhaleDeck-OIDC-Validation/1.0"
+
+    deadline = time.monotonic() + 60
+    while True:
+        try:
+            health = session.get(f"{base_url}/health/live", timeout=5)
+            if health.status_code == 200:
+                break
+        except requests.RequestException:
+            pass
+        if time.monotonic() >= deadline:
+            raise RuntimeError("Whale Deck did not become ready within 60 seconds")
+        time.sleep(1)
 
     response = session.get(
         f"{base_url}/api/v1/auth/login?returnUrl=%2F",
