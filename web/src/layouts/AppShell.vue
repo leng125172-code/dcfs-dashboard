@@ -10,6 +10,9 @@ import {
   Odometer,
   Operation,
   Setting,
+  BellFilled,
+  Calendar,
+  Document,
   UserFilled,
 } from '@element-plus/icons-vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
@@ -39,11 +42,23 @@ const navigationGroups = [
       { index: '/databases', label: '数据库', icon: Odometer, administratorOnly: true },
       { index: '/systemd', label: '系统服务', icon: Monitor, administratorOnly: true },
       { index: '/jobs', label: '任务中心', icon: Setting, administratorOnly: true },
+      { index: '/schedules', label: '计划任务', icon: Calendar, administratorOnly: true },
     ],
   },
   {
     label: '应用',
-    items: [{ index: '/applications', label: '应用管理', icon: Box, administratorOnly: true }],
+    items: [
+      { index: '/applications', label: '应用管理', icon: Box, administratorOnly: true },
+      { index: '/backups', label: '备份策略', icon: Document, administratorOnly: true },
+    ],
+  },
+  {
+    label: '治理',
+    items: [
+      { index: '/alerts', label: '告警', icon: BellFilled, administratorOnly: true },
+      { index: '/audit', label: '审计日志', icon: Document, administratorOnly: true },
+      { index: '/settings', label: '平台设置', icon: Setting, administratorOnly: true },
+    ],
   },
 ] as const
 

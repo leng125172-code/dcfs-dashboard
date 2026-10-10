@@ -7,6 +7,7 @@ import PortalView from '@/views/PortalView.vue'
 import ResourceListView from '@/views/ResourceListView.vue'
 import JobsView from '@/views/JobsView.vue'
 import StateView from '@/views/StateView.vue'
+import RecordsView from '@/views/RecordsView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -38,6 +39,11 @@ const router = createRouter({
         { path: 'identity/groups', name: 'groups', component: ResourceListView, meta: { administratorOnly: true, title: 'Authentik 用户组', endpoint: 'groups' } },
         { path: 'identity/sso', name: 'sso', component: ResourceListView, meta: { administratorOnly: true, title: 'SSO 应用', endpoint: 'sso' } },
         { path: 'jobs', name: 'jobs', component: JobsView, meta: { administratorOnly: true, title: '任务中心' } },
+        { path: 'schedules', name: 'schedules', component: RecordsView, meta: { administratorOnly: true, title: '计划任务', endpoint: 'schedules' } },
+        { path: 'backups', name: 'backups', component: RecordsView, meta: { administratorOnly: true, title: '备份策略', endpoint: 'backups/policies' } },
+        { path: 'alerts', name: 'alerts', component: RecordsView, meta: { administratorOnly: true, title: '告警', endpoint: 'alerts?includeRecovered=true' } },
+        { path: 'audit', name: 'audit', component: RecordsView, meta: { administratorOnly: true, title: '审计日志', endpoint: 'audit?take=200' } },
+        { path: 'settings', name: 'settings', component: RecordsView, meta: { administratorOnly: true, title: '平台设置', endpoint: 'settings' } },
       ],
     },
     { path: '/forbidden', name: 'forbidden', component: StateView, props: { code: '403', title: '没有管理权限', description: '当前账号可以使用首页和个人门户，但不能管理工作站。' } },

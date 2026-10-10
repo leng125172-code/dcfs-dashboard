@@ -1,0 +1,32 @@
+namespace WhaleDeck.Application.Models;
+
+public sealed record ScheduledTaskDto(Guid Id, string TaskType, string Name, string ScheduleKind, string ScheduleExpression,
+    string Timezone, string ConcurrencyPolicy, int TimeoutSeconds, bool IsEnabled, DateTimeOffset? NextRunAtUtc, long Version);
+
+public sealed record SaveScheduledTaskCommand(Guid? Id, string TaskType, string Name, string ScheduleKind,
+    string ScheduleExpression, string Timezone, string ParametersJson, string ConcurrencyPolicy, int TimeoutSeconds,
+    bool IsEnabled, long? ExpectedVersion);
+
+public sealed record BackupPolicyDto(Guid Id, Guid InstanceResourceId, bool IsEnabled, string ScheduleExpression,
+    string Timezone, int RetentionCount, int RetentionDays, string TargetDirectoryId, string Compression,
+    bool VerifyAfterBackup, int CapacityWarningPercent, int CapacityCriticalPercent, long Version);
+
+public sealed record SaveBackupPolicyCommand(Guid? Id, Guid InstanceResourceId, bool IsEnabled, string ScheduleExpression,
+    string Timezone, int RetentionCount, int RetentionDays, string TargetDirectoryId, string Compression,
+    bool VerifyAfterBackup, int CapacityWarningPercent, int CapacityCriticalPercent, long? ExpectedVersion);
+
+public sealed record AlertRuleDto(Guid Id, string RuleType, string ResourceSelectorJson, string ThresholdJson,
+    int EvaluationWindowSeconds, string Severity, bool IsEnabled, long Version);
+
+public sealed record SaveAlertRuleCommand(Guid? Id, string RuleType, string ResourceSelectorJson, string ThresholdJson,
+    int EvaluationWindowSeconds, string Severity, bool IsEnabled, long? ExpectedVersion);
+
+public sealed record AlertEventDto(Guid Id, Guid RuleId, Guid? ResourceId, string State, string Severity, int OccurrenceCount,
+    DateTimeOffset FirstOccurredAtUtc, DateTimeOffset LastOccurredAtUtc, DateTimeOffset? RecoveredAtUtc,
+    string? AcknowledgedBySubject, DateTimeOffset? AcknowledgedAtUtc, DateTimeOffset? SilencedUntilUtc, string SummaryCode);
+
+public sealed record PlatformSettingDto(string Key, string ValueJson, long Version, DateTimeOffset UpdatedAtUtc);
+public sealed record SavePlatformSettingCommand(string ValueJson, long? ExpectedVersion);
+
+public sealed record AuditEventDto(Guid Id, string ActorSubject, string Action, string TargetType, string TargetId,
+    string Result, string? SourceIp, Guid? JobId, string TraceId, DateTimeOffset OccurredAtUtc);

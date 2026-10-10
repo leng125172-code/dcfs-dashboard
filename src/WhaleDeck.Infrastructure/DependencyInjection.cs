@@ -64,6 +64,7 @@ public static class DependencyInjection
 
         services.AddScoped<IPortalRepository, PortalRepository>();
         services.AddScoped<IJobRepository, JobRepository>();
+        services.AddScoped<IGovernanceRepository, GovernanceRepository>();
         services.AddScoped<ResourceLeaseManager>();
         services.AddScoped<IIdentityDirectory, AuthentikIdentityDirectory>();
         services.AddScoped<ICatalogProvider, XuanyuanCatalogProvider>();
@@ -73,6 +74,7 @@ public static class DependencyInjection
         services.AddScoped<PortalService>();
         services.AddScoped<OverviewService>();
         services.AddScoped<OperationService>();
+        services.AddScoped<GovernanceService>();
 
         return services;
     }
