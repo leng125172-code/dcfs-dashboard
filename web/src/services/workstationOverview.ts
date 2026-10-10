@@ -254,7 +254,9 @@ function makeTelemetry(
         .filter((series) => series.kind === firstKind || series.kind === secondKind)
         .map((series) => series.deviceId),
     ),
-  ].sort()
+  ]
+    .filter((device) => mode === 'disk' || isHostNetworkDevice(device))
+    .sort()
   if (devices.length === 0) return emptyTelemetry()
 
   const source = history.find((series) => series.kind === firstKind) ?? history[0]
@@ -384,4 +386,8 @@ function formatDuration(value: string) {
   const hours = Number(match[2])
   const minutes = Number(match[3])
   return `${days ? `${days} 天 ` : ''}${hours} 小时 ${minutes} 分`
+}
+
+function isHostNetworkDevice(name: string) {
+  return !/^(lo|veth|docker|br-|virbr|cni|flannel|tun|tap)/.test(name)
 }

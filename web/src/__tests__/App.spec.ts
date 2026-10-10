@@ -8,6 +8,7 @@ import AppShell from '@/layouts/AppShell.vue'
 import LoginView from '@/views/LoginView.vue'
 import OverviewView from '@/views/OverviewView.vue'
 import router from '@/router'
+import { fetchWorkstationOverview } from '@/services/workstationOverview'
 
 const globalPlugins = () => [createPinia(), router, ElementPlus]
 
@@ -30,6 +31,8 @@ beforeEach(() => {
         return jsonResponse([
           { kind: 'network.receive', deviceId: 'eno1', unit: 'bytesPerSecond', points },
           { kind: 'network.send', deviceId: 'eno1', unit: 'bytesPerSecond', points },
+          { kind: 'network.receive', deviceId: 'vethdeadbeef', unit: 'bytesPerSecond', points },
+          { kind: 'network.send', deviceId: 'vethdeadbeef', unit: 'bytesPerSecond', points },
           { kind: 'disk.read', deviceId: 'nvme0n1', unit: 'bytesPerSecond', points },
           { kind: 'disk.write', deviceId: 'nvme0n1', unit: 'bytesPerSecond', points },
         ])
@@ -156,6 +159,11 @@ describe('WhaleDeck entry flow', () => {
     expect(installedApplication.text()).toContain('重启')
     expect(installedApplication.text()).toContain('管理')
     expect(installedApplication.text()).not.toContain('安装')
+  })
+
+  it('keeps Docker virtual interfaces out of workstation telemetry', async () => {
+    const snapshot = await fetchWorkstationOverview()
+    expect(snapshot.network.filters.map((item) => item.value)).toEqual(['all', 'eno1'])
   })
 
   it('delegates login to Authentik without collecting a password', async () => {

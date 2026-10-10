@@ -110,7 +110,8 @@ public sealed class HostReader
     private static HostAddressSnapshot[] ReadHostAddresses() =>
         NetworkInterface.GetAllNetworkInterfaces()
             .Where(item => item.OperationalStatus == OperationalStatus.Up &&
-                           item.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+                           item.NetworkInterfaceType != NetworkInterfaceType.Loopback &&
+                           IsHostNetworkDevice(item.Name))
             .SelectMany(item => item.GetIPProperties().UnicastAddresses
                 .Where(address => address.Address.AddressFamily == AddressFamily.InterNetwork &&
                                   !IPAddress.IsLoopback(address.Address))
@@ -172,9 +173,11 @@ public sealed class HostReader
         {
             var halves = line.Split(':', 2);
             if (halves.Length != 2) continue;
+            var device = halves[0].Trim();
+            if (!IsHostNetworkDevice(device)) continue;
             var values = halves[1].Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (values.Length < 16 || !ulong.TryParse(values[0], out var received) || !ulong.TryParse(values[8], out var sent)) continue;
-            result[halves[0].Trim()] = (received, sent);
+            result[device] = (received, sent);
         }
         return result;
     }
@@ -196,6 +199,17 @@ public sealed class HostReader
 
     private static double Rate(ulong current, ulong previous, double elapsed) =>
         elapsed <= 0 || current < previous ? 0 : (current - previous) / elapsed;
+
+    private static bool IsHostNetworkDevice(string name) =>
+        !name.Equals("lo", StringComparison.Ordinal) &&
+        !name.StartsWith("veth", StringComparison.Ordinal) &&
+        !name.StartsWith("docker", StringComparison.Ordinal) &&
+        !name.StartsWith("br-", StringComparison.Ordinal) &&
+        !name.StartsWith("virbr", StringComparison.Ordinal) &&
+        !name.StartsWith("cni", StringComparison.Ordinal) &&
+        !name.StartsWith("flannel", StringComparison.Ordinal) &&
+        !name.StartsWith("tun", StringComparison.Ordinal) &&
+        !name.StartsWith("tap", StringComparison.Ordinal);
 
     private sealed record CpuCounters(ulong Total, ulong Idle);
 }
