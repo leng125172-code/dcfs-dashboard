@@ -1,7 +1,7 @@
-using Google.Protobuf.WellKnownTypes;
-using Grpc.Core;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Google.Protobuf.WellKnownTypes;
+using Grpc.Core;
 using WhaleDeck.Contracts.Agent.V1;
 
 namespace WhaleDeck.Agent.Services;
@@ -89,8 +89,12 @@ public sealed class ManagedResourceGrpcService(
                             : "Stopped";
                 var snapshot = new ResourceSnapshot
                 {
-                    ResourceId = $"application:{slug}", DisplayName = slug, ResourceType = "ComposeApplication",
-                    State = state, Version = image, ProtectedResource = false
+                    ResourceId = $"application:{slug}",
+                    DisplayName = slug,
+                    ResourceType = "ComposeApplication",
+                    State = state,
+                    Version = image,
+                    ProtectedResource = false
                 };
                 snapshot.Attributes["composeProject"] = project;
                 snapshot.Attributes["containerCount"] = members.Length.ToString(System.Globalization.CultureInfo.InvariantCulture);

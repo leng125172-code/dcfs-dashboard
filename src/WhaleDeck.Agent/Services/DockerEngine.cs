@@ -1,9 +1,9 @@
+using System.Net;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using WhaleDeck.Contracts.Agent.V1;
-using System.Text.RegularExpressions;
-using System.Net;
-using System.Text.Json;
 
 namespace WhaleDeck.Agent.Services;
 

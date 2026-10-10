@@ -103,6 +103,9 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             entity.ToTable("role_mappings");
             entity.HasKey(item => item.Id);
             entity.HasIndex(item => item.AuthentikGroupId).IsUnique();
+            entity.Property(item => item.AuthentikGroupId).HasMaxLength(128);
+            entity.Property(item => item.AuthentikGroupNameSnapshot).HasMaxLength(150);
+            entity.Property(item => item.Role).HasMaxLength(32);
             entity.Property(item => item.Version).IsConcurrencyToken();
         });
     }

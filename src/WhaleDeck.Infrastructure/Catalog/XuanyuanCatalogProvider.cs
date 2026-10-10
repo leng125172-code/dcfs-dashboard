@@ -1,6 +1,6 @@
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Net.Sockets;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
 using WhaleDeck.Application.Abstractions;

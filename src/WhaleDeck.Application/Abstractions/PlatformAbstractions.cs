@@ -65,6 +65,18 @@ public interface IIdentityManager
     Task ExecuteAsync(string action, string? resourceId, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken);
 }
 
+public interface IRoleMappingRepository
+{
+    Task<IReadOnlyCollection<RoleMapping>> ListAsync(CancellationToken cancellationToken);
+    Task<RoleMapping> SaveAsync(string actorSubject, string traceId, SaveRoleMappingCommand command, CancellationToken cancellationToken);
+    Task DeleteAsync(string actorSubject, string traceId, Guid id, long expectedVersion, CancellationToken cancellationToken);
+}
+
+public interface IAdministratorGroupConfiguration
+{
+    string GroupId { get; }
+}
+
 public interface IManagementQuery
 {
     Task<IReadOnlyCollection<ManagedResourceDto>> ListAsync(string area, CancellationToken cancellationToken);

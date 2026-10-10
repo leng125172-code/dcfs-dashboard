@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
@@ -10,6 +11,8 @@ namespace WhaleDeck.Infrastructure.Identity;
 public sealed class AuthentikIdentityDirectory(
     IHttpClientFactory httpClientFactory,
     IDistributedCache cache,
+    IRoleMappingRepository roleMappings,
+    IAdministratorGroupConfiguration administratorGroup,
     IConfiguration configuration) : IIdentityDirectory, IIdentityManager
 {
     private static readonly TimeSpan PermissionTtl = TimeSpan.FromHours(2);
@@ -17,27 +20,44 @@ public sealed class AuthentikIdentityDirectory(
 
     public async Task<CurrentUserDto> ResolveCurrentAsync(string subject, string? name, IReadOnlyCollection<string> claimGroups, CancellationToken cancellationToken)
     {
+        var administratorGroups = await AdministratorGroupsAsync(cancellationToken);
         var key = $"whaledeck:authz:{subject}";
         var cached = await cache.GetStringAsync(key, cancellationToken);
         if (cached is not null)
         {
             var snapshot = JsonSerializer.Deserialize<PermissionSnapshot>(cached);
-            if (snapshot is not null && snapshot.ExpiresAtUtc > DateTimeOffset.UtcNow)
+            if (snapshot is not null && snapshot.ExpiresAtUtc > DateTimeOffset.UtcNow &&
+                string.Equals(snapshot.MappingRevision, administratorGroups.Revision, StringComparison.Ordinal))
                 return new CurrentUserDto(subject, name, snapshot.Groups, snapshot.Administrator, snapshot.ExpiresAtUtc);
         }
 
-        var adminGroup = configuration["Authentication:Authentik:AdministratorGroupId"]
-            ?? configuration["Authentication:Authentik:AdministratorGroupName"];
         var resolution = await ResolveGroupsFromAuthentik(subject, claimGroups, cancellationToken);
         var groups = resolution.Groups;
-        var administrator = !string.IsNullOrWhiteSpace(adminGroup) && groups.Contains(adminGroup, StringComparer.Ordinal);
+        var administrator = groups.Any(administratorGroups.GroupIds.Contains);
         var ttl = resolution.Authoritative || configuration.GetValue<bool>("Authentication:Authentik:AllowClaimFallback")
             ? PermissionTtl : TimeSpan.FromSeconds(15);
         var expires = DateTimeOffset.UtcNow.Add(ttl);
-        var current = new PermissionSnapshot(groups, administrator, expires);
+        var current = new PermissionSnapshot(groups, administrator, expires, administratorGroups.Revision);
         await cache.SetStringAsync(key, JsonSerializer.Serialize(current),
             new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = ttl }, cancellationToken);
         return new CurrentUserDto(subject, name, groups, administrator, expires);
+    }
+
+    private async Task<AdministratorGroupSelection> AdministratorGroupsAsync(CancellationToken cancellationToken)
+    {
+        var configured = administratorGroup.GroupId;
+        var mappings = await roleMappings.ListAsync(cancellationToken);
+        var identifiers = mappings.Where(item => item.IsEnabled && item.Role == "Administrator")
+            .Select(item => item.AuthentikGroupId)
+            .Append(configured ?? string.Empty)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToHashSet(StringComparer.Ordinal);
+        var revisionMaterial = string.Join('\n', mappings
+            .OrderBy(item => item.Id)
+            .Select(item => $"{item.Id:D}:{item.Version}:{item.IsEnabled}:{item.Role}:{item.AuthentikGroupId}")) +
+            $"\nconfigured:{configured}";
+        var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(revisionMaterial)));
+        return new AdministratorGroupSelection(identifiers, revision);
     }
 
     public Task<IReadOnlyCollection<ManagedResourceDto>> ListUsersAsync(CancellationToken cancellationToken) =>
@@ -54,22 +74,22 @@ public sealed class AuthentikIdentityDirectory(
         switch (action)
         {
             case "create-user":
-            {
-                var username = Required(parameters, "username", 1, 150);
-                var payload = new
                 {
-                    username,
-                    name = Optional(parameters, "name", 150) ?? username,
-                    email = Optional(parameters, "email", 254) ?? string.Empty,
-                    is_active = true
-                };
-                using var created = await SendAsync(HttpMethod.Post, "core/users/", payload, cancellationToken);
-                using var document = JsonDocument.Parse(await created.Content.ReadAsStringAsync(cancellationToken));
-                var id = document.RootElement.GetProperty("pk").ToString();
-                if (parameters.TryGetValue("password", out var password))
-                    await SendAndDisposeAsync(HttpMethod.Post, $"core/users/{Uri.EscapeDataString(id)}/set_password/", new { password }, cancellationToken);
-                return;
-            }
+                    var username = Required(parameters, "username", 1, 150);
+                    var payload = new
+                    {
+                        username,
+                        name = Optional(parameters, "name", 150) ?? username,
+                        email = Optional(parameters, "email", 254) ?? string.Empty,
+                        is_active = true
+                    };
+                    using var created = await SendAsync(HttpMethod.Post, "core/users/", payload, cancellationToken);
+                    using var document = JsonDocument.Parse(await created.Content.ReadAsStringAsync(cancellationToken));
+                    var id = document.RootElement.GetProperty("pk").ToString();
+                    if (parameters.TryGetValue("password", out var password))
+                        await SendAndDisposeAsync(HttpMethod.Post, $"core/users/{Uri.EscapeDataString(id)}/set_password/", new { password }, cancellationToken);
+                    return;
+                }
             case "update-user":
                 await SendAndDisposeAsync(HttpMethod.Patch, $"core/users/{ResourceId(resourceId)}/", new
                 {
@@ -81,29 +101,29 @@ public sealed class AuthentikIdentityDirectory(
                 await SendAndDisposeAsync(HttpMethod.Patch, $"core/users/{ResourceId(resourceId)}/", new { is_active = false }, cancellationToken);
                 return;
             case "create-sso":
-            {
-                var slug = Required(parameters, "slug", 1, 80);
-                var providerType = parameters.TryGetValue("providerType", out var type) ? type : "oauth2";
-                if (providerType != "oauth2") throw new InvalidOperationException("Only the approved OAuth2/OIDC provider type is currently supported.");
-                var authorizationFlow = parameters.TryGetValue("authorizationFlowId", out var authorizationFlowId) && !string.IsNullOrWhiteSpace(authorizationFlowId)
-                    ? authorizationFlowId
-                    : await ResolveFlowAsync(
-                        configuration["Authentication:Authentik:AuthorizationFlowSlug"] ?? "default-provider-authorization-explicit-consent",
-                        cancellationToken);
-                var invalidationFlow = parameters.TryGetValue("invalidationFlowId", out var invalidationFlowId) && !string.IsNullOrWhiteSpace(invalidationFlowId)
-                    ? invalidationFlowId
-                    : await ResolveFlowAsync(
-                        configuration["Authentication:Authentik:InvalidationFlowSlug"] ?? "default-provider-invalidation-flow",
-                        cancellationToken);
-                var providerPayload = new
                 {
-                    name = Required(parameters, "name", 1, 150),
-                    authorization_flow = authorizationFlow,
-                    invalidation_flow = invalidationFlow,
-                    client_type = "confidential",
-                    grant_types = new[] { "authorization_code", "refresh_token" },
-                    redirect_uris = new[]
+                    var slug = Required(parameters, "slug", 1, 80);
+                    var providerType = parameters.TryGetValue("providerType", out var type) ? type : "oauth2";
+                    if (providerType != "oauth2") throw new InvalidOperationException("Only the approved OAuth2/OIDC provider type is currently supported.");
+                    var authorizationFlow = parameters.TryGetValue("authorizationFlowId", out var authorizationFlowId) && !string.IsNullOrWhiteSpace(authorizationFlowId)
+                        ? authorizationFlowId
+                        : await ResolveFlowAsync(
+                            configuration["Authentication:Authentik:AuthorizationFlowSlug"] ?? "default-provider-authorization-explicit-consent",
+                            cancellationToken);
+                    var invalidationFlow = parameters.TryGetValue("invalidationFlowId", out var invalidationFlowId) && !string.IsNullOrWhiteSpace(invalidationFlowId)
+                        ? invalidationFlowId
+                        : await ResolveFlowAsync(
+                            configuration["Authentication:Authentik:InvalidationFlowSlug"] ?? "default-provider-invalidation-flow",
+                            cancellationToken);
+                    var providerPayload = new
                     {
+                        name = Required(parameters, "name", 1, 150),
+                        authorization_flow = authorizationFlow,
+                        invalidation_flow = invalidationFlow,
+                        client_type = "confidential",
+                        grant_types = new[] { "authorization_code", "refresh_token" },
+                        redirect_uris = new[]
+                        {
                         new
                         {
                             matching_mode = "strict",
@@ -111,32 +131,32 @@ public sealed class AuthentikIdentityDirectory(
                             redirect_uri_type = "authorization"
                         }
                     },
-                    sub_mode = "user_uuid"
-                };
-                using var provider = await SendAsync(HttpMethod.Post, "providers/oauth2/", providerPayload, cancellationToken);
-                using var document = JsonDocument.Parse(await provider.Content.ReadAsStringAsync(cancellationToken));
-                var providerId = document.RootElement.GetProperty("pk").ToString();
-                try
-                {
-                    await SendAndDisposeAsync(HttpMethod.Post, "core/applications/", new
-                    {
-                        name = providerPayload.name,
-                        slug,
-                        provider = providerId,
-                        policy_engine_mode = "any"
-                    }, cancellationToken);
-                }
-                catch
-                {
+                        sub_mode = "user_uuid"
+                    };
+                    using var provider = await SendAsync(HttpMethod.Post, "providers/oauth2/", providerPayload, cancellationToken);
+                    using var document = JsonDocument.Parse(await provider.Content.ReadAsStringAsync(cancellationToken));
+                    var providerId = document.RootElement.GetProperty("pk").ToString();
                     try
                     {
-                        using var cleanup = await Client().DeleteAsync($"providers/oauth2/{Uri.EscapeDataString(providerId)}/", CancellationToken.None);
+                        await SendAndDisposeAsync(HttpMethod.Post, "core/applications/", new
+                        {
+                            name = providerPayload.name,
+                            slug,
+                            provider = providerId,
+                            policy_engine_mode = "any"
+                        }, cancellationToken);
                     }
-                    catch (HttpRequestException) { }
-                    throw;
+                    catch
+                    {
+                        try
+                        {
+                            using var cleanup = await Client().DeleteAsync($"providers/oauth2/{Uri.EscapeDataString(providerId)}/", CancellationToken.None);
+                        }
+                        catch (HttpRequestException) { }
+                        throw;
+                    }
+                    return;
                 }
-                return;
-            }
             case "update-sso":
                 await SendAndDisposeAsync(HttpMethod.Patch, $"core/applications/{ResourceId(resourceId)}/", new
                 {
@@ -313,6 +333,7 @@ public sealed class AuthentikIdentityDirectory(
         return client;
     }
 
-    private sealed record PermissionSnapshot(string[] Groups, bool Administrator, DateTimeOffset ExpiresAtUtc);
+    private sealed record PermissionSnapshot(string[] Groups, bool Administrator, DateTimeOffset ExpiresAtUtc, string? MappingRevision);
     private sealed record GroupResolution(string[] Groups, bool Authoritative);
+    private sealed record AdministratorGroupSelection(HashSet<string> GroupIds, string Revision);
 }

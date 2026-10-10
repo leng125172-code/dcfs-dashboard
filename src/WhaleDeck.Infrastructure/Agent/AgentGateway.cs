@@ -258,15 +258,15 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
             response = area.Equals("docker", StringComparison.OrdinalIgnoreCase) && action is "network-create" or "network-delete" or "volume-delete"
                 ? await _docker.RunActionAsync(request, Headers("/whaledeck.agent.v1.DockerService/RunAction"), cancellationToken: cancellationToken)
                 : area.ToLowerInvariant() switch
-            {
-                "containers" => await _docker.RunActionAsync(request, Headers("/whaledeck.agent.v1.DockerService/RunAction"), cancellationToken: cancellationToken),
-                "databases" or "backups" => await _resources.RunDatabaseActionAsync(request, Headers("/whaledeck.agent.v1.ManagedResourceService/RunDatabaseAction"), cancellationToken: cancellationToken),
-                "host" => await _resources.RunSystemdActionAsync(request, Headers("/whaledeck.agent.v1.ManagedResourceService/RunSystemdAction"), cancellationToken: cancellationToken),
-                "applications" => await _resources.RunComposeActionAsync(request, Headers("/whaledeck.agent.v1.ManagedResourceService/RunComposeAction"), cancellationToken: cancellationToken),
-                "config-repository" => await _resources.RunConfigRepositoryActionAsync(request, Headers("/whaledeck.agent.v1.ManagedResourceService/RunConfigRepositoryAction"), cancellationToken: cancellationToken),
-                "platform" or "docker" => await _resources.RunPlatformMaintenanceAsync(request, Headers("/whaledeck.agent.v1.ManagedResourceService/RunPlatformMaintenance"), cancellationToken: cancellationToken),
-                _ => throw new InvalidOperationException("The Agent does not support this operation area.")
-            };
+                {
+                    "containers" => await _docker.RunActionAsync(request, Headers("/whaledeck.agent.v1.DockerService/RunAction"), cancellationToken: cancellationToken),
+                    "databases" or "backups" => await _resources.RunDatabaseActionAsync(request, Headers("/whaledeck.agent.v1.ManagedResourceService/RunDatabaseAction"), cancellationToken: cancellationToken),
+                    "host" => await _resources.RunSystemdActionAsync(request, Headers("/whaledeck.agent.v1.ManagedResourceService/RunSystemdAction"), cancellationToken: cancellationToken),
+                    "applications" => await _resources.RunComposeActionAsync(request, Headers("/whaledeck.agent.v1.ManagedResourceService/RunComposeAction"), cancellationToken: cancellationToken),
+                    "config-repository" => await _resources.RunConfigRepositoryActionAsync(request, Headers("/whaledeck.agent.v1.ManagedResourceService/RunConfigRepositoryAction"), cancellationToken: cancellationToken),
+                    "platform" or "docker" => await _resources.RunPlatformMaintenanceAsync(request, Headers("/whaledeck.agent.v1.ManagedResourceService/RunPlatformMaintenance"), cancellationToken: cancellationToken),
+                    _ => throw new InvalidOperationException("The Agent does not support this operation area.")
+                };
         }
 
         return new AgentOperationDto(response.OperationId, response.State.ToString(), response.Phase, response.ProgressPercent,

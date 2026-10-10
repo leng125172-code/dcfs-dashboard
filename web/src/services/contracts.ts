@@ -59,6 +59,18 @@ export interface ManagedResource {
   attributes: Record<string, string>
 }
 
+export interface RoleMapping {
+  id: string | null
+  authentikGroupId: string
+  authentikGroupName: string
+  role: 'Administrator'
+  isEnabled: boolean
+  version: number
+  source: 'Deployment' | 'Database'
+  isMutable: boolean
+  updatedAtUtc: string | null
+}
+
 export interface ContainerLogs {
   lines: string[]
   truncated: boolean

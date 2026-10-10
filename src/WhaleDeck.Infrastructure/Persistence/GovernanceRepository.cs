@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using WhaleDeck.Application.Abstractions;
 using WhaleDeck.Application.Models;
-using WhaleDeck.Domain.Entities;
 using WhaleDeck.Application.Services;
+using WhaleDeck.Domain.Entities;
 
 namespace WhaleDeck.Infrastructure.Persistence;
 
@@ -37,12 +37,18 @@ public sealed class GovernanceRepository(PlatformDbContext db) : IGovernanceRepo
         {
             item = new ScheduledTask
             {
-                TaskType = command.TaskType, Name = command.Name.Trim(), ScheduleKind = command.ScheduleKind,
-                ScheduleExpression = command.ScheduleExpression.Trim(), Timezone = command.Timezone,
-                ParametersJson = command.ParametersJson, ConcurrencyPolicy = command.ConcurrencyPolicy,
-                TimeoutSeconds = command.TimeoutSeconds, IsEnabled = command.IsEnabled,
+                TaskType = command.TaskType,
+                Name = command.Name.Trim(),
+                ScheduleKind = command.ScheduleKind,
+                ScheduleExpression = command.ScheduleExpression.Trim(),
+                Timezone = command.Timezone,
+                ParametersJson = command.ParametersJson,
+                ConcurrencyPolicy = command.ConcurrencyPolicy,
+                TimeoutSeconds = command.TimeoutSeconds,
+                IsEnabled = command.IsEnabled,
                 NextRunAtUtc = command.IsEnabled ? ScheduleCalculator.NextUtc(command.ScheduleKind, command.ScheduleExpression, command.Timezone, DateTimeOffset.UtcNow) : null,
-                CreatedBySubject = actorSubject, UpdatedBySubject = actorSubject
+                CreatedBySubject = actorSubject,
+                UpdatedBySubject = actorSubject
             };
             db.ScheduledTasks.Add(item);
         }
@@ -149,11 +155,16 @@ public sealed class GovernanceRepository(PlatformDbContext db) : IGovernanceRepo
                 ?? throw new KeyNotFoundException("Managed database resource was not found.");
             item = new BackupPolicy
             {
-                InstanceResourceId = resourceId, IsEnabled = command.IsEnabled,
-                ScheduleExpression = command.ScheduleExpression, Timezone = command.Timezone,
-                RetentionCount = command.RetentionCount, RetentionDays = command.RetentionDays,
-                TargetDirectoryId = command.TargetDirectoryId, Compression = command.Compression,
-                VerifyAfterBackup = command.VerifyAfterBackup, CapacityWarningPercent = command.CapacityWarningPercent,
+                InstanceResourceId = resourceId,
+                IsEnabled = command.IsEnabled,
+                ScheduleExpression = command.ScheduleExpression,
+                Timezone = command.Timezone,
+                RetentionCount = command.RetentionCount,
+                RetentionDays = command.RetentionDays,
+                TargetDirectoryId = command.TargetDirectoryId,
+                Compression = command.Compression,
+                VerifyAfterBackup = command.VerifyAfterBackup,
+                CapacityWarningPercent = command.CapacityWarningPercent,
                 CapacityCriticalPercent = command.CapacityCriticalPercent
             };
             db.BackupPolicies.Add(item);
@@ -186,9 +197,12 @@ public sealed class GovernanceRepository(PlatformDbContext db) : IGovernanceRepo
         {
             item = new AlertRule
             {
-                RuleType = command.RuleType, ResourceSelectorJson = command.ResourceSelectorJson,
-                ThresholdJson = command.ThresholdJson, EvaluationWindowSeconds = command.EvaluationWindowSeconds,
-                Severity = command.Severity, IsEnabled = command.IsEnabled
+                RuleType = command.RuleType,
+                ResourceSelectorJson = command.ResourceSelectorJson,
+                ThresholdJson = command.ThresholdJson,
+                EvaluationWindowSeconds = command.EvaluationWindowSeconds,
+                Severity = command.Severity,
+                IsEnabled = command.IsEnabled
             };
             db.AlertRules.Add(item);
         }

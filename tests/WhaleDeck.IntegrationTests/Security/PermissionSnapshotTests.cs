@@ -1,9 +1,14 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
+using WhaleDeck.Application.Abstractions;
+using WhaleDeck.Application.Models;
+using WhaleDeck.Domain.Entities;
 using WhaleDeck.Infrastructure.Identity;
 
 namespace WhaleDeck.IntegrationTests.Security;
@@ -15,7 +20,7 @@ public sealed class PermissionSnapshotTests
     [Fact]
     public async Task MissingApiTokenDoesNotPromoteCookieClaims()
     {
-        var directory = new AuthentikIdentityDirectory(new StubClientFactory(HttpStatusCode.ServiceUnavailable), NewCache(), Config());
+        var directory = Directory(new StubClientFactory(HttpStatusCode.ServiceUnavailable), NewCache());
         var current = await directory.ResolveCurrentAsync(Subject, "User", ["admin-id"], default);
         Assert.False(current.IsAdministrator);
     }
@@ -26,9 +31,11 @@ public sealed class PermissionSnapshotTests
         var cache = NewCache();
         await cache.SetStringAsync($"whaledeck:authz:{Subject}", JsonSerializer.Serialize(new
         {
-            Groups = AdministratorGroups, Administrator = true, ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1)
+            Groups = AdministratorGroups,
+            Administrator = true,
+            ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1)
         }));
-        var directory = new AuthentikIdentityDirectory(new StubClientFactory(HttpStatusCode.ServiceUnavailable), cache, Config("test-token"));
+        var directory = Directory(new StubClientFactory(HttpStatusCode.ServiceUnavailable), cache, "test-token");
         var current = await directory.ResolveCurrentAsync(Subject, "User", ["admin-id"], default);
         Assert.False(current.IsAdministrator);
         Assert.Empty(current.Groups);
@@ -41,9 +48,12 @@ public sealed class PermissionSnapshotTests
         var expires = DateTimeOffset.UtcNow.AddMinutes(30);
         await cache.SetStringAsync($"whaledeck:authz:{Subject}", JsonSerializer.Serialize(new
         {
-            Groups = AdministratorGroups, Administrator = true, ExpiresAtUtc = expires
+            Groups = AdministratorGroups,
+            Administrator = true,
+            ExpiresAtUtc = expires,
+            MappingRevision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("\nconfigured:admin-id")))
         }));
-        var directory = new AuthentikIdentityDirectory(new StubClientFactory(HttpStatusCode.ServiceUnavailable), cache, Config("test-token"));
+        var directory = Directory(new StubClientFactory(HttpStatusCode.ServiceUnavailable), cache, "test-token");
         var current = await directory.ResolveCurrentAsync(Subject, "User", [], default);
         Assert.True(current.IsAdministrator);
         Assert.Equal(expires, current.PermissionExpiresAtUtc);
@@ -53,7 +63,7 @@ public sealed class PermissionSnapshotTests
     public async Task ExplicitlyDisabledAccountIsRejected()
     {
         var factory = new StubClientFactory(HttpStatusCode.OK, """{"results":[{"pk":42,"is_active":false,"groups_obj":[{"pk":"admin-id"}]}]}""");
-        var directory = new AuthentikIdentityDirectory(factory, NewCache(), Config("test-token"));
+        var directory = Directory(factory, NewCache(), "test-token");
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => directory.ResolveCurrentAsync(Subject, "User", ["admin-id"], default));
     }
 
@@ -62,7 +72,7 @@ public sealed class PermissionSnapshotTests
     {
         var factory = new StubClientFactory(HttpStatusCode.OK,
             """{"results":[{"pk":42,"is_active":true,"groups_obj":[{"pk":"admin-id","name":"Whale Deck Administrators"}]}]}""");
-        var directory = new AuthentikIdentityDirectory(factory, NewCache(), Config("test-token"));
+        var directory = Directory(factory, NewCache(), "test-token");
 
         var current = await directory.ResolveCurrentAsync(Subject, "User", [], default);
 
@@ -75,10 +85,47 @@ public sealed class PermissionSnapshotTests
     }
 
     [Fact]
+    public async Task DatabaseRoleMappingGrantsAdministratorPermission()
+    {
+        var mapping = new RoleMapping
+        {
+            AuthentikGroupId = "operators-id",
+            AuthentikGroupNameSnapshot = "Platform Operators"
+        };
+        var factory = new StubClientFactory(HttpStatusCode.OK,
+            """{"results":[{"pk":42,"is_active":true,"groups_obj":[{"pk":"operators-id","name":"Platform Operators"}]}]}""");
+        var directory = Directory(factory, NewCache(), "test-token", [mapping]);
+
+        var current = await directory.ResolveCurrentAsync(Subject, "User", [], default);
+
+        Assert.True(current.IsAdministrator);
+    }
+
+    [Fact]
+    public async Task RoleMappingChangeInvalidatesPermissionSnapshotImmediately()
+    {
+        var mapping = new RoleMapping
+        {
+            AuthentikGroupId = "operators-id",
+            AuthentikGroupNameSnapshot = "Platform Operators"
+        };
+        var mappings = new List<RoleMapping> { mapping };
+        var factory = new StubClientFactory(HttpStatusCode.OK,
+            """{"results":[{"pk":42,"is_active":true,"groups_obj":[{"pk":"operators-id","name":"Platform Operators"}]}]}""");
+        var directory = Directory(factory, NewCache(), "test-token", mappings);
+        Assert.True((await directory.ResolveCurrentAsync(Subject, "User", [], default)).IsAdministrator);
+
+        mapping.IsEnabled = false;
+        mapping.Version++;
+
+        Assert.False((await directory.ResolveCurrentAsync(Subject, "User", [], default)).IsAdministrator);
+    }
+
+    [Fact]
     public async Task CreateUserSerializesAnonymousPayloadUsingItsRuntimeType()
     {
         var factory = new StubClientFactory(HttpStatusCode.Created, """{"pk":42}""");
-        var directory = new AuthentikIdentityDirectory(factory, NewCache(), Config("test-token"));
+        var directory = Directory(factory, NewCache(), "test-token");
 
         await directory.ExecuteAsync("create-user", null, new Dictionary<string, string>
         {
@@ -95,6 +142,21 @@ public sealed class PermissionSnapshotTests
     }
 
     private static MemoryDistributedCache NewCache() => new(Options.Create(new MemoryDistributedCacheOptions()));
+
+    private static AuthentikIdentityDirectory Directory(
+        IHttpClientFactory clientFactory,
+        IDistributedCache cache,
+        string? token = null,
+        IReadOnlyCollection<RoleMapping>? mappings = null)
+    {
+        var configuration = Config(token);
+        return new AuthentikIdentityDirectory(
+            clientFactory,
+            cache,
+            new StubRoleMappingRepository(mappings ?? []),
+            new StubAdministratorGroupConfiguration("admin-id"),
+            configuration);
+    }
 
     private static IConfigurationRoot Config(string? token = null) => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
     {
@@ -116,6 +178,18 @@ public sealed class PermissionSnapshotTests
         {
             BaseAddress = new Uri("http://authentik.invalid/api/v3/")
         };
+    }
+
+    private sealed class StubAdministratorGroupConfiguration(string groupId) : IAdministratorGroupConfiguration
+    {
+        public string GroupId { get; } = groupId;
+    }
+
+    private sealed class StubRoleMappingRepository(IReadOnlyCollection<RoleMapping> mappings) : IRoleMappingRepository
+    {
+        public Task<IReadOnlyCollection<RoleMapping>> ListAsync(CancellationToken cancellationToken) => Task.FromResult(mappings);
+        public Task<RoleMapping> SaveAsync(string actorSubject, string traceId, SaveRoleMappingCommand command, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task DeleteAsync(string actorSubject, string traceId, Guid id, long expectedVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class StubHandler(HttpStatusCode status, string payload, Action<Uri?, string?> captureRequest) : HttpMessageHandler

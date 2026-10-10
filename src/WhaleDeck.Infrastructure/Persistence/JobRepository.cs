@@ -1,6 +1,6 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
-using System.Text.Json;
 using WhaleDeck.Application.Abstractions;
 using WhaleDeck.Domain.Entities;
 

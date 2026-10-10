@@ -1,8 +1,8 @@
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using WhaleDeck.Api.Security;
 using WhaleDeck.Application.Abstractions;
-using System.Security.Cryptography;
 
 namespace WhaleDeck.Api.Controllers;
 

@@ -1,6 +1,6 @@
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Text;
 using WhaleDeck.Api.Security;
 using WhaleDeck.Application.Models;
 using WhaleDeck.Application.Services;

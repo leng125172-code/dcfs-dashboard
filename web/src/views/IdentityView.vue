@@ -4,12 +4,13 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiRequest } from '@/services/apiClient'
 import { enqueueOperation, stageSecret } from '@/services/operations'
-import type { ManagedResource } from '@/services/contracts'
+import type { ManagedResource, RoleMapping } from '@/services/contracts'
 
 const route = useRoute()
 const mode = computed(() => String(route.meta.identityMode || 'users'))
 const title = computed(() => String(route.meta.title || '身份目录'))
 const items = ref<ManagedResource[]>([])
+const roleMappings = ref<RoleMapping[]>([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editing = ref<ManagedResource | null>(null)
@@ -26,10 +27,55 @@ const form = reactive({
 async function load() {
   loading.value = true
   try {
-    items.value = await apiRequest<ManagedResource[]>(mode.value)
+    if (mode.value === 'groups') {
+      const [groups, mappings] = await Promise.all([
+        apiRequest<ManagedResource[]>('groups'),
+        apiRequest<RoleMapping[]>('identity/role-mappings'),
+      ])
+      items.value = groups
+      roleMappings.value = mappings
+    } else {
+      items.value = await apiRequest<ManagedResource[]>(mode.value)
+      roleMappings.value = []
+    }
   } finally {
     loading.value = false
   }
+}
+function roleMapping(item: ManagedResource) {
+  return roleMappings.value.find((mapping) => mapping.authentikGroupId === item.id)
+}
+async function toggleAdministrator(item: ManagedResource) {
+  const mapping = roleMapping(item)
+  if (mapping?.isEnabled) {
+    if (!mapping.isMutable) return
+    await ElMessageBox.confirm(
+      `取消用户组“${item.name}”的 Whale Deck 管理员权限？权限快照会立即失效。`,
+      '取消管理员映射',
+      { type: 'warning' },
+    )
+    await apiRequest(
+      `identity/role-mappings/${encodeURIComponent(mapping.id || '')}?version=${mapping.version}`,
+      { method: 'DELETE' },
+    )
+    ElMessage.success('管理员组映射已取消')
+  } else {
+    await ElMessageBox.confirm(
+      `将 Authentik 用户组“${item.name}”映射为 Whale Deck 管理员？`,
+      '新增管理员映射',
+      { type: 'warning' },
+    )
+    await apiRequest<RoleMapping>('identity/role-mappings', {
+      method: 'POST',
+      body: JSON.stringify({
+        authentikGroupId: item.id,
+        authentikGroupName: item.name,
+        isEnabled: true,
+      }),
+    })
+    ElMessage.success('管理员组映射已生效')
+  }
+  await load()
 }
 function open(item?: ManagedResource) {
   editing.value = item || null
@@ -120,16 +166,35 @@ watch(() => route.fullPath, load)
               scope.row.state
             }}</el-tag></template
           ></el-table-column
-        ><el-table-column v-if="mode !== 'groups'" label="操作" width="190"
+        ><el-table-column v-if="mode === 'groups'" label="平台角色" min-width="180"
           ><template #default="scope"
-            ><el-button link type="primary" @click="open(scope.row)">编辑</el-button
-            ><el-button
-              v-if="mode === 'users'"
-              link
-              type="danger"
-              :disabled="scope.row.state !== 'Active'"
-              @click="disable(scope.row)"
-              >禁用</el-button
+            ><el-tag v-if="roleMapping(scope.row)?.isEnabled" type="primary"
+              >管理员 ·
+              {{
+                roleMapping(scope.row)?.source === 'Deployment' ? '部署配置' : '平台映射'
+              }}</el-tag
+            ><span v-else class="muted">普通用户组</span></template
+          ></el-table-column
+        ><el-table-column label="操作" width="190"
+          ><template #default="scope"
+            ><template v-if="mode === 'groups'"
+              ><el-button
+                link
+                :type="roleMapping(scope.row)?.isEnabled ? 'danger' : 'primary'"
+                :disabled="roleMapping(scope.row)?.isEnabled && !roleMapping(scope.row)?.isMutable"
+                @click="toggleAdministrator(scope.row)"
+                >{{ roleMapping(scope.row)?.isEnabled ? '取消管理员' : '设为管理员' }}</el-button
+              ></template
+            ><template v-else
+              ><el-button link type="primary" @click="open(scope.row)">编辑</el-button
+              ><el-button
+                v-if="mode === 'users'"
+                link
+                type="danger"
+                :disabled="scope.row.state !== 'Active'"
+                @click="disable(scope.row)"
+                >禁用</el-button
+              ></template
             ></template
           ></el-table-column
         ></el-table
@@ -188,5 +253,9 @@ watch(() => route.fullPath, load)
   color: var(--el-text-color-secondary);
   font-size: 11px;
   margin-top: 5px;
+}
+.muted {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 </style>

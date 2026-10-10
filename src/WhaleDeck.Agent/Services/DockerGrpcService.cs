@@ -1,6 +1,6 @@
+using System.Text.Json;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
-using System.Text.Json;
 using WhaleDeck.Contracts.Agent.V1;
 
 namespace WhaleDeck.Agent.Services;

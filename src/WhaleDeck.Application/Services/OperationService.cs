@@ -1,7 +1,7 @@
+using System.Text.Json;
 using WhaleDeck.Application.Abstractions;
 using WhaleDeck.Application.Models;
 using WhaleDeck.Domain.Entities;
-using System.Text.Json;
 
 namespace WhaleDeck.Application.Services;
 

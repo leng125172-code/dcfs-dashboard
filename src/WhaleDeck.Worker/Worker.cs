@@ -1,6 +1,6 @@
-using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using WhaleDeck.Application.Abstractions;
 using WhaleDeck.Application.Models;
@@ -52,13 +52,14 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var agent = scope.ServiceProvider.GetRequiredService<IAgentGateway>();
         var secrets = scope.ServiceProvider.GetRequiredService<IOneTimeSecretStore>();
+        var identityDirectory = scope.ServiceProvider.GetRequiredService<IIdentityDirectory>();
         var identity = scope.ServiceProvider.GetRequiredService<IIdentityManager>();
         var leases = scope.ServiceProvider.GetRequiredService<ResourceLeaseManager>();
         await CollectMetrics(db, agent, cancellationToken);
         await SyncManagedResources(db, agent, cancellationToken);
         await DispatchScheduledTasks(db, agent, cancellationToken);
         await DispatchBackupPolicies(db, cancellationToken);
-        await DispatchOutbox(db, agent, secrets, identity, leases, _workerInstanceId, logger, cancellationToken);
+        await DispatchOutbox(db, agent, secrets, identityDirectory, identity, leases, _workerInstanceId, logger, cancellationToken);
         await ReconcileAgentOperations(db, agent, leases, _workerInstanceId, cancellationToken);
         await EvaluateAlerts(db, cancellationToken);
 
@@ -328,6 +329,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         PlatformDbContext db,
         IAgentGateway agent,
         IOneTimeSecretStore secrets,
+        IIdentityDirectory identityDirectory,
         IIdentityManager identity,
         ResourceLeaseManager leases,
         string workerInstanceId,
@@ -345,6 +347,19 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                     using var payload = JsonDocument.Parse(message.PayloadJson);
                     var jobId = payload.RootElement.GetProperty("jobId").GetGuid();
                     var job = await db.OperationJobs.SingleAsync(item => item.Id == jobId, cancellationToken);
+                    if (job.CompletedAtUtc is not null)
+                    {
+                        message.ProcessedAtUtc = DateTimeOffset.UtcNow;
+                        await db.SaveChangesAsync(cancellationToken);
+                        continue;
+                    }
+                    if (!await HasDispatchPermissionAsync(identityDirectory, job.ActorSubject, cancellationToken))
+                    {
+                        await RevokeQueuedJobsAsync(db, job, cancellationToken);
+                        message.ProcessedAtUtc = DateTimeOffset.UtcNow;
+                        await db.SaveChangesAsync(cancellationToken);
+                        continue;
+                    }
                     var lockKey = GetResourceLockKey(job);
                     if (!await leases.TryAcquireAsync(lockKey, job.Id, workerInstanceId, cancellationToken))
                     {
@@ -467,6 +482,52 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                 if (!terminal) LogOutboxRetry(logger, message.Id, message.Attempts, null);
             }
         }
+    }
+
+    private static async Task<bool> HasDispatchPermissionAsync(
+        IIdentityDirectory identity,
+        string actorSubject,
+        CancellationToken cancellationToken)
+    {
+        if (actorSubject.StartsWith("system:", StringComparison.Ordinal)) return true;
+        try
+        {
+            var current = await identity.ResolveCurrentAsync(actorSubject, null, [], cancellationToken);
+            return current.IsAdministrator;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task RevokeQueuedJobsAsync(
+        PlatformDbContext db,
+        OperationJob current,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var pending = await db.OperationJobs
+            .Where(item => item.ActorSubject == current.ActorSubject && item.CompletedAtUtc == null &&
+                           item.State == "Queued" && item.Id != current.Id)
+            .ToArrayAsync(cancellationToken);
+        foreach (var job in pending)
+        {
+            job.CancelRequestedAtUtc ??= now;
+            job.Version++;
+        }
+        db.AuditEvents.Add(new AuditEvent
+        {
+            ActorSubject = current.ActorSubject,
+            Action = "permission.revalidated",
+            TargetType = "Job",
+            TargetId = current.Id.ToString("D"),
+            Result = "Denied",
+            JobId = current.Id,
+            TraceId = "worker",
+            DetailJson = JsonSerializer.Serialize(new { reason = "administrator-permission-revoked", queuedJobsCanceled = pending.Length })
+        });
+        await Complete(db, current, "Canceled", "PermissionRevoked", "PERMISSION_REVOKED", cancellationToken);
     }
 
     private static async Task ReconcileAgentOperations(
@@ -712,6 +773,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         if (!parameters.TryGetValue("slug", out var slug) || string.IsNullOrWhiteSpace(slug)) return;
 
         var installation = await db.ApplicationInstallations.SingleOrDefaultAsync(item => item.CatalogAppId == slug, cancellationToken);
+        if (installation is null && state == "Canceled" && job.StartedAtUtc is null) return;
         if (installation is null)
         {
             var image = parameters.GetValueOrDefault("image", "unknown");

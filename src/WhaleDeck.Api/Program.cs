@@ -1,6 +1,7 @@
-using System.Threading.RateLimiting;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Claims;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -9,7 +10,6 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
-using System.Security.Claims;
 using Serilog;
 using Serilog.Formatting.Json;
 using WhaleDeck.Api.Middleware;
@@ -43,6 +43,11 @@ try
     if (!builder.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Authentication:Authentik:AllowClaimFallback"))
     {
         throw new InvalidOperationException("Authentik claim fallback is only supported in Development.");
+    }
+    if (!builder.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(
+        builder.Configuration["Authentication:Authentik:AdministratorGroupId"]))
+    {
+        throw new InvalidOperationException("Authentication:Authentik:AdministratorGroupId is required outside Development.");
     }
 
     builder.Services.AddInfrastructure(builder.Configuration);

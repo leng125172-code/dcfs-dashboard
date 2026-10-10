@@ -1,8 +1,8 @@
-using WhaleDeck.Worker;
-using WhaleDeck.Infrastructure;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Json;
+using WhaleDeck.Infrastructure;
+using WhaleDeck.Worker;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddSerilog((services, configuration) => configuration

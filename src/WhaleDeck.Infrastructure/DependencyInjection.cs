@@ -1,14 +1,14 @@
-using WhaleDeck.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using StackExchange.Redis;
 using WhaleDeck.Application.Abstractions;
 using WhaleDeck.Application.Services;
 using WhaleDeck.Infrastructure.Agent;
 using WhaleDeck.Infrastructure.Catalog;
 using WhaleDeck.Infrastructure.Identity;
+using WhaleDeck.Infrastructure.Persistence;
 using WhaleDeck.Infrastructure.Secrets;
-using StackExchange.Redis;
 
 namespace WhaleDeck.Infrastructure;
 
@@ -69,6 +69,8 @@ public static class DependencyInjection
         services.AddScoped<IApplicationRepository, ApplicationRepository>();
         services.AddScoped<IContainerUpdateRepository, ContainerUpdateRepository>();
         services.AddScoped<IGlobalSearchRepository, GlobalSearchRepository>();
+        services.AddScoped<IRoleMappingRepository, RoleMappingRepository>();
+        services.AddSingleton<IAdministratorGroupConfiguration, AdministratorGroupConfiguration>();
         services.AddScoped<IMetricsQuery, MetricsQuery>();
         services.AddScoped<ResourceLeaseManager>();
         services.AddScoped<IIdentityDirectory, AuthentikIdentityDirectory>();
@@ -85,6 +87,7 @@ public static class DependencyInjection
         services.AddScoped<ApplicationService>();
         services.AddScoped<ContainerUpdateService>();
         services.AddScoped<GlobalSearchService>();
+        services.AddScoped<RoleMappingService>();
 
         return services;
     }
