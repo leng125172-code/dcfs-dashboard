@@ -340,7 +340,7 @@ public sealed partial class ManagedActionExecutor(
                 return;
             case "diagnose":
             case "diagnostic-bundle":
-                await processes.RunAsync(Path.Combine(DatabaseRepository, "scripts", "check-all.sh"), [], null, LongTimeout, "PLATFORM_DIAGNOSTICS_FAILED", cancellationToken, DatabaseRepository);
+                await RunHelperAsync(["platform-diagnose"], null, LongTimeout, "PLATFORM_DIAGNOSTICS_FAILED", cancellationToken);
                 return;
             case "plan-update":
                 await RunHelperAsync(["platform-plan-update"], null, ShortTimeout, "PLATFORM_UPDATE_PLAN_FAILED", cancellationToken);

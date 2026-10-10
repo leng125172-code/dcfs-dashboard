@@ -160,6 +160,14 @@ case "$action" in
         /usr/bin/git -C "$repository" status --short
     done
     ;;
+  platform-diagnose)
+    [[ $# -eq 1 ]] || exit 2
+    run_transient whaledeck-platform-diagnose platform-diagnose-host
+    ;;
+  platform-diagnose-host)
+    [[ $# -eq 1 ]] || exit 2
+    exec /data/GitRepos/database-platform/scripts/check-all.sh
+    ;;
   systemd)
     [[ $# -eq 3 ]] || exit 2
     unit=$2
