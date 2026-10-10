@@ -72,6 +72,16 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 });
+app.Use(async (context, next) =>
+{
+    if (!LocalEndpointPolicy.IsAllowed(context.Connection.LocalIpAddress))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return;
+    }
+
+    await next();
+});
 app.UseStatusCodePages(async context =>
 {
     if (context.HttpContext.Response.StatusCode is not (502 or 503 or 504))
