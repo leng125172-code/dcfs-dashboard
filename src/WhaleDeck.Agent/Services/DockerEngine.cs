@@ -89,6 +89,8 @@ public sealed class DockerEngine : IDisposable
     {
         ContainerConfiguration? createConfiguration = null;
         ContainerUpdatePlan? updatePlan = null;
+        string? dockerResourceChange = null;
+        string? dockerResourceWarning = null;
         string? deleteName = null;
         long? unusedImageBytes = null;
         if (action == "create")
@@ -110,6 +112,32 @@ public sealed class DockerEngine : IDisposable
         else if (action == "prune")
         {
             unusedImageBytes = (await ListImagesAsync(cancellationToken)).Where(item => item.Containers == 0).Sum(item => item.Size);
+        }
+        else if (action == "network-create")
+        {
+            var name = ValidateDockerResourceName(Required(parameters, "name"), "network");
+            if ((await ListNetworksAsync(cancellationToken)).Any(item => string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException("A Docker network with the requested name already exists.");
+            _ = ParseBoolean(parameters, "internal", false);
+            _ = ParseBoolean(parameters, "attachable", true);
+            dockerResourceChange = $"创建自定义 bridge 网络 {name}";
+        }
+        else if (action == "network-delete")
+        {
+            var network = await ResolveNetworkAsync(resourceId, cancellationToken);
+            ValidateNetworkDeletion(network);
+            dockerResourceChange = $"删除空闲网络 {network.Name}";
+            dockerResourceWarning = "删除后使用该网络名称的部署配置将无法启动，直到重新创建网络。";
+        }
+        else if (action == "volume-delete")
+        {
+            var volume = await ResolveVolumeAsync(resourceId, cancellationToken);
+            await ValidateVolumeDeletionAsync(volume, cancellationToken);
+            if (!parameters.TryGetValue("confirmationName", out var confirmationName) ||
+                !string.Equals(confirmationName, volume.Name, StringComparison.Ordinal))
+                throw new InvalidOperationException("Deleting a Docker volume requires its exact name as confirmation.");
+            dockerResourceChange = $"删除孤立数据卷 {volume.Name}";
+            dockerResourceWarning = "数据卷中的内容将永久删除，且本操作不提供恢复。";
         }
 
         // Persist the confirmation token only after every preflight check has passed.
@@ -146,6 +174,12 @@ public sealed class DockerEngine : IDisposable
             response.Changes.Clear();
             response.Changes.Add($"清理未使用镜像，预计最多回收 {unusedImageBytes.Value} 字节");
         }
+        else if (dockerResourceChange is not null)
+        {
+            response.Changes.Clear();
+            response.Changes.Add(dockerResourceChange);
+            if (dockerResourceWarning is not null) response.Warnings.Add(dockerResourceWarning);
+        }
         return response;
     }
 
@@ -170,7 +204,7 @@ public sealed class DockerEngine : IDisposable
 
         try
         {
-            if (action is "create" or "prune" or "update")
+            if (action is "create" or "prune" or "update" or "network-create" or "network-delete" or "volume-delete")
                 _plans.VerifyAndConsume(planHash ?? string.Empty, resourceId, action, NormalizePlanParameters(parameters));
             switch (action)
             {
@@ -185,6 +219,15 @@ public sealed class DockerEngine : IDisposable
                     break;
                 case "prune":
                     await PruneAsync(parameters, cancellationToken);
+                    break;
+                case "network-create":
+                    operation.ResultJson = await CreateNetworkAsync(parameters, cancellationToken);
+                    break;
+                case "network-delete":
+                    operation.ResultJson = await DeleteNetworkAsync(resourceId, cancellationToken);
+                    break;
+                case "volume-delete":
+                    operation.ResultJson = await DeleteVolumeAsync(resourceId, cancellationToken);
                     break;
                 default:
                     throw new InvalidOperationException("Unsupported Docker action.");
@@ -534,6 +577,90 @@ public sealed class DockerEngine : IDisposable
                 Filters = new Dictionary<string, IDictionary<string, bool>> { ["label!"] = new Dictionary<string, bool> { ["io.whaledeck.protected=true"] = true } }
             }, cancellationToken);
         }
+    }
+
+    private async Task<string> CreateNetworkAsync(
+        IReadOnlyDictionary<string, string> parameters,
+        CancellationToken cancellationToken)
+    {
+        var name = ValidateDockerResourceName(Required(parameters, "name"), "network");
+        if ((await ListNetworksAsync(cancellationToken)).Any(item => string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("A Docker network with the requested name already exists.");
+        var response = await _client.Networks.CreateNetworkAsync(new NetworksCreateParameters
+        {
+            Name = name,
+            Driver = "bridge",
+            Internal = ParseBoolean(parameters, "internal", false),
+            Attachable = ParseBoolean(parameters, "attachable", true),
+            CheckDuplicate = true,
+            Labels = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["io.whaledeck.managed"] = "true",
+                ["io.whaledeck.protected"] = "false"
+            }
+        }, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(response.Warning))
+            throw new InvalidOperationException("Docker returned a warning while creating the network.");
+        return JsonSerializer.Serialize(new { networkId = response.ID, name, driver = "bridge" });
+    }
+
+    private async Task<string> DeleteNetworkAsync(string resourceId, CancellationToken cancellationToken)
+    {
+        var network = await ResolveNetworkAsync(resourceId, cancellationToken);
+        ValidateNetworkDeletion(network);
+        await _client.Networks.DeleteNetworkAsync(network.ID, cancellationToken);
+        return JsonSerializer.Serialize(new { networkId = network.ID, name = network.Name, deleted = true });
+    }
+
+    private async Task<string> DeleteVolumeAsync(string resourceId, CancellationToken cancellationToken)
+    {
+        var volume = await ResolveVolumeAsync(resourceId, cancellationToken);
+        await ValidateVolumeDeletionAsync(volume, cancellationToken);
+        await _client.Volumes.RemoveAsync(volume.Name, false, cancellationToken);
+        return JsonSerializer.Serialize(new { volume = volume.Name, deleted = true });
+    }
+
+    private async Task<NetworkResponse> ResolveNetworkAsync(string resourceId, CancellationToken cancellationToken)
+    {
+        var value = resourceId.StartsWith("network:", StringComparison.Ordinal) ? resourceId["network:".Length..] : resourceId;
+        var matches = (await ListNetworksAsync(cancellationToken)).Where(item =>
+            item.ID.StartsWith(value, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(item.Name, value, StringComparison.Ordinal)).ToArray();
+        return matches.Length switch
+        {
+            1 => matches[0],
+            0 => throw new InvalidOperationException("Docker network was not found."),
+            _ => throw new InvalidOperationException("Docker network id is ambiguous.")
+        };
+    }
+
+    private static void ValidateNetworkDeletion(NetworkResponse network)
+    {
+        if (network.Name is "bridge" or "host" or "none" || network.Ingress || network.ConfigOnly ||
+            IsProtectedDockerResourceName(network.Name) ||
+            network.Labels.TryGetValue("io.whaledeck.protected", out var protectedValue) &&
+            string.Equals(protectedValue, "true", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Built-in and protected platform networks cannot be deleted.");
+        if (network.Containers is { Count: > 0 })
+            throw new InvalidOperationException("The Docker network is still attached to one or more containers.");
+    }
+
+    private async Task<VolumeResponse> ResolveVolumeAsync(string resourceId, CancellationToken cancellationToken)
+    {
+        var value = resourceId.StartsWith("volume:", StringComparison.Ordinal) ? resourceId["volume:".Length..] : resourceId;
+        var volume = (await ListVolumesAsync(cancellationToken)).SingleOrDefault(item => string.Equals(item.Name, value, StringComparison.Ordinal));
+        return volume ?? throw new InvalidOperationException("Docker volume was not found.");
+    }
+
+    private async Task ValidateVolumeDeletionAsync(VolumeResponse volume, CancellationToken cancellationToken)
+    {
+        if (IsProtectedDockerResourceName(volume.Name) ||
+            volume.Labels.TryGetValue("io.whaledeck.protected", out var protectedValue) &&
+            string.Equals(protectedValue, "true", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Protected platform volumes cannot be deleted.");
+        var containers = await ListContainersAsync(true, cancellationToken);
+        if (containers.Any(container => (container.Mounts ?? []).Any(mount => string.Equals(mount.Name, volume.Name, StringComparison.Ordinal))))
+            throw new InvalidOperationException("The Docker volume is still referenced by a container.");
     }
 
     public async Task<OperationHandle> ChangeContainerStateAsync(
@@ -904,6 +1031,21 @@ public sealed class DockerEngine : IDisposable
         parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
             ? value.Trim()
             : throw new InvalidOperationException($"Required Docker parameter is missing: {key}");
+
+    private static bool ParseBoolean(IReadOnlyDictionary<string, string> parameters, string key, bool fallback) =>
+        !parameters.TryGetValue(key, out var value) ? fallback :
+        bool.TryParse(value, out var parsed) ? parsed : throw new InvalidOperationException($"Docker parameter must be true or false: {key}");
+
+    private static string ValidateDockerResourceName(string name, string kind)
+    {
+        if (!NetworkNamePattern.IsMatch(name)) throw new InvalidOperationException($"Docker {kind} name is invalid.");
+        if (IsProtectedDockerResourceName(name)) throw new InvalidOperationException($"Docker {kind} name uses a reserved platform prefix.");
+        return name;
+    }
+
+    private static bool IsProtectedDockerResourceName(string name) =>
+        name.StartsWith("database-platform", StringComparison.OrdinalIgnoreCase) ||
+        name.StartsWith("whaledeck", StringComparison.OrdinalIgnoreCase);
 
     private static void ValidateImage(string image)
     {

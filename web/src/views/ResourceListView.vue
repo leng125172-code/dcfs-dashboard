@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Delete, Download, RefreshRight, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import {
+  Delete,
+  Download,
+  Plus,
+  RefreshRight,
+  VideoPause,
+  VideoPlay,
+} from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute } from 'vue-router'
 import { ApiError, apiRequest } from '@/services/apiClient'
@@ -13,11 +20,15 @@ const error = ref('')
 const traceId = ref('')
 const resources = ref<ManagedResource[]>([])
 const pullDialogVisible = ref(false)
+const networkDialogVisible = ref(false)
 const imageReference = ref('')
+const networkForm = ref({ name: '', internal: false, attachable: true })
 const actionRunning = ref('')
 const title = computed(() => route.meta.title || '资源')
 const endpoint = computed(() => String(route.meta.endpoint || ''))
 const isImages = computed(() => endpoint.value === 'images')
+const isNetworks = computed(() => endpoint.value === 'networks')
+const isVolumes = computed(() => endpoint.value === 'volumes')
 const isSystemd = computed(() => endpoint.value === 'systemd')
 
 function actionsFor(resource: ManagedResource) {
@@ -79,6 +90,78 @@ async function pruneImages() {
   }
 }
 
+async function createNetwork() {
+  const parameters = {
+    name: networkForm.value.name.trim(),
+    internal: String(networkForm.value.internal),
+    attachable: String(networkForm.value.attachable),
+  }
+  if (!parameters.name) {
+    ElMessage.warning('请输入网络名称。')
+    return
+  }
+  actionRunning.value = 'network-create'
+  try {
+    const plan = await planOperation('docker', 'network-create', 'new', parameters)
+    const job = await enqueueOperation(
+      'docker',
+      'network-create',
+      'new',
+      parameters,
+      false,
+      plan.planHash,
+    )
+    networkDialogVisible.value = false
+    networkForm.value = { name: '', internal: false, attachable: true }
+    ElMessage.success(`网络创建任务已提交：${job.id}`)
+  } finally {
+    actionRunning.value = ''
+  }
+}
+
+async function deleteNetwork(resource: ManagedResource) {
+  const parameters: Record<string, string> = {}
+  const plan = await planOperation('docker', 'network-delete', resource.id, parameters)
+  await ElMessageBox.confirm(
+    [...plan.changes, ...plan.warnings].join('\n'),
+    `删除网络 ${resource.name}`,
+    { type: 'warning', confirmButtonText: '删除网络', cancelButtonText: '取消' },
+  )
+  const job = await enqueueOperation(
+    'docker',
+    'network-delete',
+    resource.id,
+    parameters,
+    true,
+    plan.planHash,
+  )
+  ElMessage.success(`网络删除任务已提交：${job.id}`)
+}
+
+async function deleteVolume(resource: ManagedResource) {
+  const confirmation = await ElMessageBox.prompt(
+    '数据卷中的内容将永久删除，且本操作不提供恢复。请输入数据卷名称确认。',
+    `删除数据卷 ${resource.name}`,
+    {
+      type: 'error',
+      confirmButtonText: '永久删除',
+      cancelButtonText: '取消',
+      inputValidator: (value) => value === resource.name || '输入的数据卷名称不匹配',
+    },
+  )
+  const parameters: Record<string, string> = { confirmationName: confirmation.value }
+  const plan = await planOperation('docker', 'volume-delete', resource.id, parameters)
+  const job = await enqueueOperation(
+    'docker',
+    'volume-delete',
+    resource.id,
+    parameters,
+    true,
+    plan.planHash,
+  )
+  ElMessage.success(`数据卷删除任务已提交：${job.id}`)
+}
+
 async function changeSystemd(resource: ManagedResource, verb: 'start' | 'stop' | 'restart') {
   const action = `systemd-${verb}`
   const label = verb === 'start' ? '启动' : verb === 'stop' ? '停止' : '重启'
@@ -122,6 +205,11 @@ watch(() => route.fullPath, load)
           ><el-icon><Delete /></el-icon>清理悬空镜像</el-button
         >
       </div>
+      <div v-if="isNetworks" class="heading-actions">
+        <el-button type="primary" @click="networkDialogVisible = true"
+          ><el-icon><Plus /></el-icon>创建网络</el-button
+        >
+      </div>
     </header>
     <el-alert
       v-if="error"
@@ -145,6 +233,22 @@ watch(() => route.fullPath, load)
           ></el-table-column
         >
         <el-table-column prop="version" label="版本 / 镜像" min-width="220" show-overflow-tooltip />
+        <el-table-column v-if="isNetworks || isVolumes" label="详情" min-width="220">
+          <template #default="scope">
+            <template v-if="isNetworks">
+              {{ scope.row.attributes.containerCount || '0' }} 个容器 ·
+              {{ scope.row.attributes.internal === 'true' ? '内部网络' : '外部网络' }}
+            </template>
+            <template v-else>
+              {{ scope.row.attributes.referenceCount || '0' }} 个引用 ·
+              {{
+                scope.row.attributes.sizeBytes === '-1'
+                  ? '容量未知'
+                  : `${scope.row.attributes.sizeBytes} B`
+              }}
+            </template>
+          </template>
+        </el-table-column>
         <el-table-column label="保护" width="110"
           ><template #default="scope"
             ><el-tag :type="scope.row.isProtected ? 'warning' : 'info'" effect="light">{{
@@ -152,7 +256,12 @@ watch(() => route.fullPath, load)
             }}</el-tag></template
           ></el-table-column
         >
-        <el-table-column v-if="isSystemd" label="操作" min-width="210" fixed="right">
+        <el-table-column
+          v-if="isSystemd || isNetworks || isVolumes"
+          label="操作"
+          min-width="210"
+          fixed="right"
+        >
           <template #default="scope">
             <el-button
               v-if="actionsFor(scope.row).includes('systemd-start')"
@@ -178,6 +287,22 @@ watch(() => route.fullPath, load)
               @click="changeSystemd(scope.row, 'restart')"
               ><el-icon><RefreshRight /></el-icon>重启</el-button
             >
+            <el-button
+              v-if="isNetworks"
+              text
+              type="danger"
+              :disabled="scope.row.isProtected || scope.row.attributes.containerCount !== '0'"
+              @click="deleteNetwork(scope.row)"
+              ><el-icon><Delete /></el-icon>删除</el-button
+            >
+            <el-button
+              v-if="isVolumes"
+              text
+              type="danger"
+              :disabled="scope.row.isProtected || scope.row.state !== 'Orphaned'"
+              @click="deleteVolume(scope.row)"
+              ><el-icon><Delete /></el-icon>删除</el-button
+            >
           </template>
         </el-table-column>
       </el-table>
@@ -197,6 +322,29 @@ watch(() => route.fullPath, load)
         <el-button @click="pullDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="actionRunning === 'pull'" @click="pullImage"
           >提交拉取</el-button
+        >
+      </template>
+    </el-dialog>
+    <el-dialog v-model="networkDialogVisible" title="创建自定义网络" width="min(520px, 92vw)">
+      <el-form label-position="top" @submit.prevent="createNetwork">
+        <el-form-item label="网络名称">
+          <el-input v-model="networkForm.name" placeholder="team-apps" autocomplete="off" />
+        </el-form-item>
+        <el-form-item label="内部网络">
+          <el-switch v-model="networkForm.internal" />
+          <span class="form-hint">内部网络不提供默认外部连通能力。</span>
+        </el-form-item>
+        <el-form-item label="允许手动接入">
+          <el-switch v-model="networkForm.attachable" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="networkDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="actionRunning === 'network-create'"
+          @click="createNetwork"
+          >预检并创建</el-button
         >
       </template>
     </el-dialog>

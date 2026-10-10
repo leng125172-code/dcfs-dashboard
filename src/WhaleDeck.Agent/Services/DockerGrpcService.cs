@@ -190,9 +190,19 @@ public sealed class DockerGrpcService(DockerEngine docker, ResourceRegistry regi
                 DisplayName = network.Name,
                 ResourceType = "DockerNetwork",
                 State = network.Internal ? "Internal" : "External",
-                Version = network.Driver
+                Version = network.Driver,
+                ProtectedResource = network.Name is "bridge" or "host" or "none" || network.Ingress || network.ConfigOnly ||
+                    network.Name.StartsWith("database-platform", StringComparison.OrdinalIgnoreCase) ||
+                    network.Name.StartsWith("whaledeck", StringComparison.OrdinalIgnoreCase) ||
+                    network.Labels.TryGetValue("io.whaledeck.protected", out var protectedValue) &&
+                    string.Equals(protectedValue, "true", StringComparison.OrdinalIgnoreCase)
             };
             snapshot.Attributes["scope"] = network.Scope;
+            snapshot.Attributes["driver"] = network.Driver;
+            snapshot.Attributes["internal"] = network.Internal.ToString().ToLowerInvariant();
+            snapshot.Attributes["attachable"] = network.Attachable.ToString().ToLowerInvariant();
+            snapshot.Attributes["containerCount"] = (network.Containers?.Count ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            snapshot.Attributes["createdAtUtc"] = network.Created.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture);
             response.Resources.Add(snapshot);
         }
         return response;
@@ -201,16 +211,32 @@ public sealed class DockerGrpcService(DockerEngine docker, ResourceRegistry regi
     public override async Task<ResourceCollectionResponse> ListVolumes(Empty request, ServerCallContext context)
     {
         var response = new ResourceCollectionResponse();
+        var references = (await docker.ListContainersAsync(true, context.CancellationToken))
+            .SelectMany(container => container.Mounts ?? [])
+            .Where(mount => !string.IsNullOrWhiteSpace(mount.Name))
+            .GroupBy(mount => mount.Name, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
         foreach (var volume in await docker.ListVolumesAsync(context.CancellationToken))
         {
+            var referenceCount = references.GetValueOrDefault(volume.Name);
             var snapshot = new ResourceSnapshot
             {
                 ResourceId = $"volume:{volume.Name}",
                 DisplayName = volume.Name,
                 ResourceType = "DockerVolume",
-                State = "Available",
-                Version = volume.Driver
+                State = referenceCount == 0 ? "Orphaned" : "InUse",
+                Version = volume.Driver,
+                ProtectedResource = volume.Name.StartsWith("database-platform", StringComparison.OrdinalIgnoreCase) ||
+                    volume.Name.StartsWith("whaledeck", StringComparison.OrdinalIgnoreCase) ||
+                    volume.Labels.TryGetValue("io.whaledeck.protected", out var protectedValue) &&
+                    string.Equals(protectedValue, "true", StringComparison.OrdinalIgnoreCase)
             };
+            snapshot.Attributes["mountpoint"] = volume.Mountpoint ?? string.Empty;
+            snapshot.Attributes["scope"] = volume.Scope ?? string.Empty;
+            snapshot.Attributes["referenceCount"] = referenceCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            snapshot.Attributes["sizeBytes"] = (volume.UsageData?.Size ?? -1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            snapshot.Attributes["backupStatus"] = "Unconfigured";
+            snapshot.Attributes["createdAtUtc"] = volume.CreatedAt ?? string.Empty;
             response.Resources.Add(snapshot);
         }
         return response;

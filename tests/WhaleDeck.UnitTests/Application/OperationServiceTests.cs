@@ -65,6 +65,18 @@ public sealed class OperationServiceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command with { Confirmed = true }, default));
     }
 
+    [Theory]
+    [InlineData("network-delete")]
+    [InlineData("volume-delete")]
+    public async Task DockerResourceDeletionRequiresConfirmationAndPlan(string action)
+    {
+        var service = new OperationService(new RecordingJobRepository());
+        var command = new OperationCommand("docker", action, "resource-1", "key-1", "{\"parameters\":{}}", null, false);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command, default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command with { Confirmed = true }, default));
+    }
+
     [Fact]
     public async Task DatabasePrincipalDeletionRequiresConfirmationAndPlan()
     {

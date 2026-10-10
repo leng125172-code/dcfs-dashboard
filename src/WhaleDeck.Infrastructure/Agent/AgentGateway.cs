@@ -255,7 +255,9 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
                 PlanHash = planHash ?? string.Empty
             };
             request.Parameters.Add(parameters.ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal));
-            response = area.ToLowerInvariant() switch
+            response = area.Equals("docker", StringComparison.OrdinalIgnoreCase) && action is "network-create" or "network-delete" or "volume-delete"
+                ? await _docker.RunActionAsync(request, Headers("/whaledeck.agent.v1.DockerService/RunAction"), cancellationToken: cancellationToken)
+                : area.ToLowerInvariant() switch
             {
                 "containers" => await _docker.RunActionAsync(request, Headers("/whaledeck.agent.v1.DockerService/RunAction"), cancellationToken: cancellationToken),
                 "databases" or "backups" => await _resources.RunDatabaseActionAsync(request, Headers("/whaledeck.agent.v1.ManagedResourceService/RunDatabaseAction"), cancellationToken: cancellationToken),

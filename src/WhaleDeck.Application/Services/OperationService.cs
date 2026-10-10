@@ -11,7 +11,7 @@ public sealed class OperationService(IJobRepository jobs)
         new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase)
         {
             ["containers"] = new(StringComparer.OrdinalIgnoreCase) { "create", "start", "stop", "restart", "delete", "pull", "prune", "update" },
-            ["docker"] = new(StringComparer.OrdinalIgnoreCase) { "validate-settings", "apply-settings" },
+            ["docker"] = new(StringComparer.OrdinalIgnoreCase) { "validate-settings", "apply-settings", "network-create", "network-delete", "volume-delete" },
             ["databases"] = new(StringComparer.OrdinalIgnoreCase) { "create", "delete", "create-principal", "delete-principal", "disable-principal", "grant", "rotate", "terminate-connection" },
             // Active backups are canceled through the job cancellation API so
             // cancellation targets a concrete persisted Agent operation.
@@ -84,11 +84,13 @@ public sealed class OperationService(IJobRepository jobs)
 
     private static bool RequiresConfirmation(OperationCommand command) => command.Action is
         "stop" or "restart" or "delete" or "delete-principal" or "prune" or "apply-settings" or "uninstall" or
-        "update" or "reinstall" or "reboot" or "update-install" or "commit-push" or "apply-update" or "rollback";
+        "update" or "reinstall" or "reboot" or "update-install" or "commit-push" or "apply-update" or "rollback" or
+        "network-delete" or "volume-delete";
 
     private static bool RequiresPlan(OperationCommand command) => command.Action is
         "create" or "delete" or "delete-principal" or "prune" or "apply-settings" or "install" or "update" or "reinstall" or "uninstall" or
-        "update-install" or "reboot" or "commit-push" or "apply-update" or "rollback";
+        "update-install" or "reboot" or "commit-push" or "apply-update" or "rollback" or
+        "network-create" or "network-delete" or "volume-delete";
 
     private static JobDto Map(OperationJob job) => new(job.Id, job.JobType, job.State, job.Phase, job.ProgressPercent, job.ErrorCode,
         job.CreatedAtUtc, job.CompletedAtUtc, job.State == "Succeeded" ? job.ResultJson : null);

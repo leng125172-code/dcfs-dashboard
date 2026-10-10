@@ -91,6 +91,22 @@ public sealed class DockerEngineValidationTests
         Assert.False(InvokeBoolean("IsInMaintenanceWindow", "Sun@20:00-21:00", outside));
     }
 
+    [Theory]
+    [InlineData("team-apps")]
+    [InlineData("project_01")]
+    public void DockerResourceNamesAcceptNormalNames(string name) =>
+        Assert.Equal(name, Invoke("ValidateDockerResourceName", name, "network"));
+
+    [Theory]
+    [InlineData("database-platform-internal")]
+    [InlineData("whaledeck-core")]
+    [InlineData("../escape")]
+    public void DockerResourceNamesRejectProtectedOrInvalidNames(string name)
+    {
+        var exception = Assert.Throws<TargetInvocationException>(() => Invoke("ValidateDockerResourceName", name, "network"));
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
+    }
+
     private static void AssertInvalid(string method, string value)
     {
         var exception = Assert.Throws<TargetInvocationException>(() => Invoke(method, value));
@@ -116,5 +132,13 @@ public sealed class DockerEngineValidationTests
         var method = typeof(DockerEngine).GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException($"{methodName} was not found.");
         return Assert.IsType<bool>(method.Invoke(null, values));
+    }
+
+
+    private static object? Invoke(string methodName, params object[] values)
+    {
+        var method = typeof(DockerEngine).GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException($"{methodName} was not found.");
+        return method.Invoke(null, values);
     }
 }
