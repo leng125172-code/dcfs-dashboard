@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using System.Security.Claims;
 using Serilog;
 using Serilog.Formatting.Json;
 using WhaleDeck.Api.Middleware;
@@ -27,10 +28,8 @@ try
     builder.Services.AddOptions<OidcSettings>()
         .Bind(builder.Configuration.GetSection(OidcSettings.SectionName))
         .Validate(settings => !settings.Enabled ||
-            (Uri.TryCreate(settings.Authority, UriKind.Absolute, out _) &&
-             !string.IsNullOrWhiteSpace(settings.ClientId) &&
-             !string.IsNullOrWhiteSpace(settings.ClientSecret)),
-            "Enabled OIDC requires a valid Authority, ClientId and ClientSecret.")
+            ValidEndpoint(settings.Internal) && ValidEndpoint(settings.External),
+            "Enabled OIDC requires valid internal and external Authority, ClientId and ClientSecret settings.")
         .ValidateOnStart();
 
     var oidcSettings = builder.Configuration.GetSection(OidcSettings.SectionName).Get<OidcSettings>() ?? new();
@@ -66,7 +65,7 @@ try
         builder.Services.AddAuthentication(options =>
         {
             options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme = "WhaleDeckOidc";
         })
         .AddCookie(options =>
         {
@@ -77,22 +76,11 @@ try
             options.SlidingExpiration = true;
             options.ExpireTimeSpan = TimeSpan.FromHours(8);
         })
-        .AddOpenIdConnect(options =>
-        {
-            options.Authority = oidcSettings.Authority;
-            options.ClientId = oidcSettings.ClientId;
-            options.ClientSecret = oidcSettings.ClientSecret;
-            options.ResponseType = OpenIdConnectResponseType.Code;
-            options.UsePkce = true;
-            options.SaveTokens = false;
-            options.GetClaimsFromUserInfoEndpoint = true;
-            options.MapInboundClaims = false;
-            options.RequireHttpsMetadata = false;
-            options.CallbackPath = oidcSettings.CallbackPath;
-            options.SignedOutCallbackPath = oidcSettings.SignedOutCallbackPath;
-            options.TokenValidationParameters.NameClaimType = "name";
-            options.TokenValidationParameters.RoleClaimType = "groups";
-        });
+        .AddPolicyScheme("WhaleDeckOidc", "Whale Deck Authentik endpoint", options =>
+            options.ForwardDefaultSelector = context => context.Request.Host.Host == "192.168.22.19"
+                ? "AuthentikInternal" : "AuthentikExternal")
+        .AddOpenIdConnect("AuthentikInternal", options => ConfigureOidc(options, oidcSettings.Internal, "AuthentikInternal"))
+        .AddOpenIdConnect("AuthentikExternal", options => ConfigureOidc(options, oidcSettings.External, "AuthentikExternal"));
     }
     else
     {
@@ -177,6 +165,34 @@ catch (Exception exception)
 finally
 {
     await Log.CloseAndFlushAsync();
+}
+
+static bool ValidEndpoint(OidcEndpointSettings settings) =>
+    Uri.TryCreate(settings.Authority, UriKind.Absolute, out _) &&
+    !string.IsNullOrWhiteSpace(settings.ClientId) &&
+    !string.IsNullOrWhiteSpace(settings.ClientSecret);
+
+static void ConfigureOidc(OpenIdConnectOptions options, OidcEndpointSettings settings, string scheme)
+{
+    options.Authority = settings.Authority;
+    options.ClientId = settings.ClientId;
+    options.ClientSecret = settings.ClientSecret;
+    options.ResponseType = OpenIdConnectResponseType.Code;
+    options.UsePkce = true;
+    options.SaveTokens = false;
+    options.GetClaimsFromUserInfoEndpoint = true;
+    options.MapInboundClaims = false;
+    options.RequireHttpsMetadata = false;
+    options.CallbackPath = settings.CallbackPath;
+    options.SignedOutCallbackPath = settings.SignedOutCallbackPath;
+    options.TokenValidationParameters.NameClaimType = "name";
+    options.TokenValidationParameters.RoleClaimType = "groups";
+    options.Events.OnTokenValidated = context =>
+    {
+        if (context.Principal?.Identity is ClaimsIdentity identity)
+            identity.AddClaim(new Claim("whaledeck:oidc-scheme", scheme));
+        return Task.CompletedTask;
+    };
 }
 
 public partial class Program;

@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using WhaleDeck.Api.Security;
@@ -18,14 +17,16 @@ public sealed class AuthController(IIdentityDirectory identityDirectory, IAntifo
     public IActionResult Login([FromQuery] string returnUrl = "/")
     {
         var safeReturnUrl = Url.IsLocalUrl(returnUrl) ? returnUrl : "/";
-        return Challenge(new AuthenticationProperties { RedirectUri = safeReturnUrl }, OpenIdConnectDefaults.AuthenticationScheme);
+        return Challenge(new AuthenticationProperties { RedirectUri = safeReturnUrl }, "WhaleDeckOidc");
     }
 
     [HttpPost("logout")]
-    public IActionResult Logout() => SignOut(
-        new AuthenticationProperties { RedirectUri = "/" },
-        CookieAuthenticationDefaults.AuthenticationScheme,
-        OpenIdConnectDefaults.AuthenticationScheme);
+    public IActionResult Logout()
+    {
+        var scheme = User.FindFirst("whaledeck:oidc-scheme")?.Value;
+        if (scheme is not ("AuthentikInternal" or "AuthentikExternal")) scheme = "AuthentikExternal";
+        return SignOut(new AuthenticationProperties { RedirectUri = "/" }, CookieAuthenticationDefaults.AuthenticationScheme, scheme);
+    }
 
     [HttpGet("csrf")]
     public IActionResult Csrf()

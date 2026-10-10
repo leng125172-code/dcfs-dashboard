@@ -67,9 +67,16 @@ services:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__WhaleDeck: Host=postgres;Port=5432;Database=${WHALEDECK_DB_NAME:-whaledeck};Username=${WHALEDECK_DB_USER:-whaledeck};Password=${WHALEDECK_DB_PASSWORD:?set WHALEDECK_DB_PASSWORD};Application Name=whaledeck
       Authentication__Oidc__Enabled: "true"
-      Authentication__Oidc__Authority: ${WHALEDECK_OIDC_AUTHORITY:?set WHALEDECK_OIDC_AUTHORITY}
-      Authentication__Oidc__ClientId: ${WHALEDECK_OIDC_CLIENT_ID:?set WHALEDECK_OIDC_CLIENT_ID}
-      Authentication__Oidc__ClientSecret: ${WHALEDECK_OIDC_CLIENT_SECRET:?set WHALEDECK_OIDC_CLIENT_SECRET}
+      Authentication__Oidc__Internal__Authority: ${WHALEDECK_OIDC_INTERNAL_AUTHORITY:?set WHALEDECK_OIDC_INTERNAL_AUTHORITY}
+      Authentication__Oidc__Internal__ClientId: ${WHALEDECK_OIDC_INTERNAL_CLIENT_ID:?set WHALEDECK_OIDC_INTERNAL_CLIENT_ID}
+      Authentication__Oidc__Internal__ClientSecret: ${WHALEDECK_OIDC_INTERNAL_CLIENT_SECRET:?set WHALEDECK_OIDC_INTERNAL_CLIENT_SECRET}
+      Authentication__Oidc__Internal__CallbackPath: /signin-oidc/internal
+      Authentication__Oidc__Internal__SignedOutCallbackPath: /signout-callback-oidc/internal
+      Authentication__Oidc__External__Authority: ${WHALEDECK_OIDC_EXTERNAL_AUTHORITY:?set WHALEDECK_OIDC_EXTERNAL_AUTHORITY}
+      Authentication__Oidc__External__ClientId: ${WHALEDECK_OIDC_EXTERNAL_CLIENT_ID:?set WHALEDECK_OIDC_EXTERNAL_CLIENT_ID}
+      Authentication__Oidc__External__ClientSecret: ${WHALEDECK_OIDC_EXTERNAL_CLIENT_SECRET:?set WHALEDECK_OIDC_EXTERNAL_CLIENT_SECRET}
+      Authentication__Oidc__External__CallbackPath: /signin-oidc/external
+      Authentication__Oidc__External__SignedOutCallbackPath: /signout-callback-oidc/external
       Valkey__Endpoint: valkey:6379
       Valkey__User: ${WHALEDECK_VALKEY_USER:-whaledeck}
       Valkey__Password: ${WHALEDECK_VALKEY_PASSWORD:?set WHALEDECK_VALKEY_PASSWORD}
