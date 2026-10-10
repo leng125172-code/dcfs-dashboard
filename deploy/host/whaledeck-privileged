@@ -3,6 +3,25 @@ set -Eeuo pipefail
 
 [[ $EUID -eq 0 ]] || { echo 'This helper must run as root.' >&2; exit 1; }
 action=${1:-}
+approved_repository=/data/GitRepos/database-platform
+
+validate_repository() {
+  [[ $# -eq 1 && "$1" == "$approved_repository" && -d "$1/.git" ]] || exit 2
+}
+
+validate_commit_message() {
+  [[ $# -eq 1 && ${#1} -ge 3 && ${#1} -le 120 ]] || exit 2
+  if LC_ALL=C /usr/bin/printf '%s' "$1" | /usr/bin/grep -q '[[:cntrl:]]'; then
+    exit 2
+  fi
+}
+
+run_transient() {
+  local unit=$1
+  shift
+  exec /usr/bin/systemd-run --quiet --wait --pipe --collect --service-type=exec \
+    --unit="$unit" /usr/local/libexec/whaledeck-privileged "$@"
+}
 
 case "$action" in
   self-check)
@@ -39,12 +58,60 @@ case "$action" in
     ;;
   system-update-check)
     [[ $# -eq 1 ]] || exit 2
-    exec /usr/bin/apt-get --simulate upgrade
+    run_transient whaledeck-system-update-check system-update-check-host
     ;;
   system-update-install)
     [[ $# -eq 1 ]] || exit 2
+    run_transient whaledeck-system-update-install system-update-install-host
+    ;;
+  system-update-check-host)
+    [[ $# -eq 1 ]] || exit 2
+    exec /usr/bin/apt-get --simulate upgrade
+    ;;
+  system-update-install-host)
+    [[ $# -eq 1 ]] || exit 2
     /usr/bin/apt-get update
     exec /usr/bin/apt-get --yes upgrade
+    ;;
+  config-repository-stage)
+    [[ $# -eq 2 ]] || exit 2
+    validate_repository "$2"
+    run_transient whaledeck-config-repository-stage config-repository-stage-host "$2"
+    ;;
+  config-repository-stage-host)
+    [[ $# -eq 2 ]] || exit 2
+    validate_repository "$2"
+    exec /usr/sbin/runuser -u user -- /usr/bin/env HOME=/home/user GIT_TERMINAL_PROMPT=0 \
+      /usr/bin/git -C "$2" add --all
+    ;;
+  config-repository-reset-stage)
+    [[ $# -eq 2 ]] || exit 2
+    validate_repository "$2"
+    run_transient whaledeck-config-repository-reset-stage config-repository-reset-stage-host "$2"
+    ;;
+  config-repository-reset-stage-host)
+    [[ $# -eq 2 ]] || exit 2
+    validate_repository "$2"
+    exec /usr/sbin/runuser -u user -- /usr/bin/env HOME=/home/user GIT_TERMINAL_PROMPT=0 \
+      /usr/bin/git -C "$2" reset --quiet
+    ;;
+  config-repository-commit-push)
+    [[ $# -eq 3 ]] || exit 2
+    validate_repository "$2"
+    validate_commit_message "$3"
+    run_transient whaledeck-config-repository-commit-push config-repository-commit-push-host "$2" "$3"
+    ;;
+  config-repository-commit-push-host)
+    [[ $# -eq 3 ]] || exit 2
+    validate_repository "$2"
+    validate_commit_message "$3"
+    if ! /usr/sbin/runuser -u user -- /usr/bin/env HOME=/home/user GIT_TERMINAL_PROMPT=0 \
+      /usr/bin/git -C "$2" diff --cached --quiet; then
+      /usr/sbin/runuser -u user -- /usr/bin/env HOME=/home/user GIT_TERMINAL_PROMPT=0 \
+        /usr/bin/git -C "$2" -c user.name='Whale Deck' -c user.email=whaledeck@localhost commit -m "$3"
+    fi
+    exec /usr/sbin/runuser -u user -- /usr/bin/env HOME=/home/user GIT_TERMINAL_PROMPT=0 \
+      /usr/bin/git -C "$2" push origin HEAD
     ;;
   systemd)
     [[ $# -eq 3 ]] || exit 2

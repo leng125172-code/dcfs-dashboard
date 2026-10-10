@@ -21,10 +21,28 @@ public sealed class ManagedActionExecutorTests
         Assert.IsType<InvalidOperationException>(exception.InnerException);
     }
 
-    private static void InvokeValidateImage(string image)
+    [Theory]
+    [InlineData("chore: save workstation configuration")]
+    [InlineData("文档：保存工作站配置")]
+    public void CommitMessageValidationAcceptsBoundedText(string message) => InvokePrivate("ValidateCommitMessage", message);
+
+    [Theory]
+    [InlineData("no")]
+    [InlineData("line one\nline two")]
+    [InlineData("contains\0control")]
+    public void CommitMessageValidationRejectsShortOrControlText(string message)
     {
-        var method = typeof(ManagedActionExecutor).GetMethod("ValidateImage", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("ValidateImage was not found.");
-        method.Invoke(null, [image]);
+        var exception = Assert.Throws<TargetInvocationException>(() => InvokePrivate("ValidateCommitMessage", message));
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
+    }
+
+    private static void InvokeValidateImage(string image)
+        => InvokePrivate("ValidateImage", image);
+
+    private static void InvokePrivate(string methodName, string value)
+    {
+        var method = typeof(ManagedActionExecutor).GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException($"{methodName} was not found.");
+        method.Invoke(null, [value]);
     }
 }

@@ -9,6 +9,7 @@ builder.Services.AddSerilog((services, configuration) => configuration
     .ReadFrom.Services(services)
     .MinimumLevel.Information()
     .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("System.Net.Http.HttpClient.Xuanyuan", LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .WriteTo.Console(new JsonFormatter()));
 builder.Services.AddInfrastructure(builder.Configuration);

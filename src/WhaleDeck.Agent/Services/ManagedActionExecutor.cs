@@ -302,17 +302,32 @@ public sealed partial class ManagedActionExecutor(
     private async Task ExecuteRepositoryAsync(RegisteredResource resource, string action, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
     {
         var path = resource.Path ?? throw new InvalidOperationException("The repository path is not registered.");
+        if (!string.Equals(Path.GetFullPath(path), DatabaseRepository, StringComparison.Ordinal))
+            throw new InvalidOperationException("The repository path is not approved for configuration snapshots.");
         await EnsureRepositorySafeAsync(path, cancellationToken);
         if (action == "snapshot") return;
         if (action != "commit-push") throw new InvalidOperationException("The repository action is unsupported.");
         var message = parameters.TryGetValue("message", out var value) ? value.Trim() : "chore: save Whale Deck configuration";
-        if (message.Length is < 3 or > 120 || message.Contains('\n') || message.Contains('\r')) throw new InvalidOperationException("The commit message is invalid.");
-        await GitAsync(path, ["add", "--all"], cancellationToken);
-        await EnsureRepositorySafeAsync(path, cancellationToken, staged: true);
-        var status = await GitAsync(path, ["diff", "--cached", "--quiet"], cancellationToken, allowExitCodeOne: true);
-        if (status.ExitCode == 0) return;
-        await GitAsync(path, ["-c", "user.name=Whale Deck", "-c", "user.email=whaledeck@localhost", "commit", "-m", message], cancellationToken);
-        await GitAsync(path, ["push", "origin", "HEAD"], cancellationToken);
+        ValidateCommitMessage(message);
+        await RunHelperAsync(["config-repository-stage", path], null, ShortTimeout, "CONFIG_REPOSITORY_STAGE_FAILED", cancellationToken);
+        try
+        {
+            await EnsureRepositorySafeAsync(path, cancellationToken, staged: true);
+        }
+        catch
+        {
+            try
+            {
+                await RunHelperAsync(["config-repository-reset-stage", path], null, ShortTimeout, "CONFIG_REPOSITORY_RESET_FAILED", CancellationToken.None);
+            }
+            catch
+            {
+                // Preserve the original sensitive-content failure. The fixed repository
+                // helper can safely reset the index during the next operator action.
+            }
+            throw;
+        }
+        await RunHelperAsync(["config-repository-commit-push", path, message], null, LongTimeout, "CONFIG_REPOSITORY_PUSH_FAILED", cancellationToken);
     }
 
     private async Task ExecutePlatformAsync(RegisteredResource resource, string action, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
@@ -463,6 +478,12 @@ public sealed partial class ManagedActionExecutor(
             (first.Contains('.', StringComparison.Ordinal) || first.Contains(':', StringComparison.Ordinal) || first == "localhost");
         if (hasExplicitRegistry && first is not ("docker.io" or "ghcr.io" or "quay.io" or "xuanyuan.cloud" or "registry.cn-hangzhou.aliyuncs.com"))
             throw new InvalidOperationException("The image registry is not approved.");
+    }
+
+    private static void ValidateCommitMessage(string message)
+    {
+        if (message.Length is < 3 or > 120 || message.Any(char.IsControl))
+            throw new InvalidOperationException("The commit message is invalid.");
     }
 
     private static string PostgresGrantSql(string principal, string database, string role) => role switch

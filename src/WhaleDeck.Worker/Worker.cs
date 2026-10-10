@@ -425,7 +425,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                     {
                         "CpuUtilization" => "cpu.utilization",
                         "MemoryUtilization" => "memory.utilization",
-                        _ => "filesystem.utilization"
+                        _ => "disk.utilization"
                     };
                     var threshold = ReadThreshold(rule.ThresholdJson);
                     var cutoff = now.AddSeconds(-rule.EvaluationWindowSeconds);
