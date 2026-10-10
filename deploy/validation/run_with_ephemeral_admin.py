@@ -62,6 +62,8 @@ def main() -> int:
 
     username = f"whaledeck-validation-{secrets.token_hex(5)}"
     password = f"Wd!{secrets.token_urlsafe(24)}9aA"
+    managed_username = f"whaledeck-api-validation-{secrets.token_hex(5)}"
+    managed_password = f"Wd!{secrets.token_urlsafe(24)}9aA"
     user_id: str | None = None
     try:
         created = session.post(
@@ -87,6 +89,9 @@ def main() -> int:
         environment = os.environ.copy()
         environment["VALIDATION_USERNAME"] = username
         environment["VALIDATION_PASSWORD"] = password
+        environment["VALIDATION_USER_ID"] = user_id
+        environment["VALIDATION_MANAGED_USERNAME"] = managed_username
+        environment["VALIDATION_MANAGED_PASSWORD"] = managed_password
         completed = subprocess.run(
             [sys.executable, "-u", str(script), *sys.argv[2:]],
             env=environment,
@@ -94,6 +99,15 @@ def main() -> int:
         )
         return completed.returncode
     finally:
+        managed = session.get(
+            f"{AUTHENTIK_API}core/users/",
+            params={"username": managed_username, "page_size": 20},
+            timeout=20,
+        )
+        if managed.ok:
+            for item in managed.json().get("results", []):
+                if item.get("username") == managed_username:
+                    session.delete(f"{AUTHENTIK_API}core/users/{item['pk']}/", timeout=20)
         if user_id is not None:
             deleted = session.delete(f"{AUTHENTIK_API}core/users/{user_id}/", timeout=20)
             if deleted.status_code not in {204, 404}:
