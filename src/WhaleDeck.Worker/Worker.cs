@@ -77,7 +77,13 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             resource = new ManagedResource { ResourceType = "Host", ExternalId = "local", DisplayName = "Precision-7920-Tower", ProtectionLevel = "ControlPlane", Source = "Agent" };
             db.ManagedResources.Add(resource);
         }
-        foreach (var metric in await agent.GetMetricsSnapshotAsync(cancellationToken))
+        var snapshot = await agent.GetMetricsSnapshotAsync(cancellationToken);
+        // A host can report the same logical metric through overlapping kernel
+        // views in one sample. Collapse the batch before EF tracks new series,
+        // otherwise two not-yet-saved entities can race the unique index.
+        foreach (var metric in snapshot
+            .GroupBy(item => (item.Kind, item.DeviceId))
+            .Select(group => group.MaxBy(item => item.SampledAtUtc)!))
         {
             var dimensions = JsonSerializer.Serialize(new { metric.DeviceId });
             var series = await db.MetricSeries.SingleOrDefaultAsync(item => item.ResourceId == resource.Id && item.MetricKind == metric.Kind && item.DimensionsJson == dimensions, cancellationToken);

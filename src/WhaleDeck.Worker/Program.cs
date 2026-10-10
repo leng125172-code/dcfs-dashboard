@@ -4,8 +4,9 @@ using Serilog;
 using Serilog.Formatting.Json;
 
 var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddSerilog(configuration => configuration
-    .MinimumLevel.Information()
+builder.Services.AddSerilog((services, configuration) => configuration
+    .ReadFrom.Configuration(builder.Configuration)
+    .ReadFrom.Services(services)
     .Enrich.FromLogContext()
     .WriteTo.Console(new JsonFormatter()));
 builder.Services.AddInfrastructure(builder.Configuration);

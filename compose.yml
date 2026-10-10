@@ -41,6 +41,7 @@ services:
     networks:
       - whaledeck_frontend
       - authentik_frontend
+      - whaledeck_host_ingress
     deploy:
       resources:
         limits:
@@ -161,6 +162,11 @@ networks:
   authentik_frontend:
     name: database-platform-app-authentik
     external: true
+  whaledeck_host_ingress:
+    name: whaledeck-host-ingress
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
   postgres_backend:
     name: database-platform-db-postgres
     external: true
