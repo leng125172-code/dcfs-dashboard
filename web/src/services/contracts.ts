@@ -116,6 +116,17 @@ export interface ContainerUpdateRun {
   errorSummary: string | null
 }
 
+export interface DockerEvent {
+  fingerprint: string
+  occurredAtUtc: string
+  eventType: string
+  action: string
+  resourceId: string
+  resourceName: string
+  image: string | null
+  attributes: Record<string, string>
+}
+
 export interface GlobalSearchResult {
   id: string
   kind: string

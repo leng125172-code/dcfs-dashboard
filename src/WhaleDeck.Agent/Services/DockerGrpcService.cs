@@ -5,7 +5,11 @@ using WhaleDeck.Contracts.Agent.V1;
 
 namespace WhaleDeck.Agent.Services;
 
-public sealed class DockerGrpcService(DockerEngine docker, ResourceRegistry registry, BoundedProcessRunner processes) : DockerService.DockerServiceBase
+public sealed class DockerGrpcService(
+    DockerEngine docker,
+    DockerEventBuffer events,
+    ResourceRegistry registry,
+    BoundedProcessRunner processes) : DockerService.DockerServiceBase
 {
     public override async Task<ImageMetadataResponse> InspectImage(ImageMetadataRequest request, ServerCallContext context)
     {
@@ -102,6 +106,31 @@ public sealed class DockerGrpcService(DockerEngine docker, ResourceRegistry regi
         foreach (var property in document.RootElement.EnumerateObject())
             response.Values[property.Name] = property.Value.GetString() ?? property.Value.ToString();
         return response;
+    }
+
+    public override Task<DockerEventsResponse> ListEvents(DockerEventsRequest request, ServerCallContext context)
+    {
+        var since = request.SinceUnixSeconds > 0
+            ? DateTimeOffset.FromUnixTimeSeconds(request.SinceUnixSeconds)
+            : DateTimeOffset.UtcNow.AddHours(-1);
+        var response = new DockerEventsResponse();
+        foreach (var item in events.Snapshot(since, checked((int)Math.Clamp(request.Take, 1u, 1_000u))))
+        {
+            var entry = new DockerEvent
+            {
+                Fingerprint = item.Fingerprint,
+                OccurredAtUtc = Timestamp.FromDateTimeOffset(item.OccurredAtUtc),
+                EventType = item.EventType,
+                Action = item.Action,
+                ResourceId = item.ResourceId,
+                ResourceName = item.ResourceName,
+                Image = item.Image
+            };
+            foreach (var attribute in item.Attributes)
+                entry.Attributes[attribute.Key] = attribute.Value;
+            response.Events.Add(entry);
+        }
+        return Task.FromResult(response);
     }
 
     public override async Task<ContainerInspectResponse> InspectContainer(ResourceReference request, ServerCallContext context)

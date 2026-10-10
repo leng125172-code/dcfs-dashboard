@@ -18,7 +18,8 @@ public sealed class ManagementController(
     IIdentityDirectory identity,
     OperationService operations,
     ApplicationService applications,
-    ContainerUpdateService containerUpdates) : ControllerBase
+    ContainerUpdateService containerUpdates,
+    DockerEventService dockerEvents) : ControllerBase
 {
     [HttpGet("containers")]
     public async Task<IActionResult> Containers([FromQuery] bool includeStopped = true, CancellationToken cancellationToken = default) =>
@@ -46,6 +47,13 @@ public sealed class ManagementController(
         [FromQuery] int take = 100,
         CancellationToken cancellationToken = default) =>
         Ok(await containerUpdates.ListAsync(containerId, take, cancellationToken));
+
+    [HttpGet("containers/events")]
+    public async Task<IActionResult> ContainerEvents(
+        [FromQuery] string? containerId,
+        [FromQuery] int take = 100,
+        CancellationToken cancellationToken = default) =>
+        Ok(await dockerEvents.ListAsync(containerId, take, cancellationToken));
 
     [HttpGet("applications/popular")]
     public async Task<IActionResult> Popular(CancellationToken cancellationToken) => Ok(await catalog.GetPopularAsync(cancellationToken));

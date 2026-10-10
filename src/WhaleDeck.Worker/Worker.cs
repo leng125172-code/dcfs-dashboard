@@ -57,6 +57,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         var leases = scope.ServiceProvider.GetRequiredService<ResourceLeaseManager>();
         await CollectMetrics(db, agent, cancellationToken);
         await SyncManagedResources(db, agent, cancellationToken);
+        await SyncDockerEvents(db, agent, cancellationToken);
         await DispatchScheduledTasks(db, agent, cancellationToken);
         await DispatchBackupPolicies(db, cancellationToken);
         await DispatchOutbox(db, agent, secrets, identityDirectory, identity, leases, _workerInstanceId, logger, cancellationToken);
@@ -192,6 +193,36 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                     Role = resource.ResourceType == "Container" ? "Container" : "ComposeProject"
                 });
             }
+        }
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task SyncDockerEvents(
+        PlatformDbContext db,
+        IAgentGateway agent,
+        CancellationToken cancellationToken)
+    {
+        var events = await agent.ListDockerEventsAsync(DateTimeOffset.UtcNow.AddHours(-6), 1_000, cancellationToken);
+        if (events.Count == 0) return;
+        var fingerprints = events.Select(item => item.Fingerprint).ToArray();
+        var existing = (await db.DockerEvents.AsNoTracking()
+            .Where(item => fingerprints.Contains(item.Fingerprint))
+            .Select(item => item.Fingerprint)
+            .ToArrayAsync(cancellationToken))
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var item in events.Where(item => !existing.Contains(item.Fingerprint)))
+        {
+            db.DockerEvents.Add(new DockerEventRecord
+            {
+                Fingerprint = item.Fingerprint,
+                OccurredAtUtc = item.OccurredAtUtc,
+                EventType = item.EventType,
+                Action = item.Action,
+                ResourceId = item.ResourceId,
+                ResourceName = item.ResourceName,
+                Image = item.Image,
+                AttributesJson = JsonSerializer.Serialize(item.Attributes)
+            });
         }
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -920,6 +951,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         await db.MetricSamples.Where(item => item.SampledAtUtc < metricCutoff).ExecuteDeleteAsync(cancellationToken);
         await db.MetricRollups.Where(item => item.WindowStartUtc < metricCutoff).ExecuteDeleteAsync(cancellationToken);
         await db.OperationJobEvents.Where(item => item.OccurredAtUtc < eventCutoff).ExecuteDeleteAsync(cancellationToken);
+        await db.DockerEvents.Where(item => item.OccurredAtUtc < metricCutoff).ExecuteDeleteAsync(cancellationToken);
     }
 
     private static async Task ApplyRollups(PlatformDbContext db, CancellationToken cancellationToken)

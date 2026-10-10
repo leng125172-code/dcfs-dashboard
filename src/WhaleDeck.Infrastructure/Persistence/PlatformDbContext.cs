@@ -16,6 +16,7 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
     public DbSet<ApplicationResource> ApplicationResources => Set<ApplicationResource>();
     public DbSet<ApplicationUpdateRun> ApplicationUpdateRuns => Set<ApplicationUpdateRun>();
     public DbSet<ContainerUpdateRun> ContainerUpdateRuns => Set<ContainerUpdateRun>();
+    public DbSet<DockerEventRecord> DockerEvents => Set<DockerEventRecord>();
     public DbSet<OperationJob> OperationJobs => Set<OperationJob>();
     public DbSet<OperationJobEvent> OperationJobEvents => Set<OperationJobEvent>();
     public DbSet<ScheduledTask> ScheduledTasks => Set<ScheduledTask>();
@@ -150,6 +151,22 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             entity.Property(item => item.Image).HasMaxLength(512);
             entity.HasIndex(item => new { item.ContainerName, item.StartedAtUtc });
             entity.HasIndex(item => item.JobId).IsUnique();
+        });
+        modelBuilder.Entity<DockerEventRecord>(entity =>
+        {
+            entity.ToTable("docker_events");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Fingerprint).HasMaxLength(64);
+            entity.Property(item => item.EventType).HasMaxLength(32);
+            entity.Property(item => item.Action).HasMaxLength(64);
+            entity.Property(item => item.ResourceId).HasMaxLength(128);
+            entity.Property(item => item.ResourceName).HasMaxLength(128);
+            entity.Property(item => item.Image).HasMaxLength(256);
+            entity.Property(item => item.AttributesJson).HasColumnType("jsonb");
+            entity.HasIndex(item => item.Fingerprint).IsUnique();
+            entity.HasIndex(item => item.OccurredAtUtc);
+            entity.HasIndex(item => new { item.ResourceId, item.OccurredAtUtc });
+            entity.HasIndex(item => new { item.ResourceName, item.OccurredAtUtc });
         });
     }
 

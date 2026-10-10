@@ -38,6 +38,9 @@ public sealed class DockerEngine : IDisposable
     public Task<IList<ContainerListResponse>> ListContainersAsync(bool all, CancellationToken cancellationToken) =>
         _client.Containers.ListContainersAsync(new ContainersListParameters { All = all }, cancellationToken);
 
+    public Task MonitorEventsAsync(IProgress<Message> progress, CancellationToken cancellationToken) =>
+        _client.System.MonitorEventsAsync(new ContainerEventsParameters(), progress, cancellationToken);
+
     public async Task<Docker.DotNet.Models.ContainerInspectResponse> InspectContainerAsync(string containerId, CancellationToken cancellationToken)
     {
         var container = await ResolveContainerAsync(containerId, cancellationToken);

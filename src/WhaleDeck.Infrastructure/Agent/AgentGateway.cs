@@ -120,6 +120,35 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
         return new ContainerStatsDto(response.Values);
     }
 
+    public async Task<IReadOnlyCollection<DockerEventDto>> ListDockerEventsAsync(
+        DateTimeOffset sinceUtc,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        DockerEventsResponse response;
+        try
+        {
+            response = await _docker.ListEventsAsync(new DockerEventsRequest
+            {
+                SinceUnixSeconds = sinceUtc.ToUnixTimeSeconds(),
+                Take = checked((uint)Math.Clamp(take, 1, 1_000))
+            }, Headers("/whaledeck.agent.v1.DockerService/ListEvents"), cancellationToken: cancellationToken);
+        }
+        catch (RpcException exception) when (exception.StatusCode == StatusCode.Unimplemented)
+        {
+            return [];
+        }
+        return response.Events.Select(item => new DockerEventDto(
+            item.Fingerprint,
+            item.OccurredAtUtc.ToDateTimeOffset(),
+            item.EventType,
+            item.Action,
+            item.ResourceId,
+            item.ResourceName,
+            string.IsNullOrWhiteSpace(item.Image) ? null : item.Image,
+            item.Attributes)).ToArray();
+    }
+
     public async Task<ContainerInspectDto> InspectContainerAsync(string containerId, CancellationToken cancellationToken)
     {
         var response = await _docker.InspectContainerAsync(

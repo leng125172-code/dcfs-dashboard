@@ -28,6 +28,7 @@ builder.Services.AddGrpc(options => options.Interceptors.Add<CapabilityIntercept
 builder.Services.AddSingleton<CapabilityValidator>();
 builder.Services.AddSingleton<PeerCredentialPolicy>();
 builder.Services.AddSingleton<DockerEngine>();
+builder.Services.AddSingleton<DockerEventBuffer>();
 builder.Services.AddSingleton<OperationStore>();
 builder.Services.AddSingleton<OperationCoordinator>();
 builder.Services.AddSingleton<BoundedProcessRunner>();
@@ -36,6 +37,7 @@ builder.Services.AddSingleton<PlanStore>();
 builder.Services.AddSingleton<HostReader>();
 builder.Services.AddSingleton<ResourceRegistry>();
 builder.Services.AddHostedService<SocketPermissionService>();
+builder.Services.AddHostedService<DockerEventCollector>();
 
 var app = builder.Build();
 app.UseMiddleware<PeerCredentialGuard>();

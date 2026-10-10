@@ -170,6 +170,26 @@ message ContainerStatsResponse {
   map<string, string> values = 1;
 }
 
+message DockerEventsRequest {
+  int64 since_unix_seconds = 1;
+  uint32 take = 2;
+}
+
+message DockerEvent {
+  string fingerprint = 1;
+  google.protobuf.Timestamp occurred_at_utc = 2;
+  string event_type = 3;
+  string action = 4;
+  string resource_id = 5;
+  string resource_name = 6;
+  string image = 7;
+  map<string, string> attributes = 8;
+}
+
+message DockerEventsResponse {
+  repeated DockerEvent events = 1;
+}
+
 message ContainerInspectResponse {
   string id = 1;
   string name = 2;
@@ -290,6 +310,7 @@ service DockerService {
   rpc ListContainers(ListContainersRequest) returns (ListContainersResponse);
   rpc GetContainerLogs(ContainerLogsRequest) returns (ContainerLogsResponse);
   rpc GetContainerStats(ResourceReference) returns (ContainerStatsResponse);
+  rpc ListEvents(DockerEventsRequest) returns (DockerEventsResponse);
   rpc InspectContainer(ResourceReference) returns (ContainerInspectResponse);
   rpc ChangeContainerState(ChangeContainerStateRequest) returns (OperationHandle);
   rpc ListImages(google.protobuf.Empty) returns (ResourceCollectionResponse);

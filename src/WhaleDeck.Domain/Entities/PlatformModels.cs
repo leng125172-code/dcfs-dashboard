@@ -108,6 +108,20 @@ public sealed class ContainerUpdateRun
     public string? ErrorSummary { get; set; }
 }
 
+public sealed class DockerEventRecord
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public required string Fingerprint { get; init; }
+    public DateTimeOffset OccurredAtUtc { get; init; }
+    public required string EventType { get; init; }
+    public required string Action { get; init; }
+    public required string ResourceId { get; init; }
+    public required string ResourceName { get; init; }
+    public string? Image { get; init; }
+    public string AttributesJson { get; init; } = "{}";
+    public DateTimeOffset RecordedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class OperationJob
 {
     public Guid Id { get; init; } = Guid.NewGuid();

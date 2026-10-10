@@ -9,6 +9,7 @@ import type {
   ContainerLogs,
   ContainerStats,
   ContainerUpdateRun,
+  DockerEvent,
 } from '@/services/contracts'
 
 interface Container {
@@ -54,6 +55,7 @@ const logs = ref<ContainerLogs>({ lines: [], truncated: false })
 const stats = ref<Record<string, string>>({})
 const inspect = ref<ContainerInspect | null>(null)
 const updateHistory = ref<ContainerUpdateRun[]>([])
+const eventTimeline = ref<DockerEvent[]>([])
 
 function resetForm() {
   Object.assign(form, {
@@ -231,9 +233,10 @@ async function openDetails(item: Container) {
   stats.value = {}
   inspect.value = null
   updateHistory.value = []
+  eventTimeline.value = []
   try {
     const id = encodeURIComponent(item.id)
-    const [logResult, statsResult, inspectResult, historyResult] = await Promise.all([
+    const [logResult, statsResult, inspectResult, historyResult, eventResult] = await Promise.all([
       apiRequest<ContainerLogs>(`containers/${id}/logs?tail=500&sinceMinutes=60`),
       item.state === 'running'
         ? apiRequest<ContainerStats>(`containers/${id}/stats`)
@@ -242,11 +245,13 @@ async function openDetails(item: Container) {
       apiRequest<ContainerUpdateRun[]>(
         `containers/update-history?containerId=${encodeURIComponent(item.name)}&take=20`,
       ),
+      apiRequest<DockerEvent[]>(`containers/events?containerId=${id}&take=50`),
     ])
     logs.value = logResult
     stats.value = statsResult.values
     inspect.value = inspectResult
     updateHistory.value = historyResult
+    eventTimeline.value = eventResult
   } finally {
     detailLoading.value = false
   }
@@ -533,6 +538,30 @@ onMounted(load)
         </el-table>
         <el-empty v-else description="暂无更新记录" :image-size="64" />
         <div class="log-heading">
+          <h3>Docker 事件</h3>
+          <span>最近 {{ eventTimeline.length }} 条</span>
+        </div>
+        <el-table
+          v-if="eventTimeline.length"
+          :data="eventTimeline"
+          size="small"
+          row-key="fingerprint"
+        >
+          <el-table-column label="时间" min-width="180">
+            <template #default="scope">{{
+              new Date(scope.row.occurredAtUtc).toLocaleString()
+            }}</template>
+          </el-table-column>
+          <el-table-column prop="eventType" label="类型" width="100" />
+          <el-table-column label="动作" min-width="150">
+            <template #default="scope"
+              ><el-tag effect="plain">{{ scope.row.action }}</el-tag></template
+            >
+          </el-table-column>
+          <el-table-column prop="image" label="镜像" min-width="200" show-overflow-tooltip />
+        </el-table>
+        <el-empty v-else description="Agent 启动后暂无相关事件" :image-size="64" />
+        <div class="log-heading">
           <h3>最近一小时日志</h3>
           <el-tag v-if="logs.truncated" type="warning" effect="plain">已按 64 KiB 截断</el-tag>
         </div>
@@ -622,6 +651,10 @@ onMounted(load)
 .log-heading h3 {
   margin: 0;
   font-size: 14px;
+}
+.log-heading > span {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .container-logs {
   max-height: 52vh;

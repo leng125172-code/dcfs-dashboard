@@ -117,6 +117,15 @@ public sealed record ContainerDto(
 public sealed record ContainerLogsDto(IReadOnlyCollection<string> Lines, bool Truncated);
 
 public sealed record ContainerStatsDto(IReadOnlyDictionary<string, string> Values);
+public sealed record DockerEventDto(
+    string Fingerprint,
+    DateTimeOffset OccurredAtUtc,
+    string EventType,
+    string Action,
+    string ResourceId,
+    string ResourceName,
+    string? Image,
+    IReadOnlyDictionary<string, string> Attributes);
 
 public sealed record ContainerInspectDto(
     string Id,

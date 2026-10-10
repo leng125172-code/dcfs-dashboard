@@ -68,6 +68,7 @@ public static class DependencyInjection
         services.AddScoped<IGovernanceRepository, GovernanceRepository>();
         services.AddScoped<IApplicationRepository, ApplicationRepository>();
         services.AddScoped<IContainerUpdateRepository, ContainerUpdateRepository>();
+        services.AddScoped<IDockerEventRepository, DockerEventRepository>();
         services.AddScoped<IGlobalSearchRepository, GlobalSearchRepository>();
         services.AddScoped<IRoleMappingRepository, RoleMappingRepository>();
         services.AddSingleton<IAdministratorGroupConfiguration, AdministratorGroupConfiguration>();
@@ -86,6 +87,7 @@ public static class DependencyInjection
         services.AddScoped<GovernanceService>();
         services.AddScoped<ApplicationService>();
         services.AddScoped<ContainerUpdateService>();
+        services.AddScoped<DockerEventService>();
         services.AddScoped<GlobalSearchService>();
         services.AddScoped<RoleMappingService>();
 

@@ -10,7 +10,7 @@
 - Agent 使用 Unix peer credentials 校验调用进程，并验证短时签名能力声明。
 - `GetCapabilities` 返回 Agent 版本、协议版本和方法能力；未知主版本直接拒绝，次版本按能力协商。
 - 浏览器不得连接 Agent。宿主机稳定入口只读取 Agent 原子写入的脱敏维护快照。
-- 当前协议版本为 `1.3`。`1.3` 新增有界容器日志与单次容器统计能力，能力名分别为 `docker.logs` 和 `docker.stats`。
+- 当前协议版本为 `1.5`。`1.4` 增加普通 Docker 网络与孤立卷管理，`1.5` 增加有界 Docker 事件缓冲与时间线能力 `docker.events`；旧次版本按能力协商并安全降级。
 
 ## 2. 通用消息
 
@@ -139,6 +139,7 @@ Agent 不提供“执行命令”“执行脚本”或任意 unit 名称接口�
 | `RPC-DKR-016` | `DockerService.ListNetworks` | Unary | 网络、范围、子网和关联容器 |
 | `RPC-DKR-017` | `DockerService.ListVolumes` | Unary | 卷、挂载、关联容器和孤立状态 |
 | `RPC-DKR-018` | `DockerService.InspectImage` | Unary | 读取或按请求拉取 OCI 镜像声明，返回 Env、Ports、Volumes、Entrypoint、Cmd 与 Labels |
+| `RPC-DKR-019` | `DockerService.ListEvents` | Unary | 返回 Agent 订阅并脱敏、去重、限长后的近期 Docker 事件 |
 
 创建 DTO 使用类型化字段，不接受 Docker CLI 参数字符串。首期禁止通过创建页面启用 `privileged`、宿主机 PID/IPC namespace、任意设备或未批准的宿主机路径。
 
