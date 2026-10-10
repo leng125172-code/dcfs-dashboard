@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
@@ -14,6 +13,7 @@ public sealed class AuthentikIdentityDirectory(
     IConfiguration configuration) : IIdentityDirectory, IIdentityManager
 {
     private static readonly TimeSpan PermissionTtl = TimeSpan.FromHours(2);
+    private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
     public async Task<CurrentUserDto> ResolveCurrentAsync(string subject, string? name, IReadOnlyCollection<string> claimGroups, CancellationToken cancellationToken)
     {
@@ -190,9 +190,10 @@ public sealed class AuthentikIdentityDirectory(
 
     private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, object payload, CancellationToken cancellationToken)
     {
+        var json = JsonSerializer.Serialize(payload, payload.GetType(), WebJson);
         using var request = new HttpRequestMessage(method, path)
         {
-            Content = JsonContent.Create(payload, payload.GetType())
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
         var response = await Client().SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
