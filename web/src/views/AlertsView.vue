@@ -3,9 +3,10 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { BellFilled, Edit, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ApiError, apiRequest } from '@/services/apiClient'
-import type { AlertEvent, AlertRule } from '@/services/contracts'
+import type { AlertEvent, AlertEventHistory, AlertRule } from '@/services/contracts'
 
 const events = ref<AlertEvent[]>([])
+const history = ref<AlertEventHistory[]>([])
 const rules = ref<AlertRule[]>([])
 const loading = ref(false)
 const saving = ref(false)
@@ -50,9 +51,10 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    ;[events.value, rules.value] = await Promise.all([
+    ;[events.value, rules.value, history.value] = await Promise.all([
       apiRequest<AlertEvent[]>('alerts?includeRecovered=true'),
       apiRequest<AlertRule[]>('alerts/rules'),
+      apiRequest<AlertEventHistory[]>('alerts/history?take=500'),
     ])
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '读取告警失败'
@@ -215,6 +217,29 @@ onMounted(load)
                   >静默</el-button
                 ></template
               ></el-table-column
+            >
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane name="history" label="状态历史">
+          <el-empty v-if="!history.length && !loading" description="暂无状态变更记录" />
+          <el-table v-else :data="history" row-key="id">
+            <el-table-column label="告警" min-width="260" show-overflow-tooltip>
+              <template #default="scope">{{
+                events.find((item) => item.id === scope.row.alertEventId)?.summaryCode ||
+                scope.row.alertEventId
+              }}</template>
+            </el-table-column>
+            <el-table-column prop="state" label="状态" width="130" />
+            <el-table-column
+              prop="actorSubject"
+              label="操作者"
+              min-width="220"
+              show-overflow-tooltip
+            />
+            <el-table-column label="发生时间" min-width="190"
+              ><template #default="scope">{{
+                formatDate(scope.row.occurredAtUtc)
+              }}</template></el-table-column
             >
           </el-table>
         </el-tab-pane>

@@ -47,6 +47,14 @@ public sealed class OperationCoordinator(OperationStore store, ILogger<Operation
                 operation.Phase = "Canceled";
                 operation.ErrorCode = string.Empty;
             }
+            catch (ApplicationOperationException exception)
+            {
+                operation.ResultJson = exception.ResultJson;
+                operation.State = OperationState.Failed;
+                operation.Phase = "RolledBack";
+                operation.ErrorCode = errorCode;
+                LogFailure(logger, operation.OperationId, errorCode, exception);
+            }
             catch (Exception exception)
             {
                 operation.State = OperationState.Failed;

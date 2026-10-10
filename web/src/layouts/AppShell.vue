@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   ArrowDown,
   Box,
@@ -21,10 +21,19 @@ import {
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import AppTopbar from '@/components/AppTopbar.vue'
 import { authSession } from '@/services/authSession'
+import { apiRequest } from '@/services/apiClient'
+import type { AlertEvent, Job } from '@/services/contracts'
 
 const route = useRoute()
 const router = useRouter()
 const isMobileNavigationOpen = ref(false)
+const searchVisible = ref(false)
+const notificationsVisible = ref(false)
+const jobsVisible = ref(false)
+const searchQuery = ref('')
+const alerts = ref<AlertEvent[]>([])
+const jobs = ref<Job[]>([])
+const managementLoading = ref(false)
 
 const activeNavigation = computed(() => route.path)
 const currentUserName = computed(() => authSession.user.value?.name || '已登录')
@@ -36,6 +45,7 @@ const navigationGroups = [
     items: [
       { index: '/', label: '工作站概览', icon: Grid, administratorOnly: false },
       { index: '/portal', label: '我的门户', icon: Link, administratorOnly: false },
+      { index: '/services', label: '内部服务', icon: Link, administratorOnly: false },
     ],
   },
   {
@@ -51,12 +61,19 @@ const navigationGroups = [
       },
       { index: '/docker/volumes', label: '数据卷', icon: Odometer, administratorOnly: true },
       { index: '/docker/settings', label: 'Docker 设置', icon: Setting, administratorOnly: true },
+      { index: '/compose-projects', label: 'Compose 项目', icon: Box, administratorOnly: true },
       { index: '/databases', label: '数据库', icon: Odometer, administratorOnly: true },
       { index: '/systemd', label: '系统服务', icon: Monitor, administratorOnly: true },
       { index: '/host/resources', label: '主机设备', icon: Connection, administratorOnly: true },
       { index: '/host/logs', label: '系统日志', icon: Tickets, administratorOnly: true },
       { index: '/host/updates', label: '系统更新', icon: UploadFilled, administratorOnly: true },
       { index: '/jobs', label: '任务中心', icon: Setting, administratorOnly: true },
+      {
+        index: '/operations/agents',
+        label: '宿主机 Agent',
+        icon: Monitor,
+        administratorOnly: true,
+      },
       { index: '/schedules', label: '计划任务', icon: Calendar, administratorOnly: true },
     ],
   },
@@ -100,6 +117,93 @@ const visibleNavigationGroups = computed(() =>
     }))
     .filter((group) => group.items.length > 0),
 )
+const searchResults = computed(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase()
+  return visibleNavigationGroups.value
+    .flatMap((group) => group.items.map((item) => ({ ...item, group: group.label })))
+    .filter(
+      (item) =>
+        !query ||
+        item.label.toLocaleLowerCase().includes(query) ||
+        item.group.toLocaleLowerCase().includes(query),
+    )
+})
+const activeAlertCount = computed(
+  () => alerts.value.filter((item) => item.state !== 'Recovered').length,
+)
+const activeJobCount = computed(
+  () => jobs.value.filter((item) => item.state === 'Queued' || item.state === 'Running').length,
+)
+
+let managementRefreshTimer: number | undefined
+
+async function refreshManagementData() {
+  if (!isAdministrator.value || managementLoading.value) return
+  managementLoading.value = true
+  try {
+    ;[alerts.value, jobs.value] = await Promise.all([
+      apiRequest<AlertEvent[]>('alerts?includeRecovered=false'),
+      apiRequest<Job[]>('jobs?take=50'),
+    ])
+  } catch {
+    // The dedicated pages surface request diagnostics. Topbar counters remain
+    // unobtrusive when a dependency is temporarily unavailable.
+  } finally {
+    managementLoading.value = false
+  }
+}
+
+function openSearch() {
+  searchQuery.value = ''
+  searchVisible.value = true
+}
+
+async function openNotifications() {
+  await refreshManagementData()
+  notificationsVisible.value = true
+}
+
+async function openJobs() {
+  await refreshManagementData()
+  jobsVisible.value = true
+}
+
+async function openAlertsPage() {
+  notificationsVisible.value = false
+  await router.push('/alerts')
+}
+
+async function openJobsPage() {
+  jobsVisible.value = false
+  await router.push('/jobs')
+}
+
+async function selectSearchResult(index: string) {
+  searchVisible.value = false
+  await selectNavigation(index)
+}
+
+function handleSearchShortcut(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'k') {
+    event.preventDefault()
+    openSearch()
+  }
+}
+
+function formatDate(value: string | null) {
+  return value ? new Date(value).toLocaleString() : '—'
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleSearchShortcut)
+  void refreshManagementData()
+  managementRefreshTimer = window.setInterval(() => void refreshManagementData(), 30_000)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleSearchShortcut)
+  if (managementRefreshTimer !== undefined) window.clearInterval(managementRefreshTimer)
+})
 
 function toggleMobileNavigation() {
   isMobileNavigationOpen.value = !isMobileNavigationOpen.value
@@ -118,7 +222,16 @@ async function userCommand(command: string) {
 
 <template>
   <div class="app-shell">
-    <AppTopbar show-navigation-trigger @toggle-navigation="toggleMobileNavigation" />
+    <AppTopbar
+      show-navigation-trigger
+      :show-management-actions="isAdministrator"
+      :notification-count="activeAlertCount"
+      :job-count="activeJobCount"
+      @toggle-navigation="toggleMobileNavigation"
+      @open-search="openSearch"
+      @open-notifications="openNotifications"
+      @open-jobs="openJobs"
+    />
 
     <div class="shell-body">
       <aside class="sidebar" :class="{ 'sidebar--mobile-open': isMobileNavigationOpen }">
@@ -187,5 +300,123 @@ async function userCommand(command: string) {
         </div>
       </main>
     </div>
+
+    <el-dialog
+      v-model="searchVisible"
+      title="搜索平台功能"
+      width="min(620px, calc(100vw - 28px))"
+      class="global-search-dialog"
+    >
+      <el-input
+        v-model="searchQuery"
+        autofocus
+        clearable
+        placeholder="输入页面或功能名称"
+        size="large"
+      />
+      <div class="global-search-results">
+        <button
+          v-for="item in searchResults"
+          :key="item.index"
+          type="button"
+          @click="selectSearchResult(item.index)"
+        >
+          <el-icon><component :is="item.icon" /></el-icon>
+          <span
+            ><strong>{{ item.label }}</strong
+            ><small>{{ item.group }}</small></span
+          >
+        </button>
+        <el-empty
+          v-if="searchResults.length === 0"
+          description="没有可访问的匹配功能"
+          :image-size="64"
+        />
+      </div>
+    </el-dialog>
+
+    <el-drawer v-model="notificationsVisible" title="通知与活动告警" size="min(440px, 92vw)">
+      <div class="topbar-drawer-list" v-loading="managementLoading">
+        <el-empty v-if="alerts.length === 0" description="当前没有活动告警" />
+        <button v-for="item in alerts" :key="item.id" type="button" @click="openAlertsPage">
+          <span
+            ><strong>{{ item.summaryCode }}</strong
+            ><small>{{ item.state }} · {{ formatDate(item.lastOccurredAtUtc) }}</small></span
+          >
+          <el-tag
+            :type="
+              item.severity === 'Critical'
+                ? 'danger'
+                : item.severity === 'Warning'
+                  ? 'warning'
+                  : 'info'
+            "
+            >{{ item.severity }}</el-tag
+          >
+        </button>
+      </div>
+    </el-drawer>
+
+    <el-drawer v-model="jobsVisible" title="任务中心" size="min(480px, 92vw)">
+      <div class="topbar-drawer-list" v-loading="managementLoading">
+        <el-empty v-if="jobs.length === 0" description="暂无任务" />
+        <button v-for="item in jobs" :key="item.id" type="button" @click="openJobsPage">
+          <span
+            ><strong>{{ item.jobType }}</strong
+            ><small>{{ item.phase }} · {{ formatDate(item.createdAtUtc) }}</small></span
+          >
+          <el-tag
+            :type="
+              item.state === 'Succeeded' ? 'success' : item.state === 'Failed' ? 'danger' : 'info'
+            "
+            >{{ item.state }}</el-tag
+          >
+        </button>
+      </div>
+    </el-drawer>
   </div>
 </template>
+
+<style scoped>
+.global-search-results,
+.topbar-drawer-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.global-search-results button,
+.topbar-drawer-list button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  color: var(--el-text-color-primary);
+  background: var(--el-fill-color-blank);
+  text-align: left;
+  cursor: pointer;
+}
+.global-search-results button:hover,
+.topbar-drawer-list button:hover {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
+}
+.global-search-results button > span,
+.topbar-drawer-list button > span {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+.global-search-results small,
+.topbar-drawer-list small {
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

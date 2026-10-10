@@ -31,6 +31,18 @@ public sealed class GovernanceService(IGovernanceRepository repository)
     public Task DeleteScheduleAsync(Guid id, long expectedVersion, CancellationToken cancellationToken) =>
         repository.DeleteScheduleAsync(id, expectedVersion, cancellationToken);
 
+    public async Task<ScheduledTaskDto> TriggerScheduleAsync(Guid id, string actorSubject, CancellationToken cancellationToken) =>
+        Map(await repository.TriggerScheduleAsync(id, actorSubject, cancellationToken));
+
+    public async Task<IReadOnlyCollection<ScheduledTaskRunDto>> ListScheduleRunsAsync(
+        Guid? scheduleId,
+        int take,
+        CancellationToken cancellationToken) =>
+        (await repository.ListScheduleRunsAsync(scheduleId, Math.Clamp(take, 1, 500), cancellationToken))
+        .Select(item => new ScheduledTaskRunDto(item.Id, item.ScheduleId, item.JobId, item.ScheduledForUtc,
+            item.StartedAtUtc, item.CompletedAtUtc, item.Result))
+        .ToArray();
+
     public async Task<IReadOnlyCollection<BackupPolicyDto>> ListBackupPoliciesAsync(CancellationToken cancellationToken)
     {
         var policies = await repository.ListBackupPoliciesAsync(cancellationToken);
@@ -104,6 +116,14 @@ public sealed class GovernanceService(IGovernanceRepository repository)
     public async Task<IReadOnlyCollection<AlertEventDto>> ListAlertsAsync(bool includeRecovered, CancellationToken cancellationToken) =>
         (await repository.ListAlertsAsync(includeRecovered, cancellationToken)).Select(Map).ToArray();
 
+    public async Task<IReadOnlyCollection<AlertEventHistoryDto>> ListAlertHistoryAsync(
+        Guid? alertEventId,
+        int take,
+        CancellationToken cancellationToken) =>
+        (await repository.ListAlertHistoryAsync(alertEventId, Math.Clamp(take, 1, 1000), cancellationToken))
+        .Select(item => new AlertEventHistoryDto(item.Id, item.AlertEventId, item.State, item.ActorSubject, item.OccurredAtUtc))
+        .ToArray();
+
     public async Task<AlertEventDto> UpdateAlertAsync(Guid id, string actorSubject, DateTimeOffset? silencedUntilUtc, CancellationToken cancellationToken)
     {
         if (silencedUntilUtc is { } until && (until <= DateTimeOffset.UtcNow || until > DateTimeOffset.UtcNow.AddDays(30)))
@@ -122,10 +142,25 @@ public sealed class GovernanceService(IGovernanceRepository repository)
         return new PlatformSettingDto(item.Key, item.ValueJson, item.Version, item.UpdatedAtUtc);
     }
 
-    public async Task<IReadOnlyCollection<AuditEventDto>> ListAuditAsync(int take, CancellationToken cancellationToken) =>
-        (await repository.ListAuditAsync(Math.Clamp(take, 1, 500), cancellationToken)).Select(item => new AuditEventDto(item.Id,
-            item.ActorSubject, item.Action, item.TargetType, item.TargetId, item.Result, item.SourceIp, item.JobId, item.TraceId,
-            item.OccurredAtUtc)).ToArray();
+    public async Task<IReadOnlyCollection<AuditEventDto>> ListAuditAsync(
+        int take,
+        string? actorSubject,
+        string? action,
+        string? result,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        bool export,
+        CancellationToken cancellationToken)
+    {
+        if (fromUtc > toUtc) throw new ArgumentException("Audit time range is invalid.");
+        ValidateAuditFilter(actorSubject, nameof(actorSubject));
+        ValidateAuditFilter(action, nameof(action));
+        ValidateAuditFilter(result, nameof(result));
+        return (await repository.ListAuditAsync(Math.Clamp(take, 1, export ? 5000 : 500), actorSubject, action, result,
+            fromUtc, toUtc, cancellationToken)).Select(item => new AuditEventDto(item.Id,
+                item.ActorSubject, item.Action, item.TargetType, item.TargetId, item.Result, item.SourceIp, item.JobId, item.TraceId,
+                item.OccurredAtUtc)).ToArray();
+    }
 
     private static ScheduledTaskDto Map(Domain.Entities.ScheduledTask item) => new(item.Id, item.TaskType, item.Name,
         item.ScheduleKind, item.ScheduleExpression, item.Timezone, item.ParametersJson, item.ConcurrencyPolicy, item.TimeoutSeconds, item.IsEnabled,
@@ -150,5 +185,10 @@ public sealed class GovernanceService(IGovernanceRepository repository)
     {
         if (json.Length > 32768) throw new ArgumentException("JSON value is too large.");
         using var _ = JsonDocument.Parse(json);
+    }
+    private static void ValidateAuditFilter(string? value, string name)
+    {
+        if (value?.Length > 256 || value?.Any(char.IsControl) == true)
+            throw new ArgumentException($"Audit filter is invalid: {name}.");
     }
 }

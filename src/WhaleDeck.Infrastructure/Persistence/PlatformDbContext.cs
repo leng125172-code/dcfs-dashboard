@@ -123,6 +123,7 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             entity.HasKey(item => item.Id);
             entity.Property(item => item.ConfigSummaryJson).HasColumnType("jsonb");
             entity.Property(item => item.Version).IsConcurrencyToken();
+            entity.HasIndex(item => item.CatalogAppId).IsUnique();
         });
         modelBuilder.Entity<ApplicationResource>(entity =>
         {
@@ -134,6 +135,7 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             entity.ToTable("application_update_runs");
             entity.HasKey(item => item.Id);
             entity.HasIndex(item => new { item.ApplicationId, item.StartedAtUtc });
+            entity.HasIndex(item => item.JobId).IsUnique();
         });
     }
 

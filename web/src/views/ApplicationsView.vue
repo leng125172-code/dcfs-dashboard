@@ -1,36 +1,55 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiRequest } from '@/services/apiClient'
 import { enqueueOperation, planOperation, stageSecret } from '@/services/operations'
 import type {
   ApplicationImageMetadata,
+  ApplicationDetail,
+  ApplicationInstallation,
   CatalogApplication,
   ManagedResource,
 } from '@/services/contracts'
 
 const catalog = ref<CatalogApplication[]>([])
 const route = useRoute()
+const router = useRouter()
 const installed = ref<ManagedResource[]>([])
+const installations = ref<ApplicationInstallation[]>([])
+const detail = ref<ApplicationDetail | null>(null)
+const detailVisible = ref(false)
+const detailLoading = ref(false)
 const stale = ref(false)
 const loading = ref(false)
 const installVisible = ref(false)
 const submitting = ref(false)
 const inspectingImage = ref(false)
 const imageMetadata = ref<ApplicationImageMetadata | null>(null)
-const form = reactive({ slug: '', image: '', ports: '', environment: '', autoupdate: false })
+const form = reactive({
+  slug: '',
+  displayName: '',
+  image: '',
+  ports: '',
+  environment: '',
+  autoupdate: false,
+  versionRange: '*',
+  maintenanceWindow: 'Sun@20:00-23:59',
+  dependencies: '',
+})
 
 async function load() {
   loading.value = true
   try {
-    const [popular, apps] = await Promise.all([
+    const [popular, apps, records] = await Promise.all([
       apiRequest<{ applications: CatalogApplication[]; isStale: boolean }>('applications/popular'),
       apiRequest<ManagedResource[]>('applications'),
+      apiRequest<ApplicationInstallation[]>('applications/installations'),
     ])
     catalog.value = popular.applications
     stale.value = popular.isStale
     installed.value = apps
+    installations.value = records
   } finally {
     loading.value = false
   }
@@ -39,10 +58,14 @@ async function load() {
 function openInstall(item?: CatalogApplication) {
   Object.assign(form, {
     slug: item?.id || '',
+    displayName: item?.name || '',
     image: item?.image || '',
     ports: '',
     environment: '',
     autoupdate: false,
+    versionRange: '*',
+    maintenanceWindow: 'Sun@20:00-23:59',
+    dependencies: '',
   })
   imageMetadata.value = null
   installVisible.value = true
@@ -73,7 +96,14 @@ async function install() {
   submitting.value = true
   try {
     const parameters: Record<string, string> = { slug: form.slug.trim(), image: form.image.trim() }
+    parameters.catalogAppId = form.slug.trim()
+    parameters.templateId = itemTemplateId()
+    parameters.templateVersion = '1'
+    parameters.displayName = form.displayName.trim() || form.slug.trim()
     parameters.autoupdate = String(form.autoupdate)
+    parameters.versionRange = form.versionRange.trim() || '*'
+    parameters.maintenanceWindow = form.maintenanceWindow.trim()
+    if (form.dependencies.trim()) parameters.dependencies = form.dependencies.trim()
     if (form.ports.trim()) parameters.ports = form.ports.trim()
     if (form.environment.trim()) {
       const ticket = await stageSecret(form.environment)
@@ -99,6 +129,37 @@ async function install() {
   } finally {
     submitting.value = false
   }
+}
+
+function itemTemplateId() {
+  return catalog.value.some((item) => item.id === form.slug.trim()) ? 'xuanyuan' : 'custom-oci'
+}
+
+function installationFor(item: ManagedResource) {
+  const slug = item.id.replace(/^application:/, '')
+  return installations.value.find((record) => record.catalogAppId === slug)
+}
+
+async function openDetail(id: string) {
+  detailLoading.value = true
+  detailVisible.value = true
+  try {
+    detail.value = await apiRequest<ApplicationDetail>(`applications/installations/${id}`)
+    if (route.params.id !== id) await router.push({ name: 'application-detail', params: { id } })
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+async function syncDetailFromRoute() {
+  const id = typeof route.params.id === 'string' ? route.params.id : ''
+  if (id) await openDetail(id)
+}
+
+async function closeDetail() {
+  detailVisible.value = false
+  detail.value = null
+  if (route.name === 'application-detail') await router.push({ name: 'applications' })
 }
 
 async function lifecycle(
@@ -133,7 +194,15 @@ onMounted(async () => {
     const item = catalog.value.find((candidate) => candidate.id === route.query.app)
     if (item && !item.installed) openInstall(item)
   }
+  await syncDetailFromRoute()
 })
+
+watch(
+  () => route.params.id,
+  async () => {
+    if (route.name === 'application-detail') await syncDetailFromRoute()
+  },
+)
 </script>
 
 <template>
@@ -197,6 +266,13 @@ onMounted(async () => {
           </div>
           <el-tag>{{ item.state }}</el-tag>
           <div class="installed-row__actions">
+            <el-button
+              v-if="installationFor(item)"
+              link
+              type="primary"
+              @click="openDetail(installationFor(item)?.id || '')"
+              >详情</el-button
+            >
             <el-button link @click="lifecycle(item, 'start')">启动</el-button
             ><el-button link type="danger" @click="lifecycle(item, 'stop')">停止</el-button
             ><el-button link @click="lifecycle(item, 'restart')">重启</el-button
@@ -212,6 +288,8 @@ onMounted(async () => {
       <el-form label-position="top"
         ><el-form-item label="应用标识"
           ><el-input v-model="form.slug" placeholder="my-app" /></el-form-item
+        ><el-form-item label="显示名称"
+          ><el-input v-model="form.displayName" placeholder="My App" /></el-form-item
         ><el-form-item label="OCI 镜像"
           ><el-input v-model="form.image"
             ><template #append
@@ -254,6 +332,23 @@ onMounted(async () => {
           ><el-switch v-model="form.autoupdate" /><small class="form-tip"
             >只有启用后写入 autoupdate 标签，计划任务才允许更新此应用。</small
           ></el-form-item
+        ><template v-if="form.autoupdate"
+          ><el-form-item label="允许版本范围"
+            ><el-input v-model="form.versionRange" placeholder="*、1.4.*、>=1.4.0 或 1.4.2" /><small
+              class="form-tip"
+              >镜像无可识别版本时只能使用 *；更新前会再次校验。</small
+            ></el-form-item
+          ><el-form-item label="维护窗口"
+            ><el-input v-model="form.maintenanceWindow" placeholder="Sun@20:00-23:59" /><small
+              class="form-tip"
+              >使用 Asia/Shanghai 时区，自动更新仅在该窗口执行。</small
+            ></el-form-item
+          ><el-form-item label="依赖应用（可选）"
+            ><el-input
+              v-model="form.dependencies"
+              placeholder="postgres-exporter,metrics-gateway"
+            /><small class="form-tip">逗号分隔；依赖未安装时自动更新会被阻止。</small></el-form-item
+          ></template
         ></el-form
       >
       <template #footer
@@ -267,6 +362,78 @@ onMounted(async () => {
         ></template
       >
     </el-dialog>
+
+    <el-drawer
+      v-model="detailVisible"
+      title="应用详情"
+      size="min(760px, 96vw)"
+      destroy-on-close
+      @closed="closeDetail"
+    >
+      <div v-loading="detailLoading" class="application-detail">
+        <template v-if="detail">
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="应用">{{
+              detail.installation.displayName
+            }}</el-descriptions-item>
+            <el-descriptions-item label="状态">{{
+              detail.installation.state
+            }}</el-descriptions-item>
+            <el-descriptions-item label="当前版本">{{
+              detail.installation.installedVersion
+            }}</el-descriptions-item>
+            <el-descriptions-item label="自动更新">{{
+              detail.installation.autoUpdateEnabled ? '启用' : '关闭'
+            }}</el-descriptions-item>
+            <el-descriptions-item label="模板"
+              >{{ detail.installation.templateId }} /
+              {{ detail.installation.templateVersion }}</el-descriptions-item
+            >
+            <el-descriptions-item label="安装时间">{{
+              new Date(detail.installation.installedAtUtc).toLocaleString()
+            }}</el-descriptions-item>
+          </el-descriptions>
+
+          <section>
+            <h3>关联资源</h3>
+            <el-table :data="detail.resources" empty-text="暂无关联资源">
+              <el-table-column prop="role" label="角色" width="130" />
+              <el-table-column prop="name" label="资源" min-width="160" />
+              <el-table-column prop="type" label="类型" width="140" />
+              <el-table-column prop="state" label="状态" width="110" />
+              <el-table-column
+                prop="version"
+                label="版本 / 镜像"
+                min-width="200"
+                show-overflow-tooltip
+              />
+            </el-table>
+          </section>
+
+          <section>
+            <h3>更新历史</h3>
+            <el-table :data="detail.updateHistory" empty-text="暂无更新记录">
+              <el-table-column label="时间" min-width="170">
+                <template #default="{ row }">{{
+                  new Date(row.startedAtUtc).toLocaleString()
+                }}</template>
+              </el-table-column>
+              <el-table-column prop="result" label="结果" width="100" />
+              <el-table-column prop="versionPolicy" label="版本策略" width="110" />
+              <el-table-column
+                prop="newImageDigest"
+                label="镜像摘要"
+                min-width="230"
+                show-overflow-tooltip
+              />
+              <el-table-column label="回滚" width="80">
+                <template #default="{ row }">{{ row.wasRolledBack ? '是' : '否' }}</template>
+              </el-table-column>
+            </el-table>
+          </section>
+        </template>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -341,6 +508,15 @@ onMounted(async () => {
   overflow-wrap: anywhere;
   color: var(--el-text-color-regular);
   font-size: 12px;
+}
+.application-detail {
+  display: grid;
+  gap: 22px;
+  min-height: 180px;
+}
+.application-detail h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
 }
 @media (max-width: 760px) {
   .catalog-card,

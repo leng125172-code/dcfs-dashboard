@@ -21,6 +21,7 @@ public interface IJobRepository
 
 public interface IAgentGateway
 {
+    Task<AgentCapabilitiesDto> GetCapabilitiesAsync(CancellationToken cancellationToken);
     Task<AgentHealthDto> GetHealthAsync(CancellationToken cancellationToken);
     Task<HostInfoDto> GetHostInfoAsync(CancellationToken cancellationToken);
     Task<IReadOnlyCollection<JournalEntryDto>> QueryJournalAsync(string? unit, int take, int sinceMinutes, string? priority, string? keyword, CancellationToken cancellationToken);
@@ -73,11 +74,21 @@ public interface IMetricsQuery
     Task<IReadOnlyCollection<MetricSeriesSnapshotDto>> GetHistoryAsync(IReadOnlyCollection<string> kinds, int take, CancellationToken cancellationToken);
 }
 
+public interface IApplicationRepository
+{
+    Task<IReadOnlyCollection<ApplicationInstallation>> ListAsync(CancellationToken cancellationToken);
+    Task<ApplicationInstallation?> FindAsync(Guid id, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<(ManagedResource Resource, string Role)>> ListResourcesAsync(Guid applicationId, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<ApplicationUpdateRun>> ListUpdateRunsAsync(Guid applicationId, int take, CancellationToken cancellationToken);
+}
+
 public interface IGovernanceRepository
 {
     Task<IReadOnlyCollection<ScheduledTask>> ListSchedulesAsync(CancellationToken cancellationToken);
     Task<ScheduledTask> SaveScheduleAsync(string actorSubject, SaveScheduledTaskCommand command, CancellationToken cancellationToken);
+    Task<ScheduledTask> TriggerScheduleAsync(Guid id, string actorSubject, CancellationToken cancellationToken);
     Task DeleteScheduleAsync(Guid id, long expectedVersion, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<ScheduledTaskRun>> ListScheduleRunsAsync(Guid? scheduleId, int take, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<BackupPolicy>> ListBackupPoliciesAsync(CancellationToken cancellationToken);
     Task<IReadOnlyCollection<BackupRecord>> ListBackupRecordsAsync(string? instanceResourceId, int take, CancellationToken cancellationToken);
     Task<string> ResolveResourceExternalIdAsync(Guid id, CancellationToken cancellationToken);
@@ -85,8 +96,10 @@ public interface IGovernanceRepository
     Task<IReadOnlyCollection<AlertRule>> ListAlertRulesAsync(CancellationToken cancellationToken);
     Task<AlertRule> SaveAlertRuleAsync(SaveAlertRuleCommand command, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<AlertEvent>> ListAlertsAsync(bool includeRecovered, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<AlertEventHistory>> ListAlertHistoryAsync(Guid? alertEventId, int take, CancellationToken cancellationToken);
     Task<AlertEvent> UpdateAlertAsync(Guid id, string actorSubject, DateTimeOffset? silencedUntilUtc, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<PlatformSetting>> ListSettingsAsync(CancellationToken cancellationToken);
     Task<PlatformSetting> SaveSettingAsync(string key, string actorSubject, SavePlatformSettingCommand command, CancellationToken cancellationToken);
-    Task<IReadOnlyCollection<AuditEvent>> ListAuditAsync(int take, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<AuditEvent>> ListAuditAsync(int take, string? actorSubject, string? action, string? result,
+        DateTimeOffset? fromUtc, DateTimeOffset? toUtc, CancellationToken cancellationToken);
 }

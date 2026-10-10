@@ -61,10 +61,12 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("WhaleDeck/0.1 (+internal-workstation)");
         });
+        services.AddHttpClient("ServiceHealth", client => client.Timeout = TimeSpan.FromSeconds(5));
 
         services.AddScoped<IPortalRepository, PortalRepository>();
         services.AddScoped<IJobRepository, JobRepository>();
         services.AddScoped<IGovernanceRepository, GovernanceRepository>();
+        services.AddScoped<IApplicationRepository, ApplicationRepository>();
         services.AddScoped<IMetricsQuery, MetricsQuery>();
         services.AddScoped<ResourceLeaseManager>();
         services.AddScoped<IIdentityDirectory, AuthentikIdentityDirectory>();
@@ -78,6 +80,7 @@ public static class DependencyInjection
         services.AddScoped<OverviewService>();
         services.AddScoped<OperationService>();
         services.AddScoped<GovernanceService>();
+        services.AddScoped<ApplicationService>();
 
         return services;
     }

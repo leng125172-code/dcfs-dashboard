@@ -16,7 +16,8 @@ public sealed class ManagementController(
     IManagementQuery queries,
     ICatalogProvider catalog,
     IIdentityDirectory identity,
-    OperationService operations) : ControllerBase
+    OperationService operations,
+    ApplicationService applications) : ControllerBase
 {
     [HttpGet("containers")]
     public async Task<IActionResult> Containers([FromQuery] bool includeStopped = true, CancellationToken cancellationToken = default) =>
@@ -36,6 +37,17 @@ public sealed class ManagementController(
 
     [HttpGet("applications/popular")]
     public async Task<IActionResult> Popular(CancellationToken cancellationToken) => Ok(await catalog.GetPopularAsync(cancellationToken));
+
+    [HttpGet("applications/installations")]
+    public async Task<IActionResult> ApplicationInstallations(CancellationToken cancellationToken) =>
+        Ok(await applications.ListAsync(cancellationToken));
+
+    [HttpGet("applications/installations/{id:guid}")]
+    public async Task<IActionResult> Application(Guid id, CancellationToken cancellationToken)
+    {
+        var application = await applications.FindAsync(id, cancellationToken);
+        return application is null ? NotFound() : Ok(application);
+    }
 
     [HttpGet("users")]
     public async Task<IActionResult> Users(CancellationToken cancellationToken) => Ok(await identity.ListUsersAsync(cancellationToken));

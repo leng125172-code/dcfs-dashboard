@@ -39,11 +39,39 @@ public sealed class GovernanceServiceTests
         await Assert.ThrowsAnyAsync<Exception>(() => _service.SaveAlertRuleAsync(command, default));
     }
 
+    [Fact]
+    public async Task AuditRejectsInvertedTimeRange()
+    {
+        var now = DateTimeOffset.UtcNow;
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.ListAuditAsync(
+            100, null, null, null, now, now.AddMinutes(-1), false, default));
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("action")]
+    [InlineData("result")]
+    public async Task AuditRejectsOversizedFilters(string filter)
+    {
+        var value = new string('x', 257);
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.ListAuditAsync(
+            100,
+            filter == "actor" ? value : null,
+            filter == "action" ? value : null,
+            filter == "result" ? value : null,
+            null,
+            null,
+            false,
+            default));
+    }
+
     private sealed class NoOpRepository : IGovernanceRepository
     {
         public Task<IReadOnlyCollection<ScheduledTask>> ListSchedulesAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<ScheduledTask>>([]);
         public Task<ScheduledTask> SaveScheduleAsync(string actorSubject, SaveScheduledTaskCommand command, CancellationToken cancellationToken) => throw new InvalidOperationException();
+        public Task<ScheduledTask> TriggerScheduleAsync(Guid id, string actorSubject, CancellationToken cancellationToken) => throw new InvalidOperationException();
         public Task DeleteScheduleAsync(Guid id, long expectedVersion, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<IReadOnlyCollection<ScheduledTaskRun>> ListScheduleRunsAsync(Guid? scheduleId, int take, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<ScheduledTaskRun>>([]);
         public Task<IReadOnlyCollection<BackupPolicy>> ListBackupPoliciesAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<BackupPolicy>>([]);
         public Task<IReadOnlyCollection<BackupRecord>> ListBackupRecordsAsync(string? instanceResourceId, int take, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<BackupRecord>>([]);
         public Task<string> ResolveResourceExternalIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult("database-platform.postgres");
@@ -51,9 +79,10 @@ public sealed class GovernanceServiceTests
         public Task<IReadOnlyCollection<AlertRule>> ListAlertRulesAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<AlertRule>>([]);
         public Task<AlertRule> SaveAlertRuleAsync(SaveAlertRuleCommand command, CancellationToken cancellationToken) => throw new InvalidOperationException();
         public Task<IReadOnlyCollection<AlertEvent>> ListAlertsAsync(bool includeRecovered, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<AlertEvent>>([]);
+        public Task<IReadOnlyCollection<AlertEventHistory>> ListAlertHistoryAsync(Guid? alertEventId, int take, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<AlertEventHistory>>([]);
         public Task<AlertEvent> UpdateAlertAsync(Guid id, string actorSubject, DateTimeOffset? silencedUntilUtc, CancellationToken cancellationToken) => throw new InvalidOperationException();
         public Task<IReadOnlyCollection<PlatformSetting>> ListSettingsAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<PlatformSetting>>([]);
         public Task<PlatformSetting> SaveSettingAsync(string key, string actorSubject, SavePlatformSettingCommand command, CancellationToken cancellationToken) => throw new InvalidOperationException();
-        public Task<IReadOnlyCollection<AuditEvent>> ListAuditAsync(int take, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<AuditEvent>>([]);
+        public Task<IReadOnlyCollection<AuditEvent>> ListAuditAsync(int take, string? actorSubject, string? action, string? result, DateTimeOffset? fromUtc, DateTimeOffset? toUtc, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<AuditEvent>>([]);
     }
 }

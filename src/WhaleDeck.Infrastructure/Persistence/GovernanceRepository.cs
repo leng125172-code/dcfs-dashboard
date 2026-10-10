@@ -50,6 +50,38 @@ public sealed class GovernanceRepository(PlatformDbContext db) : IGovernanceRepo
         return item;
     }
 
+    public async Task<ScheduledTask> TriggerScheduleAsync(Guid id, string actorSubject, CancellationToken cancellationToken)
+    {
+        var item = await db.ScheduledTasks.SingleOrDefaultAsync(value => value.Id == id, cancellationToken)
+            ?? throw new KeyNotFoundException("Scheduled task was not found.");
+        if (!item.IsEnabled) throw new InvalidOperationException("A disabled scheduled task cannot run.");
+        item.NextRunAtUtc = DateTimeOffset.UtcNow;
+        item.UpdatedBySubject = actorSubject;
+        item.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        item.Version++;
+        db.AuditEvents.Add(new AuditEvent
+        {
+            ActorSubject = actorSubject,
+            Action = "schedule.run-now",
+            TargetType = "schedule",
+            TargetId = item.Id.ToString("D"),
+            Result = "Accepted",
+            TraceId = item.Id.ToString("N")
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        return item;
+    }
+
+    public async Task<IReadOnlyCollection<ScheduledTaskRun>> ListScheduleRunsAsync(
+        Guid? scheduleId,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var query = db.ScheduledTaskRuns.AsNoTracking();
+        if (scheduleId is { } id) query = query.Where(item => item.ScheduleId == id);
+        return await query.OrderByDescending(item => item.ScheduledForUtc).Take(take).ToArrayAsync(cancellationToken);
+    }
+
     public async Task DeleteScheduleAsync(Guid id, long expectedVersion, CancellationToken cancellationToken)
     {
         var item = await db.ScheduledTasks.SingleOrDefaultAsync(value => value.Id == id, cancellationToken)
@@ -168,6 +200,16 @@ public sealed class GovernanceRepository(PlatformDbContext db) : IGovernanceRepo
         await db.AlertEvents.AsNoTracking().Where(item => includeRecovered || item.State != "Recovered")
             .OrderByDescending(item => item.LastOccurredAtUtc).Take(500).ToArrayAsync(cancellationToken);
 
+    public async Task<IReadOnlyCollection<AlertEventHistory>> ListAlertHistoryAsync(
+        Guid? alertEventId,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var query = db.AlertEventHistory.AsNoTracking();
+        if (alertEventId is { } id) query = query.Where(item => item.AlertEventId == id);
+        return await query.OrderByDescending(item => item.OccurredAtUtc).Take(take).ToArrayAsync(cancellationToken);
+    }
+
     public async Task<AlertEvent> UpdateAlertAsync(Guid id, string actorSubject, DateTimeOffset? silencedUntilUtc, CancellationToken cancellationToken)
     {
         var item = await db.AlertEvents.SingleOrDefaultAsync(value => value.Id == id, cancellationToken)
@@ -205,8 +247,23 @@ public sealed class GovernanceRepository(PlatformDbContext db) : IGovernanceRepo
         return item;
     }
 
-    public async Task<IReadOnlyCollection<AuditEvent>> ListAuditAsync(int take, CancellationToken cancellationToken) =>
-        await db.AuditEvents.AsNoTracking().OrderByDescending(item => item.OccurredAtUtc).Take(take).ToArrayAsync(cancellationToken);
+    public async Task<IReadOnlyCollection<AuditEvent>> ListAuditAsync(
+        int take,
+        string? actorSubject,
+        string? action,
+        string? result,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+    {
+        var query = db.AuditEvents.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(actorSubject)) query = query.Where(item => item.ActorSubject == actorSubject);
+        if (!string.IsNullOrWhiteSpace(action)) query = query.Where(item => item.Action == action);
+        if (!string.IsNullOrWhiteSpace(result)) query = query.Where(item => item.Result == result);
+        if (fromUtc is { } from) query = query.Where(item => item.OccurredAtUtc >= from);
+        if (toUtc is { } to) query = query.Where(item => item.OccurredAtUtc <= to);
+        return await query.OrderByDescending(item => item.OccurredAtUtc).Take(take).ToArrayAsync(cancellationToken);
+    }
 
     private static void RequireVersion(long? expected, long actual)
     {

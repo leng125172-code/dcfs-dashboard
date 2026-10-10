@@ -155,6 +155,16 @@ export interface ScheduledTask {
   version: number
 }
 
+export interface ScheduledTaskRun {
+  id: string
+  scheduleId: string
+  jobId: string
+  scheduledForUtc: string
+  startedAtUtc: string | null
+  completedAtUtc: string | null
+  result: string
+}
+
 export interface AlertRule {
   id: string
   ruleType: string
@@ -182,6 +192,14 @@ export interface AlertEvent {
   summaryCode: string
 }
 
+export interface AlertEventHistory {
+  id: string
+  alertEventId: string
+  state: string
+  actorSubject: string
+  occurredAtUtc: string
+}
+
 export interface PlatformSetting {
   key: string
   valueJson: string
@@ -203,4 +221,84 @@ export interface BackupPolicy {
   capacityWarningPercent: number
   capacityCriticalPercent: number
   version: number
+}
+
+export interface ApplicationInstallation {
+  id: string
+  catalogAppId: string
+  templateId: string
+  templateVersion: string
+  displayName: string
+  installedVersion: string
+  desiredVersion: string | null
+  state: string
+  autoUpdateEnabled: boolean
+  configSummaryJson: string
+  installedBySubject: string
+  installedAtUtc: string
+  updatedAtUtc: string
+  version: number
+}
+
+export interface ApplicationResource {
+  role: string
+  resourceId: string
+  externalId: string
+  name: string
+  type: string
+  state: string
+  version: string
+  isProtected: boolean
+}
+
+export interface ApplicationUpdateRun {
+  id: string
+  applicationId: string
+  oldImageDigest: string | null
+  newImageDigest: string
+  versionPolicy: string | null
+  planHash: string
+  jobId: string
+  startedAtUtc: string
+  completedAtUtc: string | null
+  result: string
+  wasRolledBack: boolean
+  errorSummary: string | null
+}
+
+export interface ApplicationDetail {
+  installation: ApplicationInstallation
+  resources: ApplicationResource[]
+  updateHistory: ApplicationUpdateRun[]
+}
+
+export interface ServiceEntry {
+  id: string
+  name: string
+  description: string
+  url: string
+  status: string
+  latencyMilliseconds: number | null
+  checkedAtUtc: string
+}
+
+export interface AgentCapabilities {
+  agentVersion: string
+  protocolMajor: number
+  protocolMinor: number
+  capabilities: string[]
+}
+
+export interface AgentHealth {
+  available: boolean
+  dockerAvailable: boolean
+  systemdAvailable: boolean
+  status: string
+  observedAtUtc: string
+}
+
+export interface AgentStatus {
+  capabilities: AgentCapabilities
+  health: AgentHealth
+  currentJobs: Job[]
 }

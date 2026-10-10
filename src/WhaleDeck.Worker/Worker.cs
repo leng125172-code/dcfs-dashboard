@@ -113,7 +113,9 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         var discovered = (await agent.ListResourcesAsync("overview", cancellationToken))
             .Concat(await agent.ListResourcesAsync("databases", cancellationToken))
             .Concat(await agent.ListResourcesAsync("applications", cancellationToken))
+            .DistinctBy(item => (item.Type, item.Id))
             .ToArray();
+        var resources = new Dictionary<(string Type, string Id), ManagedResource>();
         foreach (var item in discovered)
         {
             var resource = await db.ManagedResources.SingleOrDefaultAsync(value => value.ResourceType == item.Type && value.ExternalId == item.Id, cancellationToken);
@@ -131,6 +133,61 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             resource.LabelsJson = JsonSerializer.Serialize(new { state = item.State, version = item.Version, attributes = item.Attributes });
             resource.LastSeenAtUtc = now;
             resource.Version++;
+            resources[(item.Type, item.Id)] = resource;
+        }
+
+        foreach (var item in discovered.Where(item => item.Type == "ComposeApplication"))
+        {
+            var slug = item.Id.StartsWith("application:", StringComparison.Ordinal) ? item.Id["application:".Length..] : item.Name;
+            var installation = await db.ApplicationInstallations.SingleOrDefaultAsync(value => value.CatalogAppId == slug, cancellationToken);
+            if (installation is null)
+            {
+                installation = new ApplicationInstallation
+                {
+                    CatalogAppId = slug,
+                    TemplateId = "managed-compose",
+                    TemplateVersion = "1",
+                    DisplayName = item.Name,
+                    InstalledVersion = item.Version,
+                    InstalledBySubject = "system:discovery"
+                };
+                db.ApplicationInstallations.Add(installation);
+            }
+            installation.DisplayName = item.Name;
+            installation.InstalledVersion = item.Version;
+            installation.State = item.State;
+            installation.AutoUpdateEnabled = item.Attributes.TryGetValue("autoUpdate", out var enabled) &&
+                bool.TryParse(enabled, out var parsed) && parsed;
+            installation.ConfigSummaryJson = JsonSerializer.Serialize(new
+            {
+                image = item.Version,
+                composeProject = item.Attributes.GetValueOrDefault("composeProject"),
+                versionPolicy = item.Attributes.GetValueOrDefault("versionPolicy", "*"),
+                maintenanceWindow = item.Attributes.GetValueOrDefault("maintenanceWindow", string.Empty)
+            });
+            installation.UpdatedAtUtc = now;
+            installation.Version++;
+
+            var composeProject = item.Attributes.GetValueOrDefault("composeProject", $"whaledeck-app-{slug}");
+            var desired = discovered.Where(candidate =>
+                    candidate.Id == item.Id ||
+                    candidate.Type == "Container" && candidate.Attributes.TryGetValue("com.docker.compose.project", out var project) &&
+                    (string.Equals(project, composeProject, StringComparison.Ordinal) || string.Equals(project, slug, StringComparison.Ordinal)))
+                .Select(candidate => resources[(candidate.Type, candidate.Id)])
+                .DistinctBy(candidate => candidate.Id)
+                .ToArray();
+            var existingLinks = await db.ApplicationResources.Where(link => link.ApplicationId == installation.Id).ToArrayAsync(cancellationToken);
+            var desiredIds = desired.Select(resource => resource.Id).ToHashSet();
+            db.ApplicationResources.RemoveRange(existingLinks.Where(link => !desiredIds.Contains(link.ResourceId)));
+            foreach (var resource in desired.Where(resource => existingLinks.All(link => link.ResourceId != resource.Id)))
+            {
+                db.ApplicationResources.Add(new ApplicationResource
+                {
+                    ApplicationId = installation.Id,
+                    ResourceId = resource.Id,
+                    Role = resource.ResourceType == "Container" ? "Container" : "ComposeProject"
+                });
+            }
         }
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -582,8 +639,129 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             scheduleRun.CompletedAtUtc = DateTimeOffset.UtcNow;
             scheduleRun.StartedAtUtc ??= job.StartedAtUtc;
         }
+        await ProjectApplicationOperation(db, job, state, errorCode, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    private static async Task ProjectApplicationOperation(
+        PlatformDbContext db,
+        OperationJob job,
+        string state,
+        string? errorCode,
+        CancellationToken cancellationToken)
+    {
+        if (!job.JobType.StartsWith("applications.", StringComparison.Ordinal)) return;
+        var action = job.JobType["applications.".Length..];
+        using var request = JsonDocument.Parse(job.RequestJson);
+        var parameters = request.RootElement.TryGetProperty("parameters", out var values) && values.ValueKind == JsonValueKind.Object
+            ? values.EnumerateObject().ToDictionary(item => item.Name, item => item.Value.ToString(), StringComparer.Ordinal)
+            : new Dictionary<string, string>(StringComparer.Ordinal);
+        if (!parameters.TryGetValue("slug", out var slug) || string.IsNullOrWhiteSpace(slug)) return;
+
+        var installation = await db.ApplicationInstallations.SingleOrDefaultAsync(item => item.CatalogAppId == slug, cancellationToken);
+        if (installation is null)
+        {
+            var image = parameters.GetValueOrDefault("image", "unknown");
+            installation = new ApplicationInstallation
+            {
+                CatalogAppId = slug,
+                TemplateId = parameters.GetValueOrDefault("templateId", "managed-compose"),
+                TemplateVersion = parameters.GetValueOrDefault("templateVersion", "1"),
+                DisplayName = parameters.GetValueOrDefault("displayName", slug),
+                InstalledVersion = image,
+                DesiredVersion = image,
+                InstalledBySubject = job.ActorSubject
+            };
+            db.ApplicationInstallations.Add(installation);
+        }
+
+        var terminal = state is "Succeeded" or "Failed" or "Canceled";
+        var result = ReadJsonObject(job.ResultJson);
+        var rolledBack = ReadBoolean(result, "rolledBack");
+        installation.State = terminal
+            ? state switch
+            {
+                "Succeeded" when action == "stop" => "Stopped",
+                "Succeeded" when action == "uninstall" => "Uninstalled",
+                "Succeeded" => "Running",
+                "Failed" when rolledBack => "Running",
+                "Failed" when action == "install" => "Failed",
+                _ => installation.State
+            }
+            : action switch
+            {
+                "install" => "Installing",
+                "update" or "reinstall" => "Updating",
+                "stop" => "Stopping",
+                "start" or "restart" => "Starting",
+                "uninstall" => "Uninstalling",
+                _ => installation.State
+            };
+        installation.AutoUpdateEnabled = parameters.TryGetValue("autoupdate", out var autoUpdate) && bool.TryParse(autoUpdate, out var enabled)
+            ? enabled
+            : ReadBoolean(result, "autoUpdate") || installation.AutoUpdateEnabled;
+        installation.DesiredVersion = parameters.TryGetValue("image", out var desiredImage) ? desiredImage : installation.DesiredVersion;
+        installation.InstalledVersion = ReadString(result, "version") ?? ReadString(result, "imageId") ?? installation.InstalledVersion;
+        installation.ConfigSummaryJson = JsonSerializer.Serialize(new
+        {
+            image = parameters.GetValueOrDefault("image") ?? ReadString(result, "image"),
+            ports = parameters.GetValueOrDefault("ports"),
+            autoUpdate = installation.AutoUpdateEnabled,
+            versionPolicy = parameters.GetValueOrDefault("versionRange") ?? ReadString(result, "versionPolicy") ?? "*",
+            maintenanceWindow = parameters.GetValueOrDefault("maintenanceWindow", "Sun@20:00-23:59"),
+            dependencies = parameters.GetValueOrDefault("dependencies")
+        });
+        installation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        installation.Version++;
+
+        if (terminal && action is "update" or "reinstall" &&
+            !await db.ApplicationUpdateRuns.AnyAsync(item => item.JobId == job.Id, cancellationToken))
+        {
+            var planHash = request.RootElement.TryGetProperty("planHash", out var plan) && plan.ValueKind == JsonValueKind.String
+                ? plan.GetString() ?? string.Empty
+                : string.Empty;
+            db.ApplicationUpdateRuns.Add(new ApplicationUpdateRun
+            {
+                ApplicationId = installation.Id,
+                OldImageDigest = ReadString(result, "oldImageId"),
+                NewImageDigest = ReadString(result, "imageId") ?? parameters.GetValueOrDefault("image", installation.InstalledVersion),
+                VersionPolicy = ReadString(result, "versionPolicy") ?? parameters.GetValueOrDefault("versionRange"),
+                PlanHash = planHash,
+                JobId = job.Id,
+                CompletedAtUtc = DateTimeOffset.UtcNow,
+                Result = state,
+                WasRolledBack = rolledBack,
+                ErrorSummary = errorCode
+            });
+        }
+        if (terminal && state == "Succeeded" && action == "uninstall")
+        {
+            var links = await db.ApplicationResources.Where(item => item.ApplicationId == installation.Id).ToArrayAsync(cancellationToken);
+            db.ApplicationResources.RemoveRange(links);
+        }
+    }
+
+    private static JsonElement? ReadJsonObject(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.ValueKind == JsonValueKind.Object ? document.RootElement.Clone() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ReadString(JsonElement? element, string property) =>
+        element is { } value && value.TryGetProperty(property, out var item) && item.ValueKind == JsonValueKind.String
+            ? item.GetString()
+            : null;
+
+    private static bool ReadBoolean(JsonElement? element, string property) =>
+        element is { } value && value.TryGetProperty(property, out var item) && item.ValueKind is JsonValueKind.True or JsonValueKind.False && item.GetBoolean();
 
     private static bool TryReadBackupResult(string? json, out BackupResult result)
     {

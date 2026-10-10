@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Text;
 using WhaleDeck.Api.Security;
 using WhaleDeck.Application.Models;
 using WhaleDeck.Application.Services;
@@ -29,6 +30,17 @@ public sealed class GovernanceController(GovernanceService governance) : Control
         return NoContent();
     }
 
+    [HttpPost("schedules/{id:guid}/run")]
+    public async Task<IActionResult> RunSchedule(Guid id, CancellationToken cancellationToken) =>
+        Accepted(await governance.TriggerScheduleAsync(id, User.RequireSubject(), cancellationToken));
+
+    [HttpGet("schedules/runs")]
+    public async Task<IActionResult> ScheduleRuns(
+        [FromQuery] Guid? scheduleId,
+        [FromQuery] int take = 100,
+        CancellationToken cancellationToken = default) =>
+        Ok(await governance.ListScheduleRunsAsync(scheduleId, take, cancellationToken));
+
     [HttpGet("backups/policies")]
     public async Task<IActionResult> BackupPolicies(CancellationToken cancellationToken) => Ok(await governance.ListBackupPoliciesAsync(cancellationToken));
 
@@ -54,6 +66,13 @@ public sealed class GovernanceController(GovernanceService governance) : Control
     public async Task<IActionResult> Alerts([FromQuery] bool includeRecovered = false, CancellationToken cancellationToken = default) =>
         Ok(await governance.ListAlertsAsync(includeRecovered, cancellationToken));
 
+    [HttpGet("alerts/history")]
+    public async Task<IActionResult> AlertHistory(
+        [FromQuery] Guid? alertEventId,
+        [FromQuery] int take = 200,
+        CancellationToken cancellationToken = default) =>
+        Ok(await governance.ListAlertHistoryAsync(alertEventId, take, cancellationToken));
+
     [HttpPost("alerts/{id:guid}/acknowledge")]
     public async Task<IActionResult> Acknowledge(Guid id, CancellationToken cancellationToken) =>
         Ok(await governance.UpdateAlertAsync(id, User.RequireSubject(), null, cancellationToken));
@@ -70,8 +89,44 @@ public sealed class GovernanceController(GovernanceService governance) : Control
         Ok(await governance.SaveSettingAsync(key, User.RequireSubject(), command, cancellationToken));
 
     [HttpGet("audit")]
-    public async Task<IActionResult> Audit([FromQuery] int take = 100, CancellationToken cancellationToken = default) =>
-        Ok(await governance.ListAuditAsync(take, cancellationToken));
+    public async Task<IActionResult> Audit(
+        [FromQuery] int take = 100,
+        [FromQuery] string? actorSubject = null,
+        [FromQuery] string? action = null,
+        [FromQuery] string? result = null,
+        [FromQuery] DateTimeOffset? fromUtc = null,
+        [FromQuery] DateTimeOffset? toUtc = null,
+        CancellationToken cancellationToken = default) =>
+        Ok(await governance.ListAuditAsync(take, actorSubject, action, result, fromUtc, toUtc, false, cancellationToken));
+
+    [HttpGet("audit/export")]
+    public async Task<IActionResult> ExportAudit(
+        [FromQuery] int take = 5000,
+        [FromQuery] string? actorSubject = null,
+        [FromQuery] string? action = null,
+        [FromQuery] string? result = null,
+        [FromQuery] DateTimeOffset? fromUtc = null,
+        [FromQuery] DateTimeOffset? toUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        var events = await governance.ListAuditAsync(take, actorSubject, action, result, fromUtc, toUtc, true, cancellationToken);
+        var csv = new StringBuilder("id,occurredAtUtc,actorSubject,action,targetType,targetId,result,sourceIp,jobId,traceId\r\n");
+        foreach (var item in events)
+        {
+            csv.AppendJoin(',', Csv(item.Id.ToString("D")), Csv(item.OccurredAtUtc.ToString("O")), Csv(item.ActorSubject),
+                Csv(item.Action), Csv(item.TargetType), Csv(item.TargetId), Csv(item.Result), Csv(item.SourceIp),
+                Csv(item.JobId?.ToString("D")), Csv(item.TraceId)).Append("\r\n");
+        }
+        return File(new UTF8Encoding(true).GetBytes(csv.ToString()), "text/csv; charset=utf-8",
+            $"whaledeck-audit-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.csv");
+    }
+
+    private static string Csv(string? value)
+    {
+        var safe = value ?? string.Empty;
+        if (safe.Length > 0 && safe[0] is '=' or '+' or '-' or '@') safe = "'" + safe;
+        return $"\"{safe.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+    }
 
     public sealed record SilenceAlertRequest(DateTimeOffset UntilUtc);
 }

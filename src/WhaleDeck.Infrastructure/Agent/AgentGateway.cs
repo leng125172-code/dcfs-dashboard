@@ -56,6 +56,13 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
         }
     }
 
+    public async Task<AgentCapabilitiesDto> GetCapabilitiesAsync(CancellationToken cancellationToken)
+    {
+        var response = await _agent.GetCapabilitiesAsync(new Empty(), cancellationToken: cancellationToken);
+        return new AgentCapabilitiesDto(response.AgentVersion, checked((int)response.ProtocolMajor),
+            checked((int)response.ProtocolMinor), response.Capabilities.ToArray());
+    }
+
     public async Task<HostInfoDto> GetHostInfoAsync(CancellationToken cancellationToken)
     {
         var response = await _host.GetHostInfoAsync(new Empty(), Headers("/whaledeck.agent.v1.HostService/GetHostInfo"), cancellationToken: cancellationToken);

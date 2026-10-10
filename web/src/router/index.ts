@@ -23,6 +23,8 @@ const SettingsView = () => import('@/views/SettingsView.vue')
 const HostResourcesView = () => import('@/views/HostResourcesView.vue')
 const HostLogsView = () => import('@/views/HostLogsView.vue')
 const HostUpdatesView = () => import('@/views/HostUpdatesView.vue')
+const ServicesView = () => import('@/views/ServicesView.vue')
+const AgentStatusView = () => import('@/views/AgentStatusView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -43,6 +45,12 @@ const router = createRouter({
           component: OverviewView,
         },
         { path: 'portal', name: 'portal', component: PortalView, meta: { title: '我的门户' } },
+        {
+          path: 'services',
+          name: 'services',
+          component: ServicesView,
+          meta: { title: '内部服务' },
+        },
         {
           path: 'containers',
           name: 'containers',
@@ -74,6 +82,12 @@ const router = createRouter({
           meta: { administratorOnly: true, title: 'Docker 设置' },
         },
         {
+          path: 'compose-projects',
+          name: 'compose-projects',
+          component: ResourceListView,
+          meta: { administratorOnly: true, title: 'Compose 项目', endpoint: 'compose-projects' },
+        },
+        {
           path: 'databases',
           name: 'databases',
           component: DatabasesView,
@@ -84,6 +98,12 @@ const router = createRouter({
           name: 'applications',
           component: ApplicationsView,
           meta: { administratorOnly: true, title: '应用' },
+        },
+        {
+          path: 'applications/:id',
+          name: 'application-detail',
+          component: ApplicationsView,
+          meta: { administratorOnly: true, title: '应用详情' },
         },
         {
           path: 'systemd',
@@ -108,6 +128,12 @@ const router = createRouter({
           name: 'host-updates',
           component: HostUpdatesView,
           meta: { administratorOnly: true, title: '系统更新' },
+        },
+        {
+          path: 'operations/agents',
+          name: 'agents',
+          component: AgentStatusView,
+          meta: { administratorOnly: true, title: '宿主机 Agent' },
         },
         {
           path: 'identity/users',

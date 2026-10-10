@@ -40,6 +40,26 @@ public sealed record AgentHealthDto(
     string Status,
     DateTimeOffset ObservedAtUtc);
 
+public sealed record AgentCapabilitiesDto(
+    string AgentVersion,
+    int ProtocolMajor,
+    int ProtocolMinor,
+    IReadOnlyCollection<string> Capabilities);
+
+public sealed record AgentStatusDto(
+    AgentCapabilitiesDto Capabilities,
+    AgentHealthDto Health,
+    IReadOnlyCollection<JobDto> CurrentJobs);
+
+public sealed record ServiceEntryDto(
+    string Id,
+    string Name,
+    string Description,
+    string Url,
+    string Status,
+    long? LatencyMilliseconds,
+    DateTimeOffset CheckedAtUtc);
+
 public sealed record HostInfoDto(
     string HostName,
     string Distribution,
@@ -173,3 +193,48 @@ public sealed record CatalogResultDto(
     IReadOnlyCollection<CatalogApplicationDto> Applications,
     DateTimeOffset FetchedAtUtc,
     bool IsStale);
+
+public sealed record ApplicationInstallationDto(
+    Guid Id,
+    string CatalogAppId,
+    string TemplateId,
+    string TemplateVersion,
+    string DisplayName,
+    string InstalledVersion,
+    string? DesiredVersion,
+    string State,
+    bool AutoUpdateEnabled,
+    string ConfigSummaryJson,
+    string InstalledBySubject,
+    DateTimeOffset InstalledAtUtc,
+    DateTimeOffset UpdatedAtUtc,
+    long Version);
+
+public sealed record ApplicationResourceDto(
+    string Role,
+    Guid ResourceId,
+    string ExternalId,
+    string Name,
+    string Type,
+    string State,
+    string Version,
+    bool IsProtected);
+
+public sealed record ApplicationUpdateRunDto(
+    Guid Id,
+    Guid ApplicationId,
+    string? OldImageDigest,
+    string NewImageDigest,
+    string? VersionPolicy,
+    string PlanHash,
+    Guid JobId,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? CompletedAtUtc,
+    string Result,
+    bool WasRolledBack,
+    string? ErrorSummary);
+
+public sealed record ApplicationDetailDto(
+    ApplicationInstallationDto Installation,
+    IReadOnlyCollection<ApplicationResourceDto> Resources,
+    IReadOnlyCollection<ApplicationUpdateRunDto> UpdateHistory);

@@ -63,6 +63,30 @@ public sealed class ManagedActionExecutorTests
         Assert.Equal(expected, method.Invoke(null, [path]));
     }
 
+    [Theory]
+    [InlineData("1.4.2", "*", true)]
+    [InlineData("1.4.2", "1.4.*", true)]
+    [InlineData("1.4.2", ">=1.3.0", true)]
+    [InlineData("1.4.2", "1.4.2", true)]
+    [InlineData("1.4.2", "2.*", false)]
+    [InlineData("latest", ">=1.0.0", false)]
+    public void VersionPolicyIsDeterministic(string version, string policy, bool expected)
+    {
+        var method = typeof(ManagedActionExecutor).GetMethod("VersionMatchesPolicy", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("VersionMatchesPolicy was not found.");
+        Assert.Equal(expected, method.Invoke(null, [version, policy]));
+    }
+
+    [Fact]
+    public void MaintenanceWindowUsesConfiguredShanghaiTime()
+    {
+        var method = typeof(ManagedActionExecutor).GetMethod("IsInMaintenanceWindow", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("IsInMaintenanceWindow was not found.");
+        var sunday2030 = new DateTimeOffset(2026, 10, 11, 12, 30, 0, TimeSpan.Zero);
+        Assert.Equal(true, method.Invoke(null, ["Sun@20:00-23:59", sunday2030]));
+        Assert.Equal(false, method.Invoke(null, ["Mon@20:00-23:59", sunday2030]));
+    }
+
     private static void InvokeValidateImage(string image)
         => InvokePrivate("ValidateImage", image);
 

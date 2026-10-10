@@ -32,6 +32,17 @@ public sealed class DockerEngine : IDisposable
     public Task<IList<ContainerListResponse>> ListContainersAsync(bool all, CancellationToken cancellationToken) =>
         _client.Containers.ListContainersAsync(new ContainersListParameters { All = all }, cancellationToken);
 
+    public async Task<bool> IsApplicationHealthyAsync(string slug, CancellationToken cancellationToken)
+    {
+        var expectedName = "whaledeck-app-" + slug;
+        var containers = await ListContainersAsync(true, cancellationToken);
+        var members = containers.Where(item => item.Names.Any(name =>
+            string.Equals(name.TrimStart('/'), expectedName, StringComparison.Ordinal))).ToArray();
+        return members.Length > 0 && members.All(item =>
+            string.Equals(item.State, "running", StringComparison.OrdinalIgnoreCase) &&
+            !(item.Status ?? string.Empty).Contains("unhealthy", StringComparison.OrdinalIgnoreCase));
+    }
+
     public Task<IList<ImagesListResponse>> ListImagesAsync(CancellationToken cancellationToken) =>
         _client.Images.ListImagesAsync(new ImagesListParameters { All = true }, cancellationToken);
 

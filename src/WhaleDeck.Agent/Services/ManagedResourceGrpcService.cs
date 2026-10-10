@@ -78,7 +78,8 @@ public sealed class ManagedResourceGrpcService(
                 var image = manifest.RootElement.TryGetProperty("image", out var imageValue) ? imageValue.GetString() ?? string.Empty : string.Empty;
                 var project = $"whaledeck-app-{slug}";
                 var members = containers.Where(item => item.Labels.TryGetValue("com.docker.compose.project", out var value) &&
-                                                       string.Equals(value, project, StringComparison.Ordinal)).ToArray();
+                                                       (string.Equals(value, project, StringComparison.Ordinal) ||
+                                                        string.Equals(value, slug, StringComparison.Ordinal))).ToArray();
                 var state = members.Length == 0
                     ? "Stopped"
                     : members.Any(item => string.Equals(item.State, "restarting", StringComparison.OrdinalIgnoreCase))
@@ -93,6 +94,9 @@ public sealed class ManagedResourceGrpcService(
                 };
                 snapshot.Attributes["composeProject"] = project;
                 snapshot.Attributes["containerCount"] = members.Length.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                snapshot.Attributes["autoUpdate"] = manifest.RootElement.TryGetProperty("autoUpdate", out var autoUpdate) && autoUpdate.GetBoolean() ? "true" : "false";
+                snapshot.Attributes["versionPolicy"] = manifest.RootElement.TryGetProperty("versionPolicy", out var versionPolicy) ? versionPolicy.GetString() ?? "*" : "*";
+                snapshot.Attributes["maintenanceWindow"] = manifest.RootElement.TryGetProperty("maintenanceWindow", out var maintenanceWindow) ? maintenanceWindow.GetString() ?? string.Empty : string.Empty;
                 response.Resources.Add(snapshot);
             }
             catch (JsonException)

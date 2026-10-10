@@ -36,9 +36,12 @@ public sealed partial class ManagedActionExecutor(
         {
             return await ExecutePlatformAsync(resource, action, parameters, cancellationToken);
         }
+        if (category == "Compose")
+        {
+            return await ExecuteApplicationAsync(action, parameters, cancellationToken);
+        }
         var task = category switch
         {
-            "Compose" => ExecuteApplicationAsync(action, parameters, cancellationToken),
             "ConfigRepository" => ExecuteRepositoryAsync(resource, action, parameters, cancellationToken),
             _ => throw new InvalidOperationException("The managed action category is unsupported.")
         };
@@ -246,7 +249,7 @@ public sealed partial class ManagedActionExecutor(
         return JsonSerializer.Serialize(new { output });
     }
 
-    private async Task ExecuteApplicationAsync(string action, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
+    private async Task<string?> ExecuteApplicationAsync(string action, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
     {
         var slug = Required(OptionalSlug(parameters, "slug"), "slug");
         var directory = ResolveChild(AppsRoot, slug);
@@ -257,16 +260,30 @@ public sealed partial class ManagedActionExecutor(
             ValidateImage(image);
             var autoUpdate = parameters.TryGetValue("autoupdate", out var autoUpdateValue) &&
                 bool.TryParse(autoUpdateValue, out var parsedAutoUpdate) && parsedAutoUpdate;
+            var versionPolicy = OptionalPolicy(parameters, "versionRange", "*");
+            var maintenanceWindow = OptionalPolicy(parameters, "maintenanceWindow", "Sun@20:00-23:59");
+            ValidateMaintenanceWindow(maintenanceWindow);
+            var dependencies = ParseDependencies(parameters.TryGetValue("dependencies", out var configuredDependencies) ? configuredDependencies : null);
             Directory.CreateDirectory(directory);
             try
             {
                 var compose = BuildApplicationCompose(slug, image, parameters);
                 AtomicWrite(Path.Combine(directory, "compose.yml"), compose);
-                AtomicWrite(Path.Combine(directory, "manifest.json"), JsonSerializer.Serialize(new { slug, image, autoUpdate, installedAtUtc = DateTimeOffset.UtcNow }, IndentedJson));
+                AtomicWrite(Path.Combine(directory, "manifest.json"), JsonSerializer.Serialize(new
+                {
+                    slug,
+                    image,
+                    autoUpdate,
+                    versionPolicy,
+                    maintenanceWindow,
+                    dependencies,
+                    installedAtUtc = DateTimeOffset.UtcNow
+                }, IndentedJson));
                 AtomicWrite(Path.Combine(directory, ".env"), parameters.TryGetValue("environment", out var environment) ? NormalizeEnvironment(environment) : string.Empty, UnixFileMode.UserRead | UnixFileMode.UserWrite);
                 AtomicWrite(Path.Combine(directory, ".env.example"), string.Empty);
                 AtomicWrite(Path.Combine(directory, "README.md"), $"# {slug}\n\nManaged by Whale Deck.\n");
                 await ComposeAsync(directory, ["up", "-d", "--remove-orphans"], cancellationToken);
+                await EnsureApplicationHealthyAsync(slug, cancellationToken);
             }
             catch
             {
@@ -275,7 +292,7 @@ public sealed partial class ManagedActionExecutor(
                 if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
                 throw;
             }
-            return;
+            return await BuildApplicationResultAsync(slug, image, null, false, autoUpdate, versionPolicy, cancellationToken);
         }
 
         if (!Directory.Exists(directory)) throw new InvalidOperationException("The application installation was not found.");
@@ -285,28 +302,155 @@ public sealed partial class ManagedActionExecutor(
             case "stop": await ComposeAsync(directory, ["stop"], cancellationToken); break;
             case "restart": await ComposeAsync(directory, ["restart"], cancellationToken); break;
             case "update":
-                if (parameters.TryGetValue("automatic", out var automatic) && bool.TryParse(automatic, out var isAutomatic) && isAutomatic)
-                {
-                    using var manifest = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(directory, "manifest.json"), cancellationToken));
-                    if (!manifest.RootElement.TryGetProperty("autoUpdate", out var enabled) || !enabled.GetBoolean())
-                        throw new InvalidOperationException("Automatic update is not enabled for this application.");
-                }
-                await ComposeAsync(directory, ["pull"], cancellationToken);
-                await ComposeAsync(directory, ["up", "-d", "--force-recreate"], cancellationToken);
-                break;
             case "reinstall":
-                await ComposeAsync(directory, ["pull"], cancellationToken);
-                await ComposeAsync(directory, ["up", "-d", "--force-recreate"], cancellationToken);
-                break;
+                return await UpdateApplicationAsync(slug, directory, parameters, cancellationToken);
             case "uninstall":
                 var args = parameters.TryGetValue("deleteVolumes", out var delete) && bool.TryParse(delete, out var deleteVolumes) && deleteVolumes
                     ? new[] { "down", "--volumes", "--remove-orphans" }
                     : ["down", "--remove-orphans"];
                 await ComposeAsync(directory, args, cancellationToken);
                 Directory.Delete(directory, recursive: true);
-                break;
+                return JsonSerializer.Serialize(new { slug, state = "Uninstalled" });
             default: throw new InvalidOperationException("The application action is unsupported.");
         }
+        using (var manifest = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(directory, "manifest.json"), cancellationToken)))
+        {
+            var image = manifest.RootElement.GetProperty("image").GetString() ?? string.Empty;
+            var autoUpdate = manifest.RootElement.TryGetProperty("autoUpdate", out var enabled) && enabled.GetBoolean();
+            var versionPolicy = manifest.RootElement.TryGetProperty("versionPolicy", out var policy) ? policy.GetString() ?? "*" : "*";
+            return await BuildApplicationResultAsync(slug, image, null, false, autoUpdate, versionPolicy, cancellationToken);
+        }
+    }
+
+    private async Task<string> UpdateApplicationAsync(
+        string slug,
+        string directory,
+        IReadOnlyDictionary<string, string> parameters,
+        CancellationToken cancellationToken)
+    {
+        var manifestPath = Path.Combine(directory, "manifest.json");
+        using var manifest = JsonDocument.Parse(await File.ReadAllTextAsync(manifestPath, cancellationToken));
+        var root = manifest.RootElement;
+        var image = Required(root.GetProperty("image").GetString(), "image");
+        var autoUpdate = root.TryGetProperty("autoUpdate", out var autoUpdateElement) && autoUpdateElement.GetBoolean();
+        var versionPolicy = root.TryGetProperty("versionPolicy", out var policyElement) ? policyElement.GetString() ?? "*" : "*";
+        var maintenanceWindow = root.TryGetProperty("maintenanceWindow", out var windowElement)
+            ? windowElement.GetString() ?? "Sun@20:00-23:59"
+            : "Sun@20:00-23:59";
+        var automatic = parameters.TryGetValue("automatic", out var automaticValue) &&
+            bool.TryParse(automaticValue, out var parsedAutomatic) && parsedAutomatic;
+        if (automatic)
+        {
+            if (!autoUpdate) throw new InvalidOperationException("Automatic update is not enabled for this application.");
+            if (!IsInMaintenanceWindow(maintenanceWindow, DateTimeOffset.UtcNow))
+                throw new InvalidOperationException("The application is outside its automatic update maintenance window.");
+            if (root.TryGetProperty("dependencies", out var dependenciesElement))
+            {
+                foreach (var dependency in dependenciesElement.EnumerateArray().Select(item => item.GetString()).Where(item => !string.IsNullOrWhiteSpace(item)))
+                {
+                    if (!Directory.Exists(ResolveChild(AppsRoot, dependency!)))
+                        throw new InvalidOperationException("An application update dependency is not installed.");
+                }
+            }
+        }
+
+        var oldMetadata = await docker.InspectImageAsync(image, false, cancellationToken);
+        var oldImageId = oldMetadata.ID ?? image;
+        var rollbackDirectory = directory + ".rollback-" + Guid.NewGuid().ToString("N");
+        SnapshotApplicationConfiguration(directory, rollbackDirectory);
+        try
+        {
+            await ComposeAsync(directory, ["pull"], cancellationToken);
+            var newMetadata = await docker.InspectImageAsync(image, false, cancellationToken);
+            var newVersion = ResolveImageVersion(image, newMetadata.Config?.Labels);
+            if (!VersionMatchesPolicy(newVersion, versionPolicy))
+                throw new InvalidOperationException("The pulled image version is outside the configured version policy.");
+
+            Exception? lastFailure = null;
+            for (var attempt = 1; attempt <= 3; attempt++)
+            {
+                try
+                {
+                    await ComposeAsync(directory, ["up", "-d", "--force-recreate", "--remove-orphans"], cancellationToken);
+                    await EnsureApplicationHealthyAsync(slug, cancellationToken);
+                    if (Directory.Exists(rollbackDirectory)) Directory.Delete(rollbackDirectory, recursive: true);
+                    return await BuildApplicationResultAsync(slug, image, oldImageId, false, autoUpdate, versionPolicy, cancellationToken);
+                }
+                catch (Exception exception) when (attempt < 3 && exception is not OperationCanceledException)
+                {
+                    lastFailure = exception;
+                    await Task.Delay(TimeSpan.FromSeconds(attempt * 3), cancellationToken);
+                }
+            }
+            throw lastFailure ?? new InvalidOperationException("The updated application did not become healthy.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            try
+            {
+                await processes.RunAsync("/usr/bin/docker", ["image", "tag", oldImageId, image], null, ShortTimeout,
+                    "APPLICATION_ROLLBACK_IMAGE_FAILED", CancellationToken.None);
+                RestoreApplicationConfiguration(rollbackDirectory, directory);
+                await ComposeAsync(directory, ["up", "-d", "--force-recreate", "--remove-orphans"], CancellationToken.None);
+                await EnsureApplicationHealthyAsync(slug, CancellationToken.None);
+                var result = await BuildApplicationResultAsync(slug, image, oldImageId, true, autoUpdate, versionPolicy, CancellationToken.None);
+                throw new ApplicationOperationException("Application update failed and was rolled back.", result, exception);
+            }
+            finally
+            {
+                if (Directory.Exists(rollbackDirectory)) Directory.Delete(rollbackDirectory, recursive: true);
+            }
+        }
+    }
+
+    private async Task<string> BuildApplicationResultAsync(
+        string slug,
+        string image,
+        string? oldImageId,
+        bool rolledBack,
+        bool autoUpdate,
+        string versionPolicy,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await docker.InspectImageAsync(image, false, cancellationToken);
+        return JsonSerializer.Serialize(new
+        {
+            slug,
+            image,
+            imageId = metadata.ID ?? image,
+            oldImageId,
+            version = ResolveImageVersion(image, metadata.Config?.Labels),
+            autoUpdate,
+            versionPolicy,
+            rolledBack,
+            state = "Running"
+        });
+    }
+
+    private async Task EnsureApplicationHealthyAsync(string slug, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            if (await docker.IsApplicationHealthyAsync(slug, cancellationToken)) return;
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+        throw new InvalidOperationException("The application did not become healthy before the timeout.");
+    }
+
+    private static void SnapshotApplicationConfiguration(string source, string target)
+    {
+        Directory.CreateDirectory(target);
+        foreach (var name in new[] { "compose.yml", "manifest.json", ".env", ".env.example", "README.md" })
+        {
+            var sourcePath = Path.Combine(source, name);
+            if (File.Exists(sourcePath)) File.Copy(sourcePath, Path.Combine(target, name), true);
+        }
+    }
+
+    private static void RestoreApplicationConfiguration(string source, string target)
+    {
+        if (!Directory.Exists(source)) return;
+        foreach (var file in Directory.EnumerateFiles(source)) File.Copy(file, Path.Combine(target, Path.GetFileName(file)), true);
     }
 
     private async Task ExecuteRepositoryAsync(RegisteredResource resource, string action, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
@@ -429,7 +573,7 @@ public sealed partial class ManagedActionExecutor(
     {
         var autoUpdate = parameters.TryGetValue("autoupdate", out var autoUpdateValue) &&
             bool.TryParse(autoUpdateValue, out var parsedAutoUpdate) && parsedAutoUpdate;
-        var builder = new StringBuilder($"name: {slug}\nservices:\n  app:\n    image: {Json(image)}\n    container_name: {Json("whaledeck-app-" + slug)}\n    restart: unless-stopped\n    init: true\n    labels:\n      io.whaledeck.resource-id: {Json("application." + slug)}\n      io.whaledeck.protected: \"false\"\n      io.whaledeck.autoupdate: {Json(autoUpdate ? "true" : "false")}\n      autoupdate: {Json(autoUpdate ? "true" : "false")}\n    security_opt:\n      - no-new-privileges:true\n    cap_drop:\n      - ALL\n    logging:\n      driver: local\n      options:\n        max-size: 10m\n        max-file: \"5\"\n        compress: \"true\"\n");
+        var builder = new StringBuilder($"name: {Json("whaledeck-app-" + slug)}\nservices:\n  app:\n    image: {Json(image)}\n    container_name: {Json("whaledeck-app-" + slug)}\n    restart: unless-stopped\n    init: true\n    labels:\n      io.whaledeck.resource-id: {Json("application." + slug)}\n      io.whaledeck.protected: \"false\"\n      io.whaledeck.autoupdate: {Json(autoUpdate ? "true" : "false")}\n      autoupdate: {Json(autoUpdate ? "true" : "false")}\n    security_opt:\n      - no-new-privileges:true\n    cap_drop:\n      - ALL\n    logging:\n      driver: local\n      options:\n        max-size: 10m\n        max-file: \"5\"\n        compress: \"true\"\n");
         if (parameters.TryGetValue("ports", out var ports) && !string.IsNullOrWhiteSpace(ports))
         {
             builder.Append("    ports:\n");
@@ -544,6 +688,78 @@ public sealed partial class ManagedActionExecutor(
         !parameters.TryGetValue(name, out var value) ? fallback :
         int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var parsed) && parsed >= minimum && parsed <= maximum
             ? parsed : throw new InvalidOperationException($"{name} is outside the approved range.");
+    private static string OptionalPolicy(IReadOnlyDictionary<string, string> parameters, string key, string fallback)
+    {
+        if (!parameters.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value)) return fallback;
+        value = value.Trim();
+        if (value.Length > 128 || value.Any(char.IsControl)) throw new InvalidOperationException($"{key} is invalid.");
+        return value;
+    }
+    private static string[] ParseDependencies(string? value) => string.IsNullOrWhiteSpace(value)
+        ? []
+        : value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(item => SlugPattern().IsMatch(item) ? item : throw new InvalidOperationException("An application dependency is invalid."))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    private static string ResolveImageVersion(string image, IDictionary<string, string>? labels)
+    {
+        if (labels is not null && labels.TryGetValue("org.opencontainers.image.version", out var version) && !string.IsNullOrWhiteSpace(version))
+            return version.TrimStart('v');
+        var slash = image.LastIndexOf('/');
+        var colon = image.LastIndexOf(':');
+        return colon > slash ? image[(colon + 1)..].TrimStart('v') : "latest";
+    }
+    private static bool VersionMatchesPolicy(string version, string policy)
+    {
+        if (policy == "*") return true;
+        if (!Version.TryParse(version, out var candidate)) return false;
+        if (policy.EndsWith(".*", StringComparison.Ordinal))
+        {
+            var prefix = policy[..^2].Split('.');
+            return prefix.Length is 1 or 2 && candidate.Major.ToString(System.Globalization.CultureInfo.InvariantCulture) == prefix[0] &&
+                   (prefix.Length == 1 || candidate.Minor.ToString(System.Globalization.CultureInfo.InvariantCulture) == prefix[1]);
+        }
+        if (policy.StartsWith(">=", StringComparison.Ordinal) && Version.TryParse(policy[2..].TrimStart('v'), out var minimum))
+            return candidate >= minimum;
+        return Version.TryParse(policy.TrimStart('v'), out var exact) && candidate == exact;
+    }
+    private static void ValidateMaintenanceWindow(string window)
+    {
+        if (!TryParseMaintenanceWindow(window, out _, out _, out _))
+            throw new InvalidOperationException("maintenanceWindow must use Day@HH:mm-HH:mm, for example Sun@20:00-23:59.");
+    }
+    private static bool IsInMaintenanceWindow(string window, DateTimeOffset utcNow)
+    {
+        if (!TryParseMaintenanceWindow(window, out var day, out var start, out var end))
+            throw new InvalidOperationException("maintenanceWindow must use Day@HH:mm-HH:mm, for example Sun@20:00-23:59.");
+        var timezone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Shanghai");
+        var local = TimeZoneInfo.ConvertTime(utcNow, timezone);
+        var time = TimeOnly.FromDateTime(local.DateTime);
+        return local.DayOfWeek == day && time >= start && time <= end;
+    }
+    private static bool TryParseMaintenanceWindow(string window, out DayOfWeek day, out TimeOnly start, out TimeOnly end)
+    {
+        day = default;
+        start = default;
+        end = default;
+        var parts = window.Split('@', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length != 2) return false;
+        day = parts[0].ToLowerInvariant() switch
+        {
+            "sun" or "sunday" => DayOfWeek.Sunday,
+            "mon" or "monday" => DayOfWeek.Monday,
+            "tue" or "tuesday" => DayOfWeek.Tuesday,
+            "wed" or "wednesday" => DayOfWeek.Wednesday,
+            "thu" or "thursday" => DayOfWeek.Thursday,
+            "fri" or "friday" => DayOfWeek.Friday,
+            "sat" or "saturday" => DayOfWeek.Saturday,
+            _ => (DayOfWeek)(-1)
+        };
+        if (!Enum.IsDefined(day)) return false;
+        var times = parts[1].Split('-', 2, StringSplitOptions.TrimEntries);
+        return times.Length == 2 && TimeOnly.TryParseExact(times[0], "HH:mm", out start) &&
+               TimeOnly.TryParseExact(times[1], "HH:mm", out end) && start <= end;
+    }
     private static bool OptionalBoolean(IReadOnlyDictionary<string, string> parameters, string name, bool fallback) =>
         !parameters.TryGetValue(name, out var value) ? fallback :
         bool.TryParse(value, out var parsed) ? parsed : throw new InvalidOperationException($"{name} must be true or false.");
@@ -561,4 +777,10 @@ public sealed partial class ManagedActionExecutor(
     [GeneratedRegex("^[A-Z_][A-Z0-9_]{0,127}$", RegexOptions.CultureInvariant)] private static partial Regex EnvironmentNamePattern();
     [GeneratedRegex("(^|/)(\\.env($|\\.)|.*\\.(pem|key|p12|pfx)$|id_(rsa|ed25519)(\\.pub)?$|.*(password|secret|token|credential).*\\.(json|ya?ml|txt|ini|conf)$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)] private static partial Regex SensitiveFileNamePattern();
     [GeneratedRegex("(?im)(password|secret|token|client_secret|private_key)\\s*[:=]\\s*[^$<{\\s][^\\r\\n]{5,}", RegexOptions.CultureInvariant)] private static partial Regex SensitiveContentPattern();
+}
+
+internal sealed class ApplicationOperationException(string message, string resultJson, Exception innerException)
+    : InvalidOperationException(message, innerException)
+{
+    public string ResultJson { get; } = resultJson;
 }

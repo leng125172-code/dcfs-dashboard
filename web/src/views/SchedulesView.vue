@@ -2,9 +2,10 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiRequest } from '@/services/apiClient'
-import type { ScheduledTask } from '@/services/contracts'
+import type { ScheduledTask, ScheduledTaskRun } from '@/services/contracts'
 
 const items = ref<ScheduledTask[]>([])
+const runs = ref<ScheduledTaskRun[]>([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editing = ref<ScheduledTask | null>(null)
@@ -22,10 +23,16 @@ const form = reactive({
 async function load() {
   loading.value = true
   try {
-    items.value = await apiRequest<ScheduledTask[]>('schedules')
+    ;[items.value, runs.value] = await Promise.all([
+      apiRequest<ScheduledTask[]>('schedules'),
+      apiRequest<ScheduledTaskRun[]>('schedules/runs?take=100'),
+    ])
   } finally {
     loading.value = false
   }
+}
+function formatDate(value: string | null) {
+  return value ? new Date(value).toLocaleString() : '—'
 }
 function open(item?: ScheduledTask) {
   editing.value = item || null
@@ -79,6 +86,17 @@ async function remove(item: ScheduledTask) {
   ElMessage.success('计划任务已删除')
   await load()
 }
+async function runNow(item: ScheduledTask) {
+  await ElMessageBox.confirm(
+    `立即运行计划任务“${item.name}”？任务会进入统一队列，并遵守资源锁和超时设置。`,
+    '立即运行',
+    { type: 'warning', confirmButtonText: '运行', cancelButtonText: '取消' },
+  )
+  await apiRequest<ScheduledTask>(`schedules/${item.id}/run`, { method: 'POST', body: '{}' })
+  ElMessage.success('已安排立即运行，任务将在下一个 6 秒调度周期进入队列')
+  await load()
+  window.setTimeout(() => void load(), 7000)
+}
 onMounted(load)
 </script>
 <template>
@@ -112,13 +130,49 @@ onMounted(load)
               scope.row.isEnabled ? '启用' : '停用'
             }}</el-tag></template
           ></el-table-column
-        ><el-table-column label="操作" width="140"
+        ><el-table-column label="操作" width="200"
           ><template #default="scope"
+            ><el-button
+              link
+              type="primary"
+              :disabled="!scope.row.isEnabled"
+              @click="runNow(scope.row)"
+              >立即运行</el-button
             ><el-button link @click="open(scope.row)">编辑</el-button
             ><el-button link type="danger" @click="remove(scope.row)">删除</el-button></template
           ></el-table-column
         ></el-table
       >
+    </section>
+    <section class="panel run-history">
+      <div class="panel-heading">
+        <div><span>执行历史</span><small>最近 100 次计划执行</small></div>
+      </div>
+      <el-empty v-if="!loading && runs.length === 0" description="暂无执行记录" />
+      <el-table v-else :data="runs" row-key="id" v-loading="loading">
+        <el-table-column label="计划" min-width="180">
+          <template #default="scope">{{
+            items.find((item) => item.id === scope.row.scheduleId)?.name || scope.row.scheduleId
+          }}</template>
+        </el-table-column>
+        <el-table-column label="计划时间" min-width="190"
+          ><template #default="scope">{{
+            formatDate(scope.row.scheduledForUtc)
+          }}</template></el-table-column
+        >
+        <el-table-column prop="result" label="结果" width="120" />
+        <el-table-column label="开始" min-width="190"
+          ><template #default="scope">{{
+            formatDate(scope.row.startedAtUtc)
+          }}</template></el-table-column
+        >
+        <el-table-column label="完成" min-width="190"
+          ><template #default="scope">{{
+            formatDate(scope.row.completedAtUtc)
+          }}</template></el-table-column
+        >
+        <el-table-column prop="jobId" label="任务 ID" min-width="260" show-overflow-tooltip />
+      </el-table>
     </section>
     <el-dialog
       v-model="dialogVisible"
@@ -175,6 +229,9 @@ onMounted(load)
 .schedule-page {
   display: grid;
   gap: 18px;
+}
+.run-history {
+  padding: 14px;
 }
 .form-grid {
   display: grid;

@@ -241,9 +241,11 @@ static void ConfigureOidc(OpenIdConnectOptions options, OidcEndpointSettings set
         }
 
         var host = context.Request.Host.Host;
-        if (!IPAddress.TryParse(host, out var address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any))
+        var approvedHostName = string.Equals(host, "precision-7920-tower.local", StringComparison.OrdinalIgnoreCase);
+        if (!approvedHostName &&
+            (!IPAddress.TryParse(host, out var address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any)))
         {
-            throw new InvalidOperationException("Whale Deck OIDC requires access through a workstation IP address.");
+            throw new InvalidOperationException("Whale Deck OIDC requires an approved workstation IP address or mDNS host name.");
         }
 
         context.ProtocolMessage.IssuerAddress = new UriBuilder(context.ProtocolMessage.IssuerAddress)
