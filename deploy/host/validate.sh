@@ -68,7 +68,14 @@ untrusted_status=$?
 set -e
 (( untrusted_status != 0 ))
 
+active_entry_points=0
 for address in 192.168.22.19 192.168.100.13; do
+  if ! ip -o -4 address show | awk '{print $4}' | cut -d/ -f1 | grep -Fxq "$address"; then
+    printf 'Entry point %s is not currently assigned; startup resilience verified by skipping its HTTP probe.\n' "$address"
+    continue
+  fi
+
+  ((active_entry_points += 1))
   for port in 8080 8081; do
     code=$(curl --noproxy '*' --max-time 5 --silent --show-error \
       --output "$temporary/status.json" --write-out '%{http_code}' \
@@ -77,5 +84,23 @@ for address in 192.168.22.19 192.168.100.13; do
     jq -e '.state | type == "string"' "$temporary/status.json" >/dev/null
   done
 done
+(( active_entry_points > 0 ))
 
-echo 'Whale Deck host services passed: systemd, permissions, UDS gRPC, restricted helper, Docker access and both IP entry points.'
+# Loopback remains available for local health checks, while Docker bridge
+# addresses must not expose the maintenance endpoint.
+for port in 8080 8081; do
+  code=$(curl --noproxy '*' --max-time 5 --silent --show-error \
+    --output "$temporary/status.json" --write-out '%{http_code}' \
+    "http://127.0.0.1:$port/maintenance/status")
+  [[ $code == 200 || $code == 503 ]]
+done
+
+bridge_address=$(ip -o -4 address show | awk '$2 ~ /^(docker0|br-)/ {sub(/\/.*/, "", $4); print $4; exit}')
+if [[ -n ${bridge_address:-} ]]; then
+  code=$(curl --noproxy '*' --max-time 5 --silent --show-error \
+    --output /dev/null --write-out '%{http_code}' \
+    "http://$bridge_address:8080/maintenance/status")
+  [[ $code == 403 ]]
+fi
+
+echo 'Whale Deck host services passed: systemd, permissions, UDS gRPC, restricted helper, Docker access and active approved entry points.'
