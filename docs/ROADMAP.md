@@ -2,17 +2,20 @@
 
 本文把 [FEATURES.md](FEATURES.md) 拆为可执行任务。顺序按依赖和风险排列，不代表工期承诺。所有任务在 `dev` 或功能分支完成，`master` 只接收可部署版本。
 
-## 1. 当前基线
+## 1. 当前基线与状态
+
+截至 2026-10-11，M0、M1、M2、M3 与 P1 的非 `HOLD` 主体已进入源码实现和真实依赖验收阶段；准确的构建、测试和工作站切换状态以 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) 为准。下方任务表继续作为验收追踪清单，而不是“尚未开始”的计划。
 
 已具备：
 
-- Vue 3/Element Plus 应用框架、顶栏、侧栏、主题、登录页、启动页和概览演示。
-- ASP.NET Core Cookie + OIDC Code/PKCE 骨架、登录/退出/当前用户端点。
-- Domain/Application/Infrastructure/Api/Worker 分层和架构测试。
-- PostgreSQL `AuditEvent`、`PlatformSetting` 初始实体与 DbContext。
-- 容器边界、结构化日志和前端构建基础。
+- Vue 3/Element Plus 完整管理界面、主题、登录/启动流程、响应式布局、真实概览、个人门户和权限裁剪。
+- ASP.NET Core Cookie + OIDC Code/PKCE、动态组角色映射、两小时权限快照、CSRF/Origin 防护和管理权限复核。
+- Domain/Application/Infrastructure/Api/Worker/Agent/Contracts/MaintenanceHost 分层及架构测试。
+- PostgreSQL/Valkey 数据层、指标、任务、审计、门户、治理、应用、数据库、备份和 Docker 事件模型。
+- systemd Host Agent、Unix Socket、短时能力票据、受控 helper、稳定维护入口和核心资源保护。
+- 六类数据库/缓存适配器、备份、应用生命周期、容器与 Docker 管理、计划任务、告警、配置仓库和平台诊断。
 
-尚未具备：宿主机 Agent、真实指标、权限组复核、任务系统、容器写操作、数据库管理和本文其余业务模块。
+尚未完成的是当前发布物在工作站上的最终切换和正式账号回归，不是重新实现上述模块。`HOLD` 项仍不进入当前任务池。
 
 ## 2. 里程碑依赖
 
@@ -201,4 +204,4 @@ corepack pnpm test:unit
 corepack pnpm build
 ```
 
-Agent 出现后还必须在 Linux 工作站执行 systemd、Unix Socket、Docker 故障注入、Docker 重启、主机重启和核心容器回滚的端到端验收。
+每次 Agent 或宿主机 helper 发生兼容性变更后，仍必须在 Linux 工作站执行 systemd、Unix Socket、Docker 故障注入、Docker 重启和核心容器回滚的端到端验收；高风险的主机重启和系统更新只在明确维护窗口执行。
