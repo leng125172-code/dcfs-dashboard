@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import os
+import secrets
 import sys
+import time
 
 from validate_databases import Api
 from validate_oidc import authenticate, required_environment
@@ -43,8 +45,23 @@ def main() -> int:
     resources = selected_resources()
     for name, resource_id in resources:
         print(f"Validating {name} backup...")
-        api.run("run", resource_id, {}, area="backups", timeout=1800)
-        api.run("verify", resource_id, {}, area="backups", timeout=300)
+        temporary_database = None
+        try:
+            if name == "sqlserver":
+                candidate = f"wdv_backup_{int(time.time()) % 1_000_000}_{secrets.token_hex(2)}"
+                api.run("create", resource_id, {"name": candidate}, requires_plan=True)
+                temporary_database = candidate
+            api.run("run", resource_id, {}, area="backups", timeout=1800)
+            api.run("verify", resource_id, {}, area="backups", timeout=300)
+        finally:
+            if temporary_database is not None:
+                api.run(
+                    "delete",
+                    resource_id,
+                    {"name": temporary_database},
+                    confirmed=True,
+                    requires_plan=True,
+                )
         print(f"{name}: backup and verification operations passed")
     print(f"Backup validation passed: {', '.join(name for name, _ in resources)}")
     return 0
