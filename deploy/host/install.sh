@@ -7,6 +7,12 @@ source_root=${1:-}
   echo 'Usage: sudo install.sh <publish-root-containing-agent-and-maintenance>' >&2
   exit 2
 }
+if [[ -f "$source_root/SHA256SUMS" ]]; then
+  (
+    cd "$source_root"
+    sha256sum --check --strict SHA256SUMS
+  )
+fi
 
 getent group whaledeck >/dev/null || groupadd --system whaledeck
 id whaledeck-agent >/dev/null 2>&1 || useradd --system --gid whaledeck --groups docker,systemd-journal --home-dir /var/lib/whaledeck-agent --shell /usr/sbin/nologin whaledeck-agent

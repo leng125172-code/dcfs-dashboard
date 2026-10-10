@@ -2,31 +2,11 @@
 set -Eeuo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-runtime_id="${WHALEDECK_RUNTIME_ID:-linux-x64}"
-
-command -v docker >/dev/null 2>&1 || { echo 'Docker is required.' >&2; exit 1; }
 [[ $EUID -eq 0 ]] || { echo 'Run with sudo so host services can be installed.' >&2; exit 1; }
-images_env="$repo_root/.images.env"
-[[ -r $images_env ]] || { echo "Missing $images_env." >&2; exit 1; }
-sdk_image=$(awk -F= '$1 == "DOTNET_SDK_IMAGE" {print substr($0, index($0, "=") + 1); exit}' "$images_env")
-[[ $sdk_image =~ @sha256:[a-f0-9]{64}$ ]] || { echo 'DOTNET_SDK_IMAGE must be pinned to an immutable digest.' >&2; exit 1; }
-
-install -d -m 0700 "$repo_root/deploy/artifacts"
-artifacts_root=$(mktemp -d "$repo_root/deploy/artifacts/host-publish.XXXXXX")
-# Each run gets its own directory; publishing happens in the same pinned SDK
-# image as the product build so the workstation does not need a .NET SDK.
-docker run --rm \
-  --mount "type=bind,src=$repo_root,dst=/src,readonly" \
-  --mount "type=bind,src=$artifacts_root,dst=/out" \
-  --workdir /src \
-  --env DOTNET_CLI_HOME=/tmp/dotnet \
-  "$sdk_image" sh -ec '
-    dotnet publish src/WhaleDeck.Agent/WhaleDeck.Agent.csproj \
-      --configuration Release --runtime '"$runtime_id"' --self-contained true \
-      --artifacts-path /tmp/artifacts/agent --output /out/agent
-    dotnet publish src/WhaleDeck.MaintenanceHost/WhaleDeck.MaintenanceHost.csproj \
-      --configuration Release --runtime '"$runtime_id"' --self-contained true \
-      --artifacts-path /tmp/artifacts/maintenance --output /out/maintenance
-  '
+artifacts_root=$(
+  "$repo_root/deploy/host/publish.sh" \
+    | sed -n 's/^Host artifacts published to //p'
+)
+[[ -d $artifacts_root ]] || { echo 'Host artifact publication did not return a valid directory.' >&2; exit 3; }
 
 "$repo_root/deploy/host/install.sh" "$artifacts_root"
