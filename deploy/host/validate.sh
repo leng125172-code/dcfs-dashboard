@@ -46,6 +46,25 @@ cleanup() {
   rmdir -- "$temporary"
 }
 trap cleanup EXIT
+
+probe_status() {
+  local address=$1 port=$2 code attempt
+  for attempt in {1..30}; do
+    if code=$(curl --noproxy '*' --max-time 5 --silent \
+      --output "$temporary/status.json" --write-out '%{http_code}' \
+      "http://$address:$port/maintenance/status") && \
+      [[ $code == 200 || $code == 503 ]] && \
+      jq -e '.state | type == "string"' "$temporary/status.json" >/dev/null; then
+      return 0
+    fi
+    sleep 0.2
+  done
+
+  printf 'Maintenance status probe failed for %s:%s (last HTTP status: %s).\n' \
+    "$address" "$port" "${code:-unreachable}" >&2
+  return 1
+}
+
 printf '\0\0\0\0\0' | curl --http2-prior-knowledge --unix-socket /run/whaledeck/agent.sock \
   --silent --show-error --dump-header "$temporary/grpc-headers" --output "$temporary/grpc-body" \
   --header 'Content-Type: application/grpc' --header 'TE: trailers' --data-binary @- \
@@ -80,11 +99,7 @@ mapfile -t active_entry_addresses < <(
 
 for address in "${active_entry_addresses[@]}"; do
   for port in 8080 8081; do
-    code=$(curl --noproxy '*' --max-time 5 --silent --show-error \
-      --output "$temporary/status.json" --write-out '%{http_code}' \
-      "http://$address:$port/maintenance/status")
-    [[ $code == 200 || $code == 503 ]]
-    jq -e '.state | type == "string"' "$temporary/status.json" >/dev/null
+    probe_status "$address" "$port"
   done
   printf 'Validated active entry point %s on ports 8080 and 8081.\n' "$address"
 done
@@ -92,10 +107,7 @@ done
 # Loopback remains available for local health checks, while Docker bridge
 # addresses must not expose the maintenance endpoint.
 for port in 8080 8081; do
-  code=$(curl --noproxy '*' --max-time 5 --silent --show-error \
-    --output "$temporary/status.json" --write-out '%{http_code}' \
-    "http://127.0.0.1:$port/maintenance/status")
-  [[ $code == 200 || $code == 503 ]]
+  probe_status 127.0.0.1 "$port"
 done
 
 bridge_address=$(ip -o -4 address show | awk '$2 ~ /^(docker0|br-)/ {sub(/\/.*/, "", $4); print $4; exit}')
