@@ -193,7 +193,12 @@ onMounted(load)
           ><el-input v-model="form.principal" autocomplete="off"
         /></el-form-item>
         <el-form-item
-          v-if="!isValkey && ['create-principal', 'delete-principal', 'grant', 'terminate-connection'].includes(action)"
+          v-if="
+            !isValkey &&
+            ['create-principal', 'delete-principal', 'grant', 'terminate-connection'].includes(
+              action,
+            )
+          "
           label="数据库"
           ><el-input v-model="form.database"
         /></el-form-item>

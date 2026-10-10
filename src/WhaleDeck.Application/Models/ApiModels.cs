@@ -69,6 +69,10 @@ public sealed record ApplicationImageMetadataDto(
     IReadOnlyCollection<string> Command,
     IReadOnlyDictionary<string, string> Labels);
 
+public sealed record DockerSettingsDto(
+    string SettingsJson,
+    IReadOnlyCollection<string> EditableKeys);
+
 public sealed record ContainerDto(
     string Id,
     string Name,

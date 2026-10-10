@@ -102,6 +102,15 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
         return Map(response);
     }
 
+    public async Task<DockerSettingsDto> GetDockerSettingsAsync(CancellationToken cancellationToken)
+    {
+        var response = await _resources.GetDockerSettingsAsync(
+            new Empty(),
+            Headers("/whaledeck.agent.v1.ManagedResourceService/GetDockerSettings"),
+            cancellationToken: cancellationToken);
+        return new DockerSettingsDto(response.SettingsJson, response.EditableKeys);
+    }
+
     public async Task<ApplicationImageMetadataDto> InspectApplicationImageAsync(string image, bool pullIfMissing, CancellationToken cancellationToken)
     {
         var response = await _docker.InspectImageAsync(

@@ -38,6 +38,10 @@ public sealed class ManagementController(
     public async Task<IActionResult> ConfigRepositoryStatus(CancellationToken cancellationToken) =>
         Ok(await agent.GetConfigRepositoryStatusAsync(cancellationToken));
 
+    [HttpGet("docker/settings")]
+    public async Task<IActionResult> DockerSettings(CancellationToken cancellationToken) =>
+        Ok(await agent.GetDockerSettingsAsync(cancellationToken));
+
     [HttpPost("applications/image-metadata")]
     public async Task<IActionResult> ApplicationImageMetadata([FromBody] ImageMetadataRequest request, CancellationToken cancellationToken) =>
         Ok(await agent.InspectApplicationImageAsync(request.Image, request.PullIfMissing, cancellationToken));

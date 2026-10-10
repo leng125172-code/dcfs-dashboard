@@ -1,6 +1,7 @@
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using WhaleDeck.Contracts.Agent.V1;
 
 namespace WhaleDeck.Agent.Services;
@@ -15,6 +16,9 @@ public sealed class ManagedResourceGrpcService(
     BoundedProcessRunner processes)
     : ManagedResourceService.ManagedResourceServiceBase
 {
+    private static readonly string[] EditableDockerSettings =
+        ["registry-mirrors", "log-driver", "log-opts", "live-restore", "features", "dns", "proxies"];
+
     public override async Task<ResourceCollectionResponse> ListDatabaseInstances(Empty request, ServerCallContext context)
     {
         var containers = await docker.ListContainersAsync(true, context.CancellationToken);
@@ -95,6 +99,23 @@ public sealed class ManagedResourceGrpcService(
         response.Version = commit;
         response.Attributes["branch"] = branch;
         return Task.FromResult(response);
+    }
+
+    public override async Task<DockerSettingsResponse> GetDockerSettings(Empty request, ServerCallContext context)
+    {
+        var source = JsonNode.Parse(await File.ReadAllTextAsync("/etc/docker/daemon.json", context.CancellationToken))?.AsObject()
+            ?? throw new RpcException(new Status(StatusCode.FailedPrecondition, "Docker settings are not a JSON object."));
+        var editable = new JsonObject();
+        foreach (var key in EditableDockerSettings)
+        {
+            if (source.TryGetPropertyValue(key, out var value)) editable[key] = value?.DeepClone();
+        }
+        var response = new DockerSettingsResponse
+        {
+            SettingsJson = editable.ToJsonString(new JsonSerializerOptions { WriteIndented = true })
+        };
+        response.EditableKeys.AddRange(EditableDockerSettings);
+        return response;
     }
 
     public override Task<OperationHandle> RunDatabaseAction(RegisteredActionRequest request, ServerCallContext context) =>

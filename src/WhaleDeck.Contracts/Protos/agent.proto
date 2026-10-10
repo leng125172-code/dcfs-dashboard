@@ -188,6 +188,11 @@ message PlanResponse {
   repeated string warnings = 4;
 }
 
+message DockerSettingsResponse {
+  string settings_json = 1;
+  repeated string editable_keys = 2;
+}
+
 service AgentService {
   rpc GetCapabilities(google.protobuf.Empty) returns (CapabilitiesResponse);
   rpc GetHealth(google.protobuf.Empty) returns (HealthResponse);
@@ -229,6 +234,7 @@ service ManagedResourceService {
   rpc ListComposeProjects(google.protobuf.Empty) returns (ResourceCollectionResponse);
   rpc RunComposeAction(RegisteredActionRequest) returns (OperationHandle);
   rpc GetConfigRepositoryStatus(RegisteredResourceRequest) returns (ResourceSnapshot);
+  rpc GetDockerSettings(google.protobuf.Empty) returns (DockerSettingsResponse);
   rpc RunConfigRepositoryAction(RegisteredActionRequest) returns (OperationHandle);
   rpc RunPlatformMaintenance(RegisteredActionRequest) returns (OperationHandle);
 }

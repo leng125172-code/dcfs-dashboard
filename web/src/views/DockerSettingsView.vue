@@ -1,21 +1,25 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { enqueueOperation, planOperation } from '@/services/operations'
+import { apiRequest } from '@/services/apiClient'
 
-const settingsJson = ref(
-  JSON.stringify(
-    {
-      'registry-mirrors': ['https://docker.xuanyuan.cloud'],
-      'log-driver': 'local',
-      'log-opts': { 'max-size': '10m', 'max-file': '5', compress: 'true' },
-      'live-restore': true,
-    },
-    null,
-    2,
-  ),
-)
+const settingsJson = ref('{}')
+const editableKeys = ref<string[]>([])
+const loading = ref(false)
 const submitting = ref(false)
+async function load() {
+  loading.value = true
+  try {
+    const settings = await apiRequest<{ settingsJson: string; editableKeys: string[] }>(
+      'docker/settings',
+    )
+    settingsJson.value = JSON.stringify(JSON.parse(settings.settingsJson), null, 2)
+    editableKeys.value = settings.editableKeys
+  } finally {
+    loading.value = false
+  }
+}
 function parse() {
   const value = JSON.parse(settingsJson.value) as unknown
   if (!value || Array.isArray(value) || typeof value !== 'object')
@@ -64,6 +68,7 @@ async function apply() {
     submitting.value = false
   }
 }
+onMounted(load)
 </script>
 <template>
   <div class="docker-settings-page">
@@ -90,8 +95,11 @@ async function apply() {
             spellcheck="false" /></el-form-item
       ></el-form>
       <div class="editor-actions">
-        <el-button :loading="submitting" @click="validate">只校验</el-button
-        ><el-button type="primary" :loading="submitting" @click="apply">预检、保存并重启</el-button>
+        <span class="editable-hint">允许字段：{{ editableKeys.join('、') }}</span>
+        <el-button :loading="submitting || loading" @click="validate">只校验</el-button
+        ><el-button type="primary" :loading="submitting || loading" @click="apply"
+          >预检、保存并重启</el-button
+        >
       </div>
     </section>
   </div>
@@ -108,6 +116,11 @@ async function apply() {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+.editable-hint {
+  margin-right: auto;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .editor-panel :deep(textarea) {
   font-family: var(--whaledeck-font-family);
