@@ -1,6 +1,6 @@
 # 实施状态与恢复入口
 
-截至 2026-10-10（Asia/Shanghai），Whale Deck 的当前范围已完成主体开发并部署到 Precision 7920 工作站。本文只记录已经落地和实测的事实；`HOLD`/P2 项目不计入当前完成度。
+截至 2026-10-11（Asia/Shanghai），Whale Deck 的当前范围已完成主体开发并部署到 Precision 7920 工作站。本文只记录已经落地和实测的事实；`HOLD`/P2 项目不计入当前完成度。
 
 ## 当前运行状态
 
@@ -11,6 +11,7 @@
 - 数据库、缓存、Authentik、API 与 Worker 都没有直接向局域网发布容器端口。API/Worker 不挂载 `docker.sock`，所有宿主机与 Docker 操作均通过 Agent。
 - Docker 使用有界 `local` 日志驱动（单文件 10 MiB、最多 5 个、压缩）并启用 `live-restore`。
 - `database-platform-workstation-update.timer` 已启用，计划每周日 20:00 执行。
+- 维护入口按当前启用的非容器 IPv4 网卡动态验收，支持板载、USB 等接口；回环可访问，Docker bridge 接口明确返回 403。
 
 当前可从任意可达工作站网卡访问 `http://<工作站地址>:8080`。`precision-7920-tower.local` 的无端口入口尚未切换到 80 端口，不应在完成网络入口调整前写成已上线地址。
 
@@ -44,15 +45,13 @@
 - Agent capability 最长 60 秒，绑定调用方法并使用一次性 nonce；UDS 同时校验 Unix peer credentials。
 - 普通管理操作不能停止或删除 Whale Deck/`database-platform` 受保护资源；删除 Docker 标签不能解除宿主机注册表保护。
 - 一次性 Secret 使用 Valkey `GETDEL`，按 Authentik subject 隔离并设置 5 分钟 TTL，不进入 PostgreSQL、URL、审计或日志。
-- 迁移安全备份位于 `/data/DockerData/migration-dcfs-20261009_163559`。旧 `dcfs*` 容器保持停止，旧网络和 `/data/GitRepos/DCFS` 兼容链接仍保留，直到最终验收清理。
-- 当前仍存在临时 `/etc/sudoers.d/whaledeck-temporary-user`。完成所有需要 root 的收尾后必须删除并执行 `visudo -cf /etc/sudoers`；长期只保留 Agent 固定 helper 的最小 sudo 权限。
+- 迁移安全备份保留在 `/data/DockerData/migration-dcfs-20261009_163559`。最终验收后已删除旧 `dcfs*` 容器对象、空旧网络和 `/data/GitRepos/DCFS` 兼容链接，未删除任何 NVMe/HDD 数据或迁移备份。
+- 临时 `/etc/sudoers.d/whaledeck-temporary-user` 已删除，完整 sudoers 已通过 `visudo`；普通 `user` 的非交互式全量 sudo 已失效，长期只保留 `whaledeck-agent` 固定 helper 的最小权限。
 
 ## 尚未收尾
 
 1. 最终发布前使用正式账号再复核危险操作确认；匿名登录、Authentik 跳转、明暗主题、1045px 导航断点、600px 搜索图标、390px 手机布局和普通用户菜单裁剪已完成浏览器走查。
 2. 决定并实施局域网正式入口：将 Whale Deck 切换到 `http://precision-7920-tower.local` 的 80 端口前，先确认与现有服务无冲突；其他服务继续按端口区分。
-3. 最终验收后删除旧的停止态 `dcfs*` 容器对象和旧网络，移除 `DCFS` 兼容链接；不得删除 NVMe/HDD 数据与迁移备份。
-4. 删除临时全量 sudo 规则，复验 `visudo`、Agent 固定 helper、服务重启和最小权限路径。
-5. 创建稳定发布时再把 `dev` 通过 PR 合并到 `master`，并为正式镜像记录不可变摘要。
+3. 创建稳定发布时再把 `dev` 通过 PR 合并到 `master`，并为正式镜像记录不可变摘要。
 
 主机重启、系统更新安装和平台自身回滚属于高风险入口，代码与计划流程已提供，但不会为了验收而无故执行。GitLab、数据库恢复、容器终端、文件管理、防火墙/网络写入、外部通知、多主机、域名/HTTPS 仍为 `HOLD` 或 P2，不属于本阶段缺口。

@@ -84,7 +84,7 @@ The desired friendly LAN entry is `http://precision-7920-tower.local` for Whale 
 
 The [installation guide](deploy/install/README.md) describes the seven-stage Linux workflow: tool/source checks, optional Docker accelerator configuration, dependency repository deployment, then source build and deployment. `bash install.sh --dry-run` previews the workflow without network or system changes. `--dependencies-only` excludes the Whale Deck build/deployment stage.
 
-Agent、MaintenanceHost、UDS 权限/对端身份、受限 helper、全网卡入口以及 Docker 重启韧性已在目标工作站验收通过。API、Worker 与 Gateway 已构建并部署，数据库、备份、应用、身份、治理和主机管理流程已完成真实依赖验收。准确的完成边界与最终清理项见 [实施状态](docs/IMPLEMENTATION_STATUS.md)。
+Agent、MaintenanceHost、UDS 权限/对端身份、受限 helper、动态全网卡入口、容器桥隔离以及 Docker 重启韧性已在目标工作站验收通过。API、Worker 与 Gateway 已构建并部署，数据库、备份、应用、身份、治理和主机管理流程已完成真实依赖验收；旧 `dcfs*` 运行时对象与临时全量 sudo 规则也已完成安全清理。准确的完成边界与后续发布项见 [实施状态](docs/IMPLEMENTATION_STATUS.md)。
 
 ## Container boundaries
 
