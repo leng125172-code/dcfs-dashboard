@@ -22,6 +22,33 @@ RESOURCES = {
 }
 
 
+def assert_backup_record(api: Api, resource_id: str, job: dict[str, object]) -> None:
+    response = api.session.get(
+        f"{api.base_url}/api/v1/backups/records",
+        params={"instanceResourceId": resource_id, "take": 20},
+        timeout=20,
+    )
+    response.raise_for_status()
+    records = response.json()
+    job_id = job.get("id")
+    record = next((item for item in records if item.get("jobId") == job_id), None)
+    if record is None:
+        raise RuntimeError(f"Backup record for job {job_id} was not returned")
+    if record.get("status") != "Succeeded":
+        raise RuntimeError(f"Backup record for job {job_id} is not successful")
+    if not record.get("relativePath"):
+        raise RuntimeError(f"Backup record for job {job_id} has no relative path")
+    if not isinstance(record.get("sizeBytes"), int) or record["sizeBytes"] <= 0:
+        raise RuntimeError(f"Backup record for job {job_id} has no positive size")
+    if record.get("checksumAlgorithm") != "SHA256":
+        raise RuntimeError(f"Backup record for job {job_id} has an unexpected checksum algorithm")
+    checksum = record.get("checksum")
+    if not isinstance(checksum, str) or len(checksum) != 64:
+        raise RuntimeError(f"Backup record for job {job_id} has an invalid SHA-256 checksum")
+    if not record.get("verifiedAtUtc"):
+        raise RuntimeError(f"Backup record for job {job_id} was not marked verified")
+
+
 def selected_resources() -> list[tuple[str, str]]:
     requested = {
         item.strip().lower()
@@ -51,7 +78,8 @@ def main() -> int:
                 candidate = f"wdv_backup_{int(time.time()) % 1_000_000}_{secrets.token_hex(2)}"
                 api.run("create", resource_id, {"name": candidate}, requires_plan=True)
                 temporary_database = candidate
-            api.run("run", resource_id, {}, area="backups", timeout=1800)
+            run_job = api.run("run", resource_id, {}, area="backups", timeout=1800)
+            assert_backup_record(api, resource_id, run_job)
             api.run("verify", resource_id, {}, area="backups", timeout=300)
         finally:
             if temporary_database is not None:
