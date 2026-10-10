@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RefreshRight } from '@element-plus/icons-vue'
 import { ApiError, apiRequest } from '@/services/apiClient'
 import type { ManagedResource } from '@/services/contracts'
@@ -9,6 +9,12 @@ const error = ref('')
 const traceId = ref('')
 const interfaces = ref<ManagedResource[]>([])
 const storage = ref<ManagedResource[]>([])
+const showVirtualInterfaces = ref(false)
+const visibleInterfaces = computed(() =>
+  showVirtualInterfaces.value
+    ? interfaces.value
+    : interfaces.value.filter((item) => item.attributes.isVirtual !== 'true'),
+)
 
 function bytes(value?: string) {
   const amount = Number(value || 0)
@@ -65,9 +71,11 @@ onMounted(load)
     <section class="panel resource-section" v-loading="loading">
       <div class="section-heading">
         <h2>网络接口</h2>
-        <span>{{ interfaces.length }} 个接口</span>
+        <label class="virtual-toggle"
+          ><span>显示虚拟接口</span><el-switch v-model="showVirtualInterfaces"
+        /></label>
       </div>
-      <el-table :data="interfaces" row-key="id">
+      <el-table :data="visibleInterfaces" row-key="id">
         <el-table-column prop="name" label="接口" min-width="150" />
         <el-table-column label="状态" width="100">
           <template #default="scope"
@@ -176,5 +184,10 @@ onMounted(load)
 .section-heading span {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.virtual-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 </style>

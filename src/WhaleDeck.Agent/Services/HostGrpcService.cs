@@ -78,6 +78,7 @@ public sealed class HostGrpcService(HostReader host, OperationStore operations, 
             };
             snapshot.Attributes["type"] = adapter.NetworkInterfaceType.ToString();
             snapshot.Attributes["description"] = adapter.Description;
+            snapshot.Attributes["isVirtual"] = IsVirtualInterface(adapter).ToString().ToLowerInvariant();
             snapshot.Attributes["macAddress"] = adapter.GetPhysicalAddress().ToString();
             var properties = adapter.GetIPProperties();
             snapshot.Attributes["addresses"] = string.Join(", ", properties.UnicastAddresses.Select(item => item.Address.ToString()));
@@ -238,6 +239,13 @@ public sealed class HostGrpcService(HostReader host, OperationStore operations, 
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Array
             ? string.Join(", ", value.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString()))
             : string.Empty;
+
+    private static bool IsVirtualInterface(NetworkInterface adapter) =>
+        adapter.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel ||
+        adapter.Name.StartsWith("veth", StringComparison.OrdinalIgnoreCase) ||
+        adapter.Name.StartsWith("br-", StringComparison.OrdinalIgnoreCase) ||
+        adapter.Name.StartsWith("docker", StringComparison.OrdinalIgnoreCase) ||
+        adapter.Name.StartsWith("virbr", StringComparison.OrdinalIgnoreCase);
 
     public override Task<OperationHandle> RebootHost(RegisteredActionRequest request, ServerCallContext context)
     {
