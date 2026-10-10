@@ -15,10 +15,13 @@ from validate_oidc import authenticate, required_environment
 
 
 def main() -> int:
-    username, password = required_environment()
-    api = Api("http://127.0.0.1:8080")
-    authenticate(api.session, api.base_url, username, password)
-    api.load_csrf()
+    base_url = os.environ.get("WHALEDECK_URL", "http://192.168.100.13:8080").rstrip("/")
+    session, _ = authenticate(
+        base_url,
+        required_environment("VALIDATION_USERNAME"),
+        required_environment("VALIDATION_PASSWORD"),
+    )
+    api = Api(base_url, session)
 
     interfaces = request(api, "GET", "host/network-interfaces").json()
     if not interfaces or not any(item.get("attributes", {}).get("addresses") for item in interfaces):
