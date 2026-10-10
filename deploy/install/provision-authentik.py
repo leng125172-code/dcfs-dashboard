@@ -8,12 +8,24 @@ to a mode-0600 file and must never print it.
 import secrets
 
 from authentik.core.models import Application, Group, Token, User
+from authentik.crypto.models import CertificateKeyPair
 from authentik.flows.models import Flow
-from authentik.providers.oauth2.models import OAuth2Provider
+from authentik.providers.oauth2.models import OAuth2Provider, ScopeMapping
 
 
 def require_flow(slug: str) -> Flow:
     return Flow.objects.get(slug=slug)
+
+
+signing_key = CertificateKeyPair.objects.filter(name="authentik Internal JWT Certificate").first()
+if signing_key is None:
+    signing_key = CertificateKeyPair.objects.filter(private_key_data__isnull=False).order_by("name").first()
+if signing_key is None:
+    raise RuntimeError("No Authentik JWT signing certificate exists.")
+
+scope_mappings = list(ScopeMapping.objects.filter(scope_name__in=["openid", "profile", "email"]))
+if {mapping.scope_name for mapping in scope_mappings} != {"openid", "profile", "email"}:
+    raise RuntimeError("Authentik default openid/profile/email scope mappings are incomplete.")
 
 
 def ensure_provider(slug: str, address: str, callback: str, signout_callback: str):
@@ -64,7 +76,9 @@ def ensure_provider(slug: str, address: str, callback: str, signout_callback: st
     provider.include_claims_in_id_token = True
     provider.sub_mode = "hashed_user_id"
     provider.issuer_mode = "per_provider"
+    provider.signing_key = signing_key
     provider.save()
+    provider.property_mappings.set(scope_mappings)
 
     application, _ = Application.objects.update_or_create(
         slug=f"whaledeck-{slug}",

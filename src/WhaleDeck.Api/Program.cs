@@ -206,6 +206,7 @@ static void ConfigureOidc(OpenIdConnectOptions options, OidcEndpointSettings set
     options.ClientSecret = settings.ClientSecret;
     options.ResponseType = OpenIdConnectResponseType.Code;
     options.UsePkce = true;
+    options.Scope.Add("email");
     options.SaveTokens = false;
     options.GetClaimsFromUserInfoEndpoint = true;
     options.MapInboundClaims = false;
