@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Net;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Serilog;
@@ -27,7 +26,7 @@ builder.Services.AddReverseProxy()
                 Order = -100,
                 Match = new Yarp.ReverseProxy.Configuration.RouteMatch
                 {
-                    Hosts = ["192.168.22.19:8081", "192.168.100.13:8081"],
+                    Hosts = ["*:8081"],
                     Path = "{**catch-all}"
                 },
                 Transforms = PreserveOriginalHost()
@@ -69,29 +68,6 @@ builder.Services.AddReverseProxy()
 var app = builder.Build();
 var statusPath = builder.Configuration["Maintenance:StatusPath"]
     ?? "/run/whaledeck/maintenance/status.json";
-var allowedLocalAddresses = builder.Configuration
-    .GetSection("Maintenance:AllowedLocalAddresses")
-    .Get<string[]>()
-    ?? ["127.0.0.1", "192.168.22.19", "192.168.100.13"];
-var allowedLocalIps = allowedLocalAddresses
-    .Select(IPAddress.Parse)
-    .ToHashSet();
-
-// Bind wildcard sockets so the stable endpoint survives a disconnected NIC,
-// but only serve traffic that actually arrived on an explicitly approved IP.
-// This prevents Docker bridges and future interfaces from becoming entry points.
-app.Use(async (context, next) =>
-{
-    var localIp = context.Connection.LocalIpAddress;
-    if (localIp is null || !allowedLocalIps.Contains(localIp.MapToIPv4()))
-    {
-        context.Response.StatusCode = StatusCodes.Status403Forbidden;
-        return;
-    }
-
-    await next(context);
-});
-
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto

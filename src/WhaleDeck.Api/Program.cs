@@ -1,4 +1,5 @@
 using System.Threading.RateLimiting;
+using System.Net;
 using System.Net.Sockets;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -220,6 +221,21 @@ static void ConfigureOidc(OpenIdConnectOptions options, OidcEndpointSettings set
     options.CorrelationCookie.SameSite = SameSiteMode.Lax;
     options.TokenValidationParameters.NameClaimType = "name";
     options.TokenValidationParameters.RoleClaimType = "groups";
+    options.Events.OnRedirectToIdentityProvider = context =>
+    {
+        var host = context.Request.Host.Host;
+        if (!IPAddress.TryParse(host, out var address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any))
+        {
+            throw new InvalidOperationException("Whale Deck OIDC requires access through a workstation IP address.");
+        }
+
+        context.ProtocolMessage.IssuerAddress = new UriBuilder(context.ProtocolMessage.IssuerAddress)
+        {
+            Host = host,
+            Port = 8081
+        }.Uri.AbsoluteUri;
+        return Task.CompletedTask;
+    };
     options.Events.OnTokenValidated = context =>
     {
         if (context.Principal?.Identity is ClaimsIdentity identity)

@@ -89,7 +89,7 @@ async function authenticate() {
             <span v-else>WhaleDeck 不保存密码，验证过程由 Authentik 完成。</span>
           </div>
         </div>
-        <p class="login-panel__footer">仅允许通过工作站批准的局域网地址访问</p>
+        <p class="login-panel__footer">可通过工作站当前可用的局域网地址访问</p>
       </section>
     </main>
   </div>

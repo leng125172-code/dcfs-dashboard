@@ -30,6 +30,24 @@ def ensure_provider(slug: str, address: str, callback: str, signout_callback: st
             "redirect_uri_type": "logout",
         },
     ]
+    if slug == "external":
+        # The workstation may be reached through a PCIe NIC, USB Ethernet or a
+        # replacement adapter. Keep the browser callback IP-based, but do not
+        # couple the provider to addresses that can change with the network.
+        redirect_uris.extend(
+            [
+                {
+                    "matching_mode": "regex",
+                    "url": r"^http://(?:[0-9]{1,3}\.){3}[0-9]{1,3}:8080/signin-oidc/external$",
+                    "redirect_uri_type": "authorization",
+                },
+                {
+                    "matching_mode": "regex",
+                    "url": r"^http://(?:[0-9]{1,3}\.){3}[0-9]{1,3}:8080/signout-callback-oidc/external$",
+                    "redirect_uri_type": "logout",
+                },
+            ]
+        )
     provider = OAuth2Provider.objects.filter(name=provider_name).first()
     if provider is None:
         provider = OAuth2Provider(

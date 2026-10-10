@@ -479,7 +479,7 @@ public sealed partial class ManagedActionExecutor(
     [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,62}$", RegexOptions.CultureInvariant)] private static partial Regex SlugPattern();
     [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9:_.-]{0,127}$", RegexOptions.CultureInvariant)] private static partial Regex KeyPrefixPattern();
     [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9./_:@-]{0,254}$", RegexOptions.CultureInvariant)] private static partial Regex ImagePattern();
-    [GeneratedRegex("^(127\\.0\\.0\\.1|192\\.168\\.22\\.19|192\\.168\\.100\\.13):[1-9][0-9]{0,4}:[1-9][0-9]{0,4}(/(tcp|udp))?$", RegexOptions.CultureInvariant)] private static partial Regex PortPattern();
+    [GeneratedRegex("^(0\\.0\\.0\\.0|127\\.0\\.0\\.1):[1-9][0-9]{0,4}:[1-9][0-9]{0,4}(/(tcp|udp))?$", RegexOptions.CultureInvariant)] private static partial Regex PortPattern();
     [GeneratedRegex("^[A-Z_][A-Z0-9_]{0,127}$", RegexOptions.CultureInvariant)] private static partial Regex EnvironmentNamePattern();
     [GeneratedRegex("(^|/)(\\.env($|\\.)|.*(password|secret|token|private[-_.]?key|credential).*)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)] private static partial Regex SensitiveFileNamePattern();
     [GeneratedRegex("(?im)(password|secret|token|client_secret|private_key)\\s*[:=]\\s*[^$<{\\s][^\\r\\n]{5,}", RegexOptions.CultureInvariant)] private static partial Regex SensitiveContentPattern();

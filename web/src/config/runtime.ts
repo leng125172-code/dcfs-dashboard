@@ -3,7 +3,7 @@ const defaults: WhaleDeckRuntimeConfig = {
   appTitle: 'WhaleDeck 协同平台',
   backendVersion: '0.1.0',
   authentikUrl: `http://${window.location.hostname}:8081`,
-  gitlabUrl: 'http://192.168.22.19:8082',
+  gitlabUrl: `http://${window.location.hostname}:8082`,
 }
 
 const configured: WhaleDeckRuntimeConfig = {
@@ -11,14 +11,10 @@ const configured: WhaleDeckRuntimeConfig = {
   ...window.__WHALEDECK_RUNTIME_CONFIG__,
 }
 
-const approvedWorkstationHosts = new Set(['192.168.22.19', '192.168.100.13'])
 function useCurrentWorkstationAddress(value: string) {
   try {
     const url = new URL(value)
-    if (
-      approvedWorkstationHosts.has(url.hostname) &&
-      approvedWorkstationHosts.has(window.location.hostname)
-    ) {
+    if (url.protocol === 'http:' && /^\d{1,3}(?:\.\d{1,3}){3}$/.test(window.location.hostname)) {
       url.hostname = window.location.hostname
       return url.toString().replace(/\/$/, '')
     }

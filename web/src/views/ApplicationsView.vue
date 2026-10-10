@@ -229,9 +229,9 @@ onMounted(load)
             <span>Cmd：{{ imageMetadata.command.join(' ') || '默认' }}</span>
           </div> </el-alert
         ><el-form-item label="端口映射"
-          ><el-input v-model="form.ports" placeholder="192.168.100.13:8088:80/tcp" /><small
+          ><el-input v-model="form.ports" placeholder="0.0.0.0:8088:80/tcp" /><small
             class="form-tip"
-            >多个映射用逗号分隔，仅允许工作站批准的两个地址或回环地址。</small
+            >多个映射用逗号分隔；0.0.0.0 对所有网卡开放，127.0.0.1 仅供本机访问。</small
           ></el-form-item
         ><el-form-item label="环境变量（可选）"
           ><el-input
