@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""Exercise the real Whale Deck -> Authentik OIDC browser flow.
+
+Credentials are accepted only through environment variables and are never
+printed.  The script keeps all cookies in memory and reports stage names and
+HTTP outcomes suitable for workstation acceptance logs.
+"""
+
+from __future__ import annotations
+
+import html.parser
+import os
+import sys
+from dataclasses import dataclass, field
+from urllib.parse import parse_qs, urljoin, urlparse
+
+import requests
+
+
+REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+
+
+@dataclass
+class FormPostParser(html.parser.HTMLParser):
+    action: str | None = None
+    fields: dict[str, str] = field(default_factory=dict)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        if tag == "form" and values.get("method", "").lower() == "post":
+            self.action = values.get("action")
+        elif tag == "input" and values.get("name"):
+            self.fields[values["name"]] = values.get("value", "")
+
+
+def required_environment(name: str) -> str:
+    value = os.environ.get(name, "")
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+def csrf_headers(session: requests.Session) -> dict[str, str]:
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    for cookie in session.cookies:
+        if "csrf" in cookie.name.lower():
+            headers["X-authentik-CSRF"] = cookie.value
+            headers["X-CSRFToken"] = cookie.value
+            break
+    return headers
+
+
+def follow_redirects(session: requests.Session, response: requests.Response) -> requests.Response:
+    for _ in range(16):
+        if response.status_code not in REDIRECT_STATUSES:
+            return response
+        target = urljoin(response.url, response.headers["Location"])
+        response = session.get(target, allow_redirects=False, timeout=20)
+    raise RuntimeError("Redirect limit exceeded")
+
+
+def solve_flow(session: requests.Session, flow_url: str, username: str, password: str) -> str:
+    parsed = urlparse(flow_url)
+    print(f"Flow query keys: {sorted(parse_qs(parsed.query))}")
+    slug = parsed.path.rstrip("/").split("/")[-1]
+    executor = f"{parsed.scheme}://{parsed.netloc}/api/v3/flows/executor/{slug}/"
+    executor_parameters = {"query": parsed.query}
+
+    response = session.get(
+        executor,
+        params=executor_parameters,
+        headers={"Accept": "application/json"},
+        timeout=20,
+    )
+    response.raise_for_status()
+    challenge = response.json()
+
+    for step in range(20):
+        component = challenge.get("component")
+        print(f"OIDC stage {step + 1}: {component}")
+        if challenge.get("response_errors"):
+            raise RuntimeError(f"Authentik rejected stage {component}: {challenge['response_errors']}")
+
+        if component == "ak-stage-identification":
+            payload = {"component": component, "uid_field": username}
+        elif component == "ak-stage-password":
+            payload = {"component": component, "password": password}
+        elif component in {"ak-stage-user-login", "ak-stage-dummy"}:
+            payload = {"component": component}
+        elif component == "ak-stage-autosubmit":
+            target = challenge.get("url")
+            if not target:
+                raise RuntimeError("Authentik autosubmit stage has no destination")
+            response = session.post(
+                urljoin(flow_url, target),
+                data=challenge.get("attrs") or {},
+                allow_redirects=False,
+                timeout=20,
+            )
+            if response.status_code not in REDIRECT_STATUSES:
+                raise RuntimeError(f"OIDC callback returned HTTP {response.status_code}")
+            return urljoin(response.url, response.headers["Location"])
+        elif component == "ak-stage-prompt":
+            payload = {"component": component}
+            ignored_types = {"static", "separator", "alert-info", "alert-warning", "alert-danger"}
+            print(
+                "Prompt fields:",
+                [
+                    {
+                        "key": prompt.get("field_key"),
+                        "type": prompt.get("type"),
+                        "required": prompt.get("required"),
+                        "choices": [choice.get("value") for choice in (prompt.get("choices") or [])],
+                    }
+                    for prompt in challenge.get("fields", [])
+                ],
+            )
+            for prompt in challenge.get("fields", []):
+                field_key = prompt.get("field_key")
+                prompt_type = prompt.get("type", "")
+                if not field_key or prompt_type in ignored_types:
+                    continue
+                initial = prompt.get("initial_value", "")
+                choices = prompt.get("choices") or []
+                if choices:
+                    selected = next(
+                        (choice.get("value") for choice in choices if choice.get("value") == initial),
+                        choices[0].get("value", ""),
+                    )
+                    payload[field_key] = selected
+                elif prompt_type == "checkbox":
+                    if initial:
+                        payload[field_key] = "on"
+                else:
+                    payload[field_key] = initial
+        elif component == "ak-stage-consent":
+            token = challenge.get("token")
+            if not token:
+                raise RuntimeError("Authentik consent stage has no token")
+            payload = {"component": component, "token": token}
+        elif component == "xak-flow-redirect":
+            target = challenge.get("to")
+            if not target:
+                raise RuntimeError("Authentik redirect stage has no destination")
+            target_parts = urlparse(target)
+            print(
+                f"Authentik redirect: {target_parts.path}; "
+                f"query keys: {sorted(parse_qs(target_parts.query))}"
+            )
+            return urljoin(flow_url, target)
+        else:
+            raise RuntimeError(f"Unsupported Authentik stage: {component}")
+
+        response = session.post(
+            executor,
+            params=executor_parameters,
+            json=payload,
+            headers=csrf_headers(session),
+            timeout=20,
+        )
+        response.raise_for_status()
+        challenge = response.json()
+
+    raise RuntimeError("Authentik stage limit exceeded")
+
+
+def main() -> int:
+    base_url = os.environ.get("WHALEDECK_URL", "http://192.168.100.13:8080").rstrip("/")
+    username = required_environment("VALIDATION_USERNAME")
+    password = required_environment("VALIDATION_PASSWORD")
+    session = requests.Session()
+    # Workstation shell profiles may point HTTP(S)_PROXY at a local desktop
+    # proxy.  Acceptance traffic is entirely local and must never depend on it.
+    session.trust_env = False
+    session.headers["User-Agent"] = "WhaleDeck-OIDC-Validation/1.0"
+
+    response = session.get(
+        f"{base_url}/api/v1/auth/login?returnUrl=%2F",
+        allow_redirects=False,
+        timeout=20,
+    )
+    if response.status_code not in REDIRECT_STATUSES:
+        raise RuntimeError(f"Whale Deck login returned HTTP {response.status_code}")
+
+    response = follow_redirects(session, response)
+    if "/if/flow/" not in response.url:
+        raise RuntimeError(f"Expected Authentik flow, got {urlparse(response.url).path}")
+
+    next_url = solve_flow(session, response.url, username, password)
+    for _ in range(8):
+        response = session.get(next_url, allow_redirects=False, timeout=20)
+        if response.status_code in REDIRECT_STATUSES:
+            next_url = urljoin(response.url, response.headers["Location"])
+            if "/if/flow/" in next_url:
+                response = session.get(next_url, timeout=20)
+                next_url = solve_flow(session, response.url, username, password)
+            continue
+
+        parser = FormPostParser()
+        parser.feed(response.text)
+        if parser.action:
+            response = session.post(
+                urljoin(response.url, parser.action),
+                data=parser.fields,
+                allow_redirects=False,
+                timeout=20,
+            )
+            next_url = urljoin(response.url, response.headers.get("Location", "/"))
+            continue
+        break
+    else:
+        raise RuntimeError("OIDC completion redirect limit exceeded")
+
+    me = session.get(f"{base_url}/api/v1/auth/me", timeout=20)
+    me.raise_for_status()
+    profile = me.json()
+    if not profile.get("isAuthenticated") or not profile.get("isAdministrator"):
+        raise RuntimeError("OIDC session is not an authenticated administrator")
+
+    print("OIDC validation passed: authenticated administrator session established")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as error:  # concise acceptance output; never dump cookies or credentials
+        print(f"OIDC validation failed: {error}", file=sys.stderr)
+        raise SystemExit(1)
