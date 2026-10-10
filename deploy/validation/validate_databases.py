@@ -113,9 +113,18 @@ class Api:
     def wait_job(self, job_id: str, timeout: int) -> dict[str, object]:
         deadline = time.monotonic() + timeout
         previous = None
+        reconnecting = False
         while time.monotonic() < deadline:
-            response = self.session.get(f"{self.base_url}/api/v1/jobs/{job_id}", timeout=20)
-            response.raise_for_status()
+            try:
+                response = self.session.get(f"{self.base_url}/api/v1/jobs/{job_id}", timeout=20)
+                response.raise_for_status()
+                reconnecting = False
+            except requests.RequestException:
+                if not reconnecting:
+                    print(f"  job {job_id[:8]}: waiting for platform reconnection")
+                    reconnecting = True
+                time.sleep(2)
+                continue
             job = response.json()
             state = job.get("state")
             phase = job.get("phase")

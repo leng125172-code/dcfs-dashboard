@@ -3,11 +3,15 @@ import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { enqueueOperation, planOperation } from '@/services/operations'
 import { apiRequest } from '@/services/apiClient'
+import type { Job } from '@/services/contracts'
 
 const settingsJson = ref('{}')
 const editableKeys = ref<string[]>([])
 const loading = ref(false)
 const submitting = ref(false)
+const maintenanceVisible = ref(false)
+const maintenancePhase = ref('正在提交 Docker 配置')
+const maintenanceElapsed = ref(0)
 async function load() {
   loading.value = true
   try {
@@ -63,8 +67,34 @@ async function apply() {
       true,
       plan.planHash,
     )
-    ElMessage.success(`维护任务已提交：${job.id}`)
+    maintenanceVisible.value = true
+    maintenancePhase.value = 'Docker 正在重启，等待容器启动中'
+    const startedAt = Date.now()
+    const deadline = startedAt + 360_000
+    while (Date.now() < deadline) {
+      maintenanceElapsed.value = Math.floor((Date.now() - startedAt) / 1000)
+      try {
+        const current = await apiRequest<Job>(`jobs/${encodeURIComponent(job.id)}`)
+        maintenancePhase.value = current.phase || '等待容器启动中'
+        if (current.state === 'Succeeded') {
+          await load()
+          ElMessage.success('Docker 设置已应用，平台容器已恢复')
+          return
+        }
+        if (['Failed', 'Canceled', 'RolledBack'].includes(current.state)) {
+          const terminalError = new Error(current.errorCode || `Docker 设置任务${current.state}`)
+          terminalError.name = 'TerminalJobError'
+          throw terminalError
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name === 'TerminalJobError') throw error
+        maintenancePhase.value = '连接暂时中断，等待容器启动中'
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 2000))
+    }
+    throw new Error('等待 Docker 与平台容器恢复超时')
   } finally {
+    maintenanceVisible.value = false
     submitting.value = false
   }
 }
@@ -102,6 +132,16 @@ onMounted(load)
         >
       </div>
     </section>
+    <Teleport to="body">
+      <div v-if="maintenanceVisible" class="maintenance-overlay" role="status" aria-live="polite">
+        <div class="maintenance-overlay__card">
+          <span class="maintenance-overlay__spinner" aria-hidden="true" />
+          <h2>等待容器启动中</h2>
+          <p>{{ maintenancePhase }}</p>
+          <small>已等待 {{ maintenanceElapsed }} 秒，请勿关闭页面。</small>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 <style scoped>
@@ -125,5 +165,55 @@ onMounted(load)
 .editor-panel :deep(textarea) {
   font-family: var(--whaledeck-font-family);
   line-height: 1.6;
+}
+.maintenance-overlay {
+  position: fixed;
+  z-index: 4000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--el-bg-color) 86%, transparent);
+  backdrop-filter: blur(14px);
+}
+.maintenance-overlay__card {
+  width: min(420px, 100%);
+  padding: 32px;
+  text-align: center;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 18px;
+  background: var(--el-bg-color-overlay);
+  box-shadow: var(--el-box-shadow-dark);
+}
+.maintenance-overlay__card h2 {
+  margin: 18px 0 8px;
+  font-size: 20px;
+}
+.maintenance-overlay__card p {
+  color: var(--el-text-color-regular);
+}
+.maintenance-overlay__card small {
+  color: var(--el-text-color-secondary);
+}
+.maintenance-overlay__spinner {
+  display: inline-block;
+  width: 44px;
+  height: 44px;
+  border: 3px solid var(--el-color-primary-light-7);
+  border-top-color: var(--el-color-primary);
+  border-radius: 50%;
+  animation: maintenance-spin 0.8s linear infinite;
+}
+@keyframes maintenance-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .maintenance-overlay__spinner {
+    animation: none;
+    border-top-color: var(--el-color-primary-light-7);
+    background: var(--el-color-primary-light-9);
+  }
 }
 </style>
