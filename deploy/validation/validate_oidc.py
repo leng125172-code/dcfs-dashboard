@@ -25,6 +25,9 @@ class FormPostParser(html.parser.HTMLParser):
     action: str | None = None
     fields: dict[str, str] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        super().__init__()
+
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = dict(attrs)
         if tag == "form" and values.get("method", "").lower() == "post":
@@ -214,7 +217,15 @@ def main() -> int:
     me = session.get(f"{base_url}/api/v1/auth/me", timeout=20)
     me.raise_for_status()
     profile = me.json()
-    if not profile.get("isAuthenticated") or not profile.get("isAdministrator"):
+    print(
+        "Current user response:",
+        {
+            "keys": sorted(profile),
+            "isAdministrator": profile.get("isAdministrator"),
+            "administrator": profile.get("administrator"),
+        },
+    )
+    if not profile.get("subject") or not profile.get("isAdministrator"):
         raise RuntimeError("OIDC session is not an authenticated administrator")
 
     print("OIDC validation passed: authenticated administrator session established")

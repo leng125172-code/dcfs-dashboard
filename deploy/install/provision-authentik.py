@@ -74,7 +74,11 @@ def ensure_provider(slug: str, address: str, callback: str, signout_callback: st
     provider.grant_types = ["authorization_code", "refresh_token"]
     provider._redirect_uris = redirect_uris
     provider.include_claims_in_id_token = True
-    provider.sub_mode = "hashed_user_id"
+    # Whale Deck revalidates authorization through Authentik's management API.
+    # A stable UUID subject can be resolved authoritatively; the one-way hashed
+    # subject cannot be mapped back to a user and would silently remove admin
+    # permissions after login.
+    provider.sub_mode = "user_uuid"
     provider.issuer_mode = "per_provider"
     provider.signing_key = signing_key
     provider.save()

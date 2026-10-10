@@ -100,7 +100,7 @@ public sealed class AuthentikIdentityDirectory(
                             redirect_uri_type = "authorization"
                         }
                     },
-                    sub_mode = "hashed_user_id"
+                    sub_mode = "user_uuid"
                 };
                 using var provider = await SendAsync(HttpMethod.Post, "providers/oauth2/", providerPayload, cancellationToken);
                 using var document = JsonDocument.Parse(await provider.Content.ReadAsStringAsync(cancellationToken));
