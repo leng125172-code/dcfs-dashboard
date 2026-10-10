@@ -68,6 +68,8 @@ public static class DependencyInjection
         services.AddScoped<IMetricsQuery, MetricsQuery>();
         services.AddScoped<ResourceLeaseManager>();
         services.AddScoped<IIdentityDirectory, AuthentikIdentityDirectory>();
+        services.AddScoped<IIdentityManager>(provider => provider.GetRequiredService<IIdentityDirectory>() as IIdentityManager
+            ?? throw new InvalidOperationException("The identity directory does not support management operations."));
         services.AddScoped<ICatalogProvider, XuanyuanCatalogProvider>();
         services.AddSingleton<AgentGateway>();
         services.AddSingleton<IAgentGateway>(provider => provider.GetRequiredService<AgentGateway>());

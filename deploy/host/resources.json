@@ -7,7 +7,12 @@
   { "id": "database-platform.valkey72", "type": "Container", "externalId": "database-platform-valkey72", "protectionLevel": "CriticalData" },
   { "id": "database-platform.authentik.server", "type": "Container", "externalId": "database-platform-authentik-server", "protectionLevel": "IdentityCore" },
   { "id": "database-platform.authentik.worker", "type": "Container", "externalId": "database-platform-authentik-worker", "protectionLevel": "IdentityCore" },
-  { "id": "whaledeck.agent", "type": "SystemdUnit", "externalId": "whaledeck-agent.service", "protectionLevel": "ControlPlane", "allowedActions": ["restart"] },
-  { "id": "database-platform.repository", "type": "GitRepository", "externalId": "database-platform", "protectionLevel": "CriticalData", "path": "/data/GitRepos/database-platform", "allowedActions": ["status", "snapshot", "push"] },
-  { "id": "whaledeck.apps", "type": "ManagedDirectory", "externalId": "whaledeck-apps", "protectionLevel": "Managed", "path": "/data/WhaleDeck/apps", "allowedActions": ["plan", "deploy", "remove"] }
+  { "id": "whaledeck.agent", "type": "SystemdUnit", "externalId": "whaledeck-agent.service", "protectionLevel": "ControlPlane", "allowedActions": ["systemd-restart"] },
+  { "id": "whaledeck.maintenance", "type": "SystemdUnit", "externalId": "whaledeck-maintenance.service", "protectionLevel": "ControlPlane", "allowedActions": ["systemd-restart"] },
+  { "id": "database-platform.update", "type": "SystemdUnit", "externalId": "database-platform-workstation-update.timer", "protectionLevel": "ControlPlane", "allowedActions": ["systemd-start", "systemd-stop", "systemd-restart"] },
+  { "id": "whaledeck.host", "type": "Host", "externalId": "local", "protectionLevel": "ControlPlane", "allowedActions": ["update-check", "update-install", "reboot"] },
+  { "id": "whaledeck.docker", "type": "DockerEngine", "externalId": "docker", "protectionLevel": "ControlPlane", "allowedActions": ["validate-settings", "apply-settings", "rollback"] },
+  { "id": "whaledeck.platform", "type": "Platform", "externalId": "whaledeck", "protectionLevel": "ControlPlane", "allowedActions": ["diagnose", "diagnostic-bundle", "plan-update", "apply-update", "rollback"] },
+  { "id": "database-platform.repository", "type": "GitRepository", "externalId": "database-platform", "protectionLevel": "CriticalData", "path": "/data/GitRepos/database-platform", "allowedActions": ["status", "snapshot", "commit-push"] },
+  { "id": "whaledeck.apps", "type": "ManagedDirectory", "externalId": "whaledeck-apps", "protectionLevel": "Managed", "path": "/data/WhaleDeck/apps", "allowedActions": ["install", "start", "stop", "restart", "update", "reinstall", "uninstall"] }
 ]

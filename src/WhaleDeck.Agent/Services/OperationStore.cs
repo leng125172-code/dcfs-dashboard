@@ -29,6 +29,14 @@ public sealed class OperationStore
                 var operation = JsonSerializer.Deserialize<OperationHandle>(File.ReadAllText(file));
                 if (operation is not null)
                 {
+                    if (operation.State is OperationState.Queued or OperationState.Running or OperationState.WaitingForHealth or OperationState.RollingBack)
+                    {
+                        operation.State = OperationState.Failed;
+                        operation.Phase = "InterruptedByAgentRestart";
+                        operation.ErrorCode = "AGENT_OPERATION_INTERRUPTED";
+                        operation.ProgressPercent = 0;
+                        AtomicWrite(file, JsonSerializer.Serialize(operation));
+                    }
                     _operations[operation.OperationId] = operation;
                 }
             }

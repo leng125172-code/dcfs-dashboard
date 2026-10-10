@@ -71,8 +71,13 @@ public sealed class ResourceRegistry
         new("database-platform.valkey72", "Container", "database-platform-valkey72", "CriticalData"),
         new("database-platform.authentik.server", "Container", "database-platform-authentik-server", "IdentityCore"),
         new("database-platform.authentik.worker", "Container", "database-platform-authentik-worker", "IdentityCore"),
-        new("whaledeck.agent", "SystemdUnit", "whaledeck-agent.service", "ControlPlane", AllowedActions: ["restart"]),
-        new("database-platform.repository", "GitRepository", "database-platform", "CriticalData", "/data/GitRepos/database-platform", ["status", "snapshot", "push"]),
-        new("whaledeck.apps", "ManagedDirectory", "whaledeck-apps", "Managed", "/data/WhaleDeck/apps", ["plan", "deploy", "remove"])
+        new("whaledeck.agent", "SystemdUnit", "whaledeck-agent.service", "ControlPlane", AllowedActions: ["systemd-restart"]),
+        new("whaledeck.maintenance", "SystemdUnit", "whaledeck-maintenance.service", "ControlPlane", AllowedActions: ["systemd-restart"]),
+        new("database-platform.update", "SystemdUnit", "database-platform-workstation-update.timer", "ControlPlane", AllowedActions: ["systemd-start", "systemd-stop", "systemd-restart"]),
+        new("whaledeck.host", "Host", "local", "ControlPlane", AllowedActions: ["update-check", "update-install", "reboot"]),
+        new("whaledeck.docker", "DockerEngine", "docker", "ControlPlane", AllowedActions: ["validate-settings", "apply-settings", "rollback"]),
+        new("whaledeck.platform", "Platform", "whaledeck", "ControlPlane", AllowedActions: ["diagnose", "diagnostic-bundle", "plan-update", "apply-update", "rollback"]),
+        new("database-platform.repository", "GitRepository", "database-platform", "CriticalData", "/data/GitRepos/database-platform", ["status", "snapshot", "commit-push"]),
+        new("whaledeck.apps", "ManagedDirectory", "whaledeck-apps", "Managed", "/data/WhaleDeck/apps", ["install", "start", "stop", "restart", "update", "reinstall", "uninstall"])
     ];
 }

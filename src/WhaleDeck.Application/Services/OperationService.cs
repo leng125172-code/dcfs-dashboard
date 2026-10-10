@@ -16,12 +16,9 @@ public sealed class OperationService(IJobRepository jobs)
             ["backups"] = new(StringComparer.OrdinalIgnoreCase) { "run", "verify", "cancel", "save-policy" },
             ["applications"] = new(StringComparer.OrdinalIgnoreCase) { "install", "start", "stop", "restart", "update", "reinstall", "uninstall" },
             ["host"] = new(StringComparer.OrdinalIgnoreCase) { "update-check", "update-install", "reboot", "systemd-start", "systemd-stop", "systemd-restart" },
-            ["schedules"] = new(StringComparer.OrdinalIgnoreCase) { "create", "update", "enable", "disable", "run" },
-            ["alerts"] = new(StringComparer.OrdinalIgnoreCase) { "acknowledge", "silence" },
             ["config-repository"] = new(StringComparer.OrdinalIgnoreCase) { "snapshot", "commit-push" },
             ["platform"] = new(StringComparer.OrdinalIgnoreCase) { "diagnose", "plan-update", "apply-update", "rollback", "diagnostic-bundle" },
-            ["identity"] = new(StringComparer.OrdinalIgnoreCase) { "create-user", "update-user", "disable-user", "create-sso", "update-sso" },
-            ["settings"] = new(StringComparer.OrdinalIgnoreCase) { "update" }
+            ["identity"] = new(StringComparer.OrdinalIgnoreCase) { "create-user", "update-user", "disable-user", "create-sso", "update-sso" }
         };
 
     public async Task<JobDto> EnqueueAsync(string actorSubject, string traceId, OperationCommand command, CancellationToken cancellationToken)
@@ -91,7 +88,8 @@ public sealed class OperationService(IJobRepository jobs)
         "create" or "delete" or "prune" or "apply-settings" or "install" or "update" or "reinstall" or "uninstall" or
         "update-install" or "reboot" or "commit-push" or "apply-update" or "rollback";
 
-    private static JobDto Map(OperationJob job) => new(job.Id, job.JobType, job.State, job.Phase, job.ProgressPercent, job.ErrorCode, job.CreatedAtUtc, job.CompletedAtUtc);
+    private static JobDto Map(OperationJob job) => new(job.Id, job.JobType, job.State, job.Phase, job.ProgressPercent, job.ErrorCode,
+        job.CreatedAtUtc, job.CompletedAtUtc, job.State == "Succeeded" ? job.ResultJson : null);
 
     private static void RejectSensitiveParameters(string requestJson)
     {

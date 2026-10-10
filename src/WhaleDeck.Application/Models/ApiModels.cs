@@ -98,7 +98,8 @@ public sealed record JobDto(
     short? ProgressPercent,
     string? ErrorCode,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset? CompletedAtUtc);
+    DateTimeOffset? CompletedAtUtc,
+    string? ResultJson);
 
 public sealed record JobEventDto(
     long Sequence,

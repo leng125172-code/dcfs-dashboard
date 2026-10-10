@@ -51,6 +51,11 @@ public interface IIdentityDirectory
     Task<IReadOnlyCollection<ManagedResourceDto>> ListSsoApplicationsAsync(CancellationToken cancellationToken);
 }
 
+public interface IIdentityManager
+{
+    Task ExecuteAsync(string action, string? resourceId, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken);
+}
+
 public interface IManagementQuery
 {
     Task<IReadOnlyCollection<ManagedResourceDto>> ListAsync(string area, CancellationToken cancellationToken);

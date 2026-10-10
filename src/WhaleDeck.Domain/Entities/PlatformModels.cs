@@ -101,7 +101,7 @@ public sealed class OperationJob
     public string Phase { get; set; } = "Queued";
     public short? ProgressPercent { get; set; }
     public required string IdempotencyKey { get; init; }
-    public string RequestJson { get; init; } = "{}";
+    public string RequestJson { get; set; } = "{}";
     public string? ResultJson { get; set; }
     public string? ErrorCode { get; set; }
     public Guid? AgentOperationId { get; set; }

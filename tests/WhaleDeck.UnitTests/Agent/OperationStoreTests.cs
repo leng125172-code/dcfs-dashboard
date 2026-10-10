@@ -53,6 +53,33 @@ public sealed class OperationStoreTests
         }
     }
 
+    [Fact]
+    public void MarksAnInterruptedOperationFailedAfterAgentRestart()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"whaledeck-operation-store-{Guid.NewGuid():N}");
+        try
+        {
+            var configuration = BuildConfiguration(root);
+            var firstStore = new OperationStore(configuration);
+            var operation = firstStore.Create("Executing");
+            operation.State = OperationState.Running;
+            operation.ProgressPercent = 40;
+            firstStore.Save(operation);
+
+            var restartedStore = new OperationStore(configuration);
+            var recovered = restartedStore.Get(operation.OperationId);
+
+            Assert.NotNull(recovered);
+            Assert.Equal(OperationState.Failed, recovered.State);
+            Assert.Equal("InterruptedByAgentRestart", recovered.Phase);
+            Assert.Equal("AGENT_OPERATION_INTERRUPTED", recovered.ErrorCode);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static IConfiguration BuildConfiguration(string root) =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {

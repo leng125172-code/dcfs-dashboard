@@ -4,7 +4,7 @@ using WhaleDeck.Contracts.Agent.V1;
 
 namespace WhaleDeck.Agent.Services;
 
-public sealed class OperationGrpcService(OperationStore store) : OperationService.OperationServiceBase
+public sealed class OperationGrpcService(OperationStore store, OperationCoordinator coordinator) : OperationService.OperationServiceBase
 {
     public override Task<OperationHandle> GetOperation(OperationRequest request, ServerCallContext context) =>
         Task.FromResult(store.Get(request.OperationId) ?? throw new RpcException(new Status(StatusCode.NotFound, "Operation was not found.")));
@@ -20,9 +20,18 @@ public sealed class OperationGrpcService(OperationStore store) : OperationServic
         {
             throw new RpcException(new Status(StatusCode.FailedPrecondition, "Completed operations cannot be canceled."));
         }
-        operation.State = OperationState.Canceled;
-        operation.Phase = "Canceled";
-        store.Save(operation);
+        if (!coordinator.RequestCancellation(operation.OperationId))
+        {
+            operation.State = OperationState.Failed;
+            operation.Phase = "ExecutorUnavailable";
+            operation.ErrorCode = "AGENT_OPERATION_INTERRUPTED";
+            store.Save(operation);
+        }
+        else
+        {
+            operation.Phase = "CancellationRequested";
+            store.Save(operation);
+        }
         return Task.FromResult(operation);
     }
 

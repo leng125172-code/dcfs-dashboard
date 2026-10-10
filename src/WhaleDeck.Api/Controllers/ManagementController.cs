@@ -41,7 +41,7 @@ public sealed class ManagementController(
     public async Task<IActionResult> Plan(string area, string action, [FromBody] PlanRequest request, CancellationToken cancellationToken) =>
         Ok(await agent.PlanAsync(area, action, request.ResourceId, request.Parameters ?? new Dictionary<string, string>(), cancellationToken));
 
-    [HttpPost("{area:regex(^(containers|docker|databases|backups|applications|host|schedules|alerts|config-repository|platform|identity|settings)$)}/{action}")]
+    [HttpPost("{area:regex(^(containers|docker|databases|backups|applications|host|config-repository|platform|identity)$)}/{action}")]
     public async Task<IActionResult> Enqueue(string area, string action, [FromBody] OperationRequest request, CancellationToken cancellationToken)
     {
         var idempotencyKey = Request.Headers["Idempotency-Key"].FirstOrDefault() ?? request.IdempotencyKey;

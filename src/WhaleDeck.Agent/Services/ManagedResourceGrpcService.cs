@@ -1,20 +1,88 @@
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
+using System.Text.Json;
 using WhaleDeck.Contracts.Agent.V1;
 
 namespace WhaleDeck.Agent.Services;
 
-public sealed class ManagedResourceGrpcService(ResourceRegistry registry, OperationStore operations, PlanStore plans)
+public sealed class ManagedResourceGrpcService(
+    ResourceRegistry registry,
+    OperationStore operations,
+    PlanStore plans,
+    OperationCoordinator coordinator,
+    ManagedActionExecutor executor,
+    DockerEngine docker,
+    BoundedProcessRunner processes)
     : ManagedResourceService.ManagedResourceServiceBase
 {
-    public override Task<ResourceCollectionResponse> ListDatabaseInstances(Empty request, ServerCallContext context) =>
-        Task.FromResult(ToCollection(registry.All.Where(item => item.Id.StartsWith("database-platform.", StringComparison.Ordinal) && item.Type == "Container")));
+    public override async Task<ResourceCollectionResponse> ListDatabaseInstances(Empty request, ServerCallContext context)
+    {
+        var containers = await docker.ListContainersAsync(true, context.CancellationToken);
+        var response = new ResourceCollectionResponse();
+        foreach (var resource in registry.All.Where(item => item.Id.StartsWith("database-platform.", StringComparison.Ordinal) && item.Type == "Container"))
+        {
+            var container = containers.FirstOrDefault(item => item.Names.Any(name => string.Equals(name.TrimStart('/'), resource.ExternalId, StringComparison.Ordinal)));
+            var snapshot = ToSnapshot(resource);
+            snapshot.State = container?.State ?? "Missing";
+            snapshot.Version = container?.Image ?? string.Empty;
+            snapshot.Attributes["status"] = container?.Status ?? "Not found";
+            response.Resources.Add(snapshot);
+        }
+        return response;
+    }
 
-    public override Task<ResourceCollectionResponse> ListSystemdUnits(Empty request, ServerCallContext context) =>
-        Task.FromResult(ToCollection(registry.All.Where(item => item.Type == "SystemdUnit")));
+    public override async Task<ResourceCollectionResponse> ListSystemdUnits(Empty request, ServerCallContext context)
+    {
+        var response = new ResourceCollectionResponse();
+        foreach (var resource in registry.All.Where(item => item.Type == "SystemdUnit"))
+        {
+            var snapshot = ToSnapshot(resource);
+            try
+            {
+                var status = await processes.RunAsync("/usr/bin/systemctl",
+                    ["show", resource.ExternalId, "--property=ActiveState", "--property=SubState", "--property=UnitFileState", "--value"],
+                    null, TimeSpan.FromSeconds(10), "SYSTEMD_QUERY_FAILED", context.CancellationToken);
+                var values = status.StandardOutput.Split('\n', StringSplitOptions.TrimEntries);
+                snapshot.State = values.ElementAtOrDefault(0) ?? "Unknown";
+                snapshot.Version = values.ElementAtOrDefault(2) ?? string.Empty;
+                snapshot.Attributes["subState"] = values.ElementAtOrDefault(1) ?? string.Empty;
+            }
+            catch (InvalidOperationException)
+            {
+                snapshot.State = "Unknown";
+            }
+            response.Resources.Add(snapshot);
+        }
+        return response;
+    }
 
-    public override Task<ResourceCollectionResponse> ListComposeProjects(Empty request, ServerCallContext context) =>
-        Task.FromResult(ToCollection(registry.All.Where(item => item.Type is "GitRepository" or "ManagedDirectory")));
+    public override Task<ResourceCollectionResponse> ListComposeProjects(Empty request, ServerCallContext context)
+    {
+        var response = new ResourceCollectionResponse();
+        var root = registry.All.SingleOrDefault(item => item.Id == "whaledeck.apps")?.Path;
+        if (root is null || !Directory.Exists(root)) return Task.FromResult(response);
+        foreach (var directory in Directory.EnumerateDirectories(root).Order(StringComparer.Ordinal))
+        {
+            var manifestPath = Path.Combine(directory, "manifest.json");
+            if (!File.Exists(manifestPath)) continue;
+            try
+            {
+                using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
+                var slug = Path.GetFileName(directory);
+                var image = manifest.RootElement.TryGetProperty("image", out var imageValue) ? imageValue.GetString() ?? string.Empty : string.Empty;
+                response.Resources.Add(new ResourceSnapshot
+                {
+                    ResourceId = $"application:{slug}", DisplayName = slug, ResourceType = "ComposeApplication",
+                    State = "Installed", Version = image, ProtectedResource = false
+                });
+            }
+            catch (JsonException)
+            {
+                // Invalid manifests stay invisible to normal management and are handled by diagnostics.
+            }
+        }
+        return Task.FromResult(response);
+    }
 
     public override Task<ResourceSnapshot> GetConfigRepositoryStatus(RegisteredResourceRequest request, ServerCallContext context)
     {
@@ -46,14 +114,22 @@ public sealed class ManagedResourceGrpcService(ResourceRegistry registry, Operat
 
     private OperationHandle QueueRegistered(RegisteredActionRequest request, string category, bool maintenance = false)
     {
-        registry.Require(request.Resource.ResourceId, request.Action);
+        var resourceId = NormalizeResourceId(category, request.Action, request.Resource.ResourceId);
+        var resource = registry.Require(resourceId, request.Action);
         var idempotencyKey = BuildIdempotencyKey(request.Context, category, request.Action, request.Resource.ResourceId);
         var operation = operations.GetOrCreate(idempotencyKey, $"{category}:{request.Action}", out var created);
         if (!created) return operation;
         try
         {
-            if (RequiresPlan(request.Action)) plans.VerifyAndConsume(request.PlanHash, request.Resource.ResourceId, request.Action, request.Parameters);
-            operations.Save(operation, maintenance ? "Whale Deck 正在执行平台维护。" : null);
+            if (RequiresPlan(request.Action))
+            {
+                plans.VerifyAndConsume(request.PlanHash, request.Resource.ResourceId, request.Action, PlanParameters(request.Parameters));
+            }
+            coordinator.Start(
+                operation,
+                $"AGENT_{category.ToUpperInvariant()}_FAILED",
+                cancellationToken => executor.ExecuteAsync(category, resource, request.Action, request.Parameters, cancellationToken),
+                maintenance ? "Whale Deck 正在执行平台维护。" : null);
             return operation;
         }
         catch
@@ -74,6 +150,26 @@ public sealed class ManagedResourceGrpcService(ResourceRegistry registry, Operat
     private static bool RequiresPlan(string action) => action is
         "delete" or "prune" or "apply-settings" or "install" or "update" or "reinstall" or "uninstall" or
         "update-install" or "reboot" or "commit-push" or "apply-update" or "rollback";
+
+    private static Dictionary<string, string> PlanParameters(IReadOnlyDictionary<string, string> parameters) =>
+        parameters.Where(item => !string.Equals(item.Key, "password", StringComparison.OrdinalIgnoreCase) &&
+                                 !string.Equals(item.Key, "environment", StringComparison.OrdinalIgnoreCase) &&
+                                 !string.Equals(item.Key, "inputTicket", StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal);
+
+    private static string NormalizeResourceId(string category, string action, string resourceId)
+    {
+        if (!string.IsNullOrWhiteSpace(resourceId)) return resourceId;
+        return category switch
+        {
+            "Systemd" => "whaledeck.host",
+            "Compose" => "whaledeck.apps",
+            "ConfigRepository" => "database-platform.repository",
+            "PlatformMaintenance" when action is "validate-settings" or "apply-settings" => "whaledeck.docker",
+            "PlatformMaintenance" => "whaledeck.platform",
+            _ => resourceId
+        };
+    }
 
     private static ResourceCollectionResponse ToCollection(IEnumerable<RegisteredResource> resources)
     {

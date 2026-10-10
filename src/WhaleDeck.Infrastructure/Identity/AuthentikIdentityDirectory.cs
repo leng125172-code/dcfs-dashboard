@@ -10,7 +10,7 @@ namespace WhaleDeck.Infrastructure.Identity;
 public sealed class AuthentikIdentityDirectory(
     IHttpClientFactory httpClientFactory,
     IDistributedCache cache,
-    IConfiguration configuration) : IIdentityDirectory
+    IConfiguration configuration) : IIdentityDirectory, IIdentityManager
 {
     private static readonly TimeSpan PermissionTtl = TimeSpan.FromHours(2);
 
@@ -48,6 +48,74 @@ public sealed class AuthentikIdentityDirectory(
     public Task<IReadOnlyCollection<ManagedResourceDto>> ListSsoApplicationsAsync(CancellationToken cancellationToken) =>
         ListDirectoryAsync("core/applications/", "AuthentikApplication", cancellationToken);
 
+    public async Task ExecuteAsync(string action, string? resourceId, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
+    {
+        switch (action)
+        {
+            case "create-user":
+            {
+                var username = Required(parameters, "username", 1, 150);
+                var payload = new
+                {
+                    username,
+                    name = Optional(parameters, "name", 150) ?? username,
+                    email = Optional(parameters, "email", 254) ?? string.Empty,
+                    is_active = true
+                };
+                using var created = await SendAsync(HttpMethod.Post, "core/users/", payload, cancellationToken);
+                using var document = JsonDocument.Parse(await created.Content.ReadAsStringAsync(cancellationToken));
+                var id = document.RootElement.GetProperty("pk").ToString();
+                if (parameters.TryGetValue("password", out var password))
+                    await SendAndDisposeAsync(HttpMethod.Post, $"core/users/{Uri.EscapeDataString(id)}/set_password/", new { password }, cancellationToken);
+                return;
+            }
+            case "update-user":
+                await SendAndDisposeAsync(HttpMethod.Patch, $"core/users/{ResourceId(resourceId)}/", new
+                {
+                    name = Optional(parameters, "name", 150),
+                    email = Optional(parameters, "email", 254)
+                }, cancellationToken);
+                return;
+            case "disable-user":
+                await SendAndDisposeAsync(HttpMethod.Patch, $"core/users/{ResourceId(resourceId)}/", new { is_active = false }, cancellationToken);
+                return;
+            case "create-sso":
+            {
+                var slug = Required(parameters, "slug", 1, 80);
+                var providerType = parameters.TryGetValue("providerType", out var type) ? type : "oauth2";
+                if (providerType != "oauth2") throw new InvalidOperationException("Only the approved OAuth2/OIDC provider type is currently supported.");
+                var providerPayload = new
+                {
+                    name = Required(parameters, "name", 1, 150),
+                    authorization_flow = Required(parameters, "authorizationFlowId", 1, 100),
+                    invalidation_flow = Required(parameters, "invalidationFlowId", 1, 100),
+                    client_type = "confidential",
+                    redirect_uris = Required(parameters, "redirectUri", 1, 2048),
+                    sub_mode = "hashed_user_id"
+                };
+                using var provider = await SendAsync(HttpMethod.Post, "providers/oauth2/", providerPayload, cancellationToken);
+                using var document = JsonDocument.Parse(await provider.Content.ReadAsStringAsync(cancellationToken));
+                var providerId = document.RootElement.GetProperty("pk").ToString();
+                await SendAndDisposeAsync(HttpMethod.Post, "core/applications/", new
+                {
+                    name = providerPayload.name,
+                    slug,
+                    provider = providerId,
+                    policy_engine_mode = "any"
+                }, cancellationToken);
+                return;
+            }
+            case "update-sso":
+                await SendAndDisposeAsync(HttpMethod.Patch, $"core/applications/{ResourceId(resourceId)}/", new
+                {
+                    name = Optional(parameters, "name", 150),
+                    open_in_new_tab = parameters.TryGetValue("openInNewTab", out var open) && bool.TryParse(open, out var parsed) && parsed
+                }, cancellationToken);
+                return;
+            default: throw new InvalidOperationException("The Authentik management action is unsupported.");
+        }
+    }
+
     private async Task<GroupResolution> ResolveGroupsFromAuthentik(string subject, IReadOnlyCollection<string> fallback, CancellationToken cancellationToken)
     {
         var token = configuration["Authentication:Authentik:ApiToken"];
@@ -81,17 +149,48 @@ public sealed class AuthentikIdentityDirectory(
 
     private async Task<IReadOnlyCollection<ManagedResourceDto>> ListDirectoryAsync(string path, string type, CancellationToken cancellationToken)
     {
-        using var response = await Client().GetAsync(path, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-        return document.RootElement.GetProperty("results").EnumerateArray().Select(item =>
+        var results = new List<ManagedResourceDto>();
+        string? next = path;
+        for (var page = 0; page < 20 && next is not null; page++)
         {
-            var id = item.TryGetProperty("pk", out var pk) ? pk.ToString() : string.Empty;
-            var display = item.TryGetProperty("name", out var name) ? name.GetString() : item.TryGetProperty("username", out var username) ? username.GetString() : id;
-            var active = !item.TryGetProperty("is_active", out var activeValue) || activeValue.GetBoolean();
-            return new ManagedResourceDto(id, display ?? id, type, active ? "Active" : "Disabled", string.Empty, true, new Dictionary<string, string>());
-        }).ToArray();
+            using var response = await Client().GetAsync(next, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            results.AddRange(document.RootElement.GetProperty("results").EnumerateArray().Select(item =>
+            {
+                var id = item.TryGetProperty("pk", out var pk) ? pk.ToString() : string.Empty;
+                var display = item.TryGetProperty("name", out var name) ? name.GetString() : item.TryGetProperty("username", out var username) ? username.GetString() : id;
+                var active = !item.TryGetProperty("is_active", out var activeValue) || activeValue.GetBoolean();
+                return new ManagedResourceDto(id, display ?? id, type, active ? "Active" : "Disabled", string.Empty, true, new Dictionary<string, string>());
+            }));
+            next = document.RootElement.TryGetProperty("pagination", out var pagination) &&
+                   pagination.TryGetProperty("next", out var nextValue) && nextValue.ValueKind == JsonValueKind.Number && nextValue.GetInt32() > 0
+                ? AppendPage(path, nextValue.GetInt32()) : null;
+        }
+        return results;
     }
+
+    private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, object payload, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(method, path) { Content = JsonContent.Create(payload) };
+        var response = await Client().SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return response;
+    }
+
+    private async Task SendAndDisposeAsync(HttpMethod method, string path, object payload, CancellationToken cancellationToken)
+    {
+        using var response = await SendAsync(method, path, payload, cancellationToken);
+    }
+
+    private static string ResourceId(string? value) => !string.IsNullOrWhiteSpace(value) && value.Length <= 100
+        ? Uri.EscapeDataString(value) : throw new InvalidOperationException("The Authentik resource id is invalid.");
+    private static string Required(IReadOnlyDictionary<string, string> values, string key, int minimum, int maximum) =>
+        values.TryGetValue(key, out var value) && value.Trim().Length >= minimum && value.Trim().Length <= maximum
+            ? value.Trim() : throw new InvalidOperationException($"The Authentik field is invalid: {key}");
+    private static string? Optional(IReadOnlyDictionary<string, string> values, string key, int maximum) =>
+        values.TryGetValue(key, out var value) && value.Trim().Length <= maximum ? value.Trim() : null;
+    private static string AppendPage(string path, int page) => path + (path.Contains('?', StringComparison.Ordinal) ? "&" : "?") + $"page={page}";
 
     private HttpClient Client()
     {

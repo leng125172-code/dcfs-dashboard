@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using WhaleDeck.Api.Security;
 using WhaleDeck.Application.Abstractions;
+using System.Security.Cryptography;
 
 namespace WhaleDeck.Api.Controllers;
 
@@ -10,6 +11,19 @@ namespace WhaleDeck.Api.Controllers;
 [Route("api/v1/secrets")]
 public sealed class SecretsController(IOneTimeSecretStore secrets) : ControllerBase
 {
+    [HttpPost("stage")]
+    public async Task<IActionResult> Stage([FromBody] StageSecretRequest request, CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        Response.Headers.Pragma = "no-cache";
+        var value = request.Generate
+            ? Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+            : request.Value;
+        if (string.IsNullOrWhiteSpace(value) || value.Length is < 16 or > 8192)
+            return ValidationProblem("A staged secret must contain between 16 and 8192 characters.");
+        return Ok(await secrets.StoreAsync(User.RequireSubject(), value, cancellationToken));
+    }
+
     [HttpPost("consume")]
     public async Task<IActionResult> Consume([FromBody] ConsumeSecretRequest request, CancellationToken cancellationToken)
     {
@@ -20,4 +34,5 @@ public sealed class SecretsController(IOneTimeSecretStore secrets) : ControllerB
     }
 
     public sealed record ConsumeSecretRequest(string Token);
+    public sealed record StageSecretRequest(string? Value, bool Generate);
 }

@@ -43,9 +43,11 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var agent = scope.ServiceProvider.GetRequiredService<IAgentGateway>();
+        var secrets = scope.ServiceProvider.GetRequiredService<IOneTimeSecretStore>();
+        var identity = scope.ServiceProvider.GetRequiredService<IIdentityManager>();
         var leases = scope.ServiceProvider.GetRequiredService<ResourceLeaseManager>();
         await CollectMetrics(db, agent, cancellationToken);
-        await DispatchOutbox(db, agent, leases, _workerInstanceId, cancellationToken);
+        await DispatchOutbox(db, agent, secrets, identity, leases, _workerInstanceId, cancellationToken);
         await ReconcileAgentOperations(db, agent, leases, _workerInstanceId, cancellationToken);
 
         if (_nextCatalogRefresh <= DateTimeOffset.UtcNow)
@@ -89,6 +91,8 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
     private static async Task DispatchOutbox(
         PlatformDbContext db,
         IAgentGateway agent,
+        IOneTimeSecretStore secrets,
+        IIdentityManager identity,
         ResourceLeaseManager leases,
         string workerInstanceId,
         CancellationToken cancellationToken)
@@ -126,14 +130,38 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                         var planHash = request.RootElement.TryGetProperty("planHash", out var planHashElement) && planHashElement.ValueKind == JsonValueKind.String
                             ? planHashElement.GetString()
                             : null;
+                        if (parameters.TryGetValue("inputTicket", out var inputTicket))
+                        {
+                            var secret = await secrets.ConsumeAsync(job.ActorSubject, inputTicket, cancellationToken)
+                                ?? throw new InvalidOperationException("The staged secret expired before the operation was dispatched.");
+                            var target = parameters.TryGetValue("inputKind", out var configuredTarget) ? configuredTarget : "password";
+                            if (target is not ("password" or "environment")) throw new InvalidOperationException("The staged secret target is unsupported.");
+                            parameters[target] = secret;
+                            var successor = await secrets.StoreAsync(job.ActorSubject, secret, cancellationToken);
+                            parameters["inputTicket"] = successor.Token;
+                            var persistedParameters = parameters
+                                .Where(item => item.Key != target)
+                                .ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal);
+                            job.RequestJson = JsonSerializer.Serialize(new { resourceId, parameters = persistedParameters, planHash });
+                            job.ResultJson = JsonSerializer.Serialize(new { secretToken = successor.Token, secretExpiresAtUtc = successor.ExpiresAtUtc });
+                        }
+
                         job.State = "Running";
                         job.Phase = "DispatchingToAgent";
                         job.StartedAtUtc ??= DateTimeOffset.UtcNow;
                         job.Version++;
                         await db.SaveChangesAsync(cancellationToken);
-                        var operation = await agent.ExecuteAsync(split[0], split[1], resourceId, parameters, planHash, job.Id, job.IdempotencyKey, cancellationToken);
-                        job.AgentOperationId = Guid.TryParse(operation.OperationId, out var operationId) ? operationId : null;
-                        await ApplyAgentState(db, job, operation, cancellationToken);
+                        if (split[0] == "identity")
+                        {
+                            await identity.ExecuteAsync(split[1], resourceId, parameters, cancellationToken);
+                            await Complete(db, job, "Succeeded", "Completed", null, cancellationToken, 100);
+                        }
+                        else
+                        {
+                            var operation = await agent.ExecuteAsync(split[0], split[1], resourceId, parameters, planHash, job.Id, job.IdempotencyKey, cancellationToken);
+                            job.AgentOperationId = Guid.TryParse(operation.OperationId, out var operationId) ? operationId : null;
+                            await ApplyAgentState(db, job, operation, cancellationToken);
+                        }
                     }
                     if (job.CompletedAtUtc is not null)
                     {
@@ -172,13 +200,29 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                 message.ProcessedAtUtc = DateTimeOffset.UtcNow;
                 await db.SaveChangesAsync(cancellationToken);
             }
-            catch (Exception)
+            catch (Exception exception)
             {
                 message.Attempts++;
-                message.LastErrorCode = "OUTBOX_DISPATCH_FAILED";
-                message.AvailableAtUtc = DateTimeOffset.UtcNow.AddSeconds(Math.Min(300, 5 * Math.Pow(2, message.Attempts)));
+                var secretExpired = exception is InvalidOperationException && exception.Message.Contains("staged secret expired", StringComparison.Ordinal);
+                var terminal = secretExpired || message.Attempts >= 8;
+                message.LastErrorCode = secretExpired ? "ONE_TIME_SECRET_EXPIRED" : "OUTBOX_DISPATCH_FAILED";
+                if (terminal)
+                {
+                    message.ProcessedAtUtc = DateTimeOffset.UtcNow;
+                    if (message.MessageType is "OperationRequested" or "OperationCancellationRequested")
+                    {
+                        using var failedPayload = JsonDocument.Parse(message.PayloadJson);
+                        var failedJobId = failedPayload.RootElement.GetProperty("jobId").GetGuid();
+                        var failedJob = await db.OperationJobs.SingleAsync(item => item.Id == failedJobId, cancellationToken);
+                        await Complete(db, failedJob, "Failed", secretExpired ? "SecretExpired" : "DispatchRetriesExhausted", message.LastErrorCode, cancellationToken);
+                    }
+                }
+                else
+                {
+                    message.AvailableAtUtc = DateTimeOffset.UtcNow.AddSeconds(Math.Min(300, 5 * Math.Pow(2, message.Attempts)));
+                }
                 await db.SaveChangesAsync(cancellationToken);
-                throw;
+                if (!terminal) throw;
             }
         }
     }

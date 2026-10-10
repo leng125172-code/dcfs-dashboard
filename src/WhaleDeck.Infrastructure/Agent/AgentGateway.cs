@@ -89,6 +89,9 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
     public async Task<PlanDto> PlanAsync(string area, string action, string? resourceId, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
     {
         var normalizedParameters = new Dictionary<string, string>(parameters, StringComparer.Ordinal);
+        normalizedParameters.Remove("password");
+        normalizedParameters.Remove("environment");
+        normalizedParameters.Remove("inputTicket");
         if (area.Equals("containers", StringComparison.OrdinalIgnoreCase) && action.Equals("delete", StringComparison.OrdinalIgnoreCase))
         {
             normalizedParameters["timeoutSeconds"] = parameters.TryGetValue("timeoutSeconds", out var timeout) && uint.TryParse(timeout, out var seconds)
