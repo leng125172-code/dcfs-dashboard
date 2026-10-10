@@ -20,6 +20,7 @@ import sys
 import tempfile
 
 runtime_path, fragment_path = sys.argv[1:]
+source_stat = os.stat(runtime_path)
 key = "WHALEDECK_AUTHENTIK_API_TOKEN="
 replacement = next(
     (line for line in open(fragment_path, encoding="utf-8").read().splitlines() if line.startswith(key)),
@@ -48,6 +49,7 @@ try:
         output.flush()
         os.fsync(output.fileno())
     os.chmod(temporary, stat.S_IRUSR | stat.S_IWUSR)
+    os.chown(temporary, source_stat.st_uid, source_stat.st_gid)
     os.replace(temporary, runtime_path)
 finally:
     if os.path.exists(temporary):
