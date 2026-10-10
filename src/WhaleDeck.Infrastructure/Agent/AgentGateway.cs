@@ -120,6 +120,19 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
         return new ContainerStatsDto(response.Values);
     }
 
+    public async Task<ContainerInspectDto> InspectContainerAsync(string containerId, CancellationToken cancellationToken)
+    {
+        var response = await _docker.InspectContainerAsync(
+            new ResourceReference { ResourceId = containerId, ResourceType = "Container" },
+            Headers("/whaledeck.agent.v1.DockerService/InspectContainer"),
+            cancellationToken: cancellationToken);
+        return new ContainerInspectDto(response.Id, response.Name, response.Image, response.EnvironmentNames.ToArray(),
+            response.Command.ToArray(), response.Entrypoint.ToArray(), response.Labels, response.Ports.ToArray(),
+            response.Volumes.ToArray(), response.Networks.ToArray(), response.RestartPolicy, response.Cpus,
+            response.MemoryMb, response.HealthCommand.ToArray(), response.HealthIntervalSeconds,
+            response.HealthTimeoutSeconds, response.HealthRetries);
+    }
+
     public async Task<IReadOnlyCollection<ManagedResourceDto>> ListResourcesAsync(string kind, CancellationToken cancellationToken)
     {
         return kind.ToLowerInvariant() switch

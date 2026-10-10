@@ -3,8 +3,8 @@ import { onMounted, reactive, ref } from 'vue'
 import { Box, Delete, Plus, RefreshRight, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiRequest } from '@/services/apiClient'
-import { enqueueOperation, planOperation } from '@/services/operations'
-import type { ContainerLogs, ContainerStats } from '@/services/contracts'
+import { enqueueOperation, planOperation, stageSecret } from '@/services/operations'
+import type { ContainerInspect, ContainerLogs, ContainerStats } from '@/services/contracts'
 
 interface Container {
   id: string
@@ -21,12 +21,58 @@ const items = ref<Container[]>([])
 const loading = ref(false)
 const createVisible = ref(false)
 const submitting = ref(false)
-const form = reactive({ name: '', image: '', cpus: 1, memoryMb: 512, autoUpdate: false })
+const form = reactive({
+  name: '',
+  image: '',
+  cpus: 1,
+  memoryMb: 512,
+  autoUpdate: false,
+  restartPolicy: 'unless-stopped',
+  command: '',
+  entrypoint: '',
+  environment: '',
+  ports: '',
+  volumes: '',
+  networks: 'bridge',
+  labels: '{}',
+  healthCommand: '',
+  healthIntervalSeconds: 30,
+  healthTimeoutSeconds: 5,
+  healthRetries: 3,
+})
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const selected = ref<Container | null>(null)
 const logs = ref<ContainerLogs>({ lines: [], truncated: false })
 const stats = ref<Record<string, string>>({})
+const inspect = ref<ContainerInspect | null>(null)
+
+function resetForm() {
+  Object.assign(form, {
+    name: '',
+    image: '',
+    cpus: 1,
+    memoryMb: 512,
+    autoUpdate: false,
+    restartPolicy: 'unless-stopped',
+    command: '',
+    entrypoint: '',
+    environment: '',
+    ports: '',
+    volumes: '',
+    networks: 'bridge',
+    labels: '{}',
+    healthCommand: '',
+    healthIntervalSeconds: 30,
+    healthTimeoutSeconds: 5,
+    healthRetries: 3,
+  })
+}
+
+function openCreate() {
+  resetForm()
+  createVisible.value = true
+}
 
 async function load() {
   loading.value = true
@@ -87,12 +133,30 @@ async function removeContainer(item: Container) {
 async function createContainer() {
   submitting.value = true
   try {
-    const parameters = {
+    const parameters: Record<string, string> = {
       name: form.name.trim(),
       image: form.image.trim(),
       cpus: String(form.cpus),
       memoryMb: String(form.memoryMb),
       autoUpdate: String(form.autoUpdate),
+      restartPolicy: form.restartPolicy,
+    }
+    if (form.command.trim()) parameters.command = form.command.trim()
+    if (form.entrypoint.trim()) parameters.entrypoint = form.entrypoint.trim()
+    if (form.ports.trim()) parameters.ports = form.ports.trim()
+    if (form.volumes.trim()) parameters.volumes = form.volumes.trim()
+    if (form.networks.trim()) parameters.networks = form.networks.trim()
+    if (form.labels.trim() && form.labels.trim() !== '{}') parameters.labels = form.labels.trim()
+    if (form.healthCommand.trim()) {
+      parameters.healthCommand = form.healthCommand.trim()
+      parameters.healthIntervalSeconds = String(form.healthIntervalSeconds)
+      parameters.healthTimeoutSeconds = String(form.healthTimeoutSeconds)
+      parameters.healthRetries = String(form.healthRetries)
+    }
+    if (form.environment.trim()) {
+      const ticket = await stageSecret(form.environment)
+      parameters.inputTicket = ticket.token
+      parameters.inputKind = 'environment'
     }
     const plan = await planOperation('containers', 'create', 'new', parameters)
     const details =
@@ -124,19 +188,60 @@ async function openDetails(item: Container) {
   detailLoading.value = true
   logs.value = { lines: [], truncated: false }
   stats.value = {}
+  inspect.value = null
   try {
     const id = encodeURIComponent(item.id)
-    const [logResult, statsResult] = await Promise.all([
+    const [logResult, statsResult, inspectResult] = await Promise.all([
       apiRequest<ContainerLogs>(`containers/${id}/logs?tail=500&sinceMinutes=60`),
       item.state === 'running'
         ? apiRequest<ContainerStats>(`containers/${id}/stats`)
         : Promise.resolve({ values: {} }),
+      apiRequest<ContainerInspect>(`containers/${id}/inspect`),
     ])
     logs.value = logResult
     stats.value = statsResult.values
+    inspect.value = inspectResult
   } finally {
     detailLoading.value = false
   }
+}
+
+function copyContainer() {
+  if (!inspect.value) return
+  const safeLabels = Object.fromEntries(
+    Object.entries(inspect.value.labels).filter(
+      ([key]) => !key.startsWith('io.whaledeck.') && !key.startsWith('com.docker.compose.'),
+    ),
+  )
+  Object.assign(form, {
+    name: `${inspect.value.name}-copy`.slice(0, 64),
+    image: inspect.value.image,
+    cpus: inspect.value.cpus || 1,
+    memoryMb: inspect.value.memoryMb || 512,
+    autoUpdate: inspect.value.labels['io.whaledeck.autoupdate'] === 'true',
+    restartPolicy:
+      inspect.value.restartPolicy === 'always' ? 'unless-stopped' : inspect.value.restartPolicy,
+    command: inspect.value.command.length ? JSON.stringify(inspect.value.command) : '',
+    entrypoint: inspect.value.entrypoint.length ? JSON.stringify(inspect.value.entrypoint) : '',
+    environment: '',
+    ports: inspect.value.ports.join(','),
+    volumes: inspect.value.volumes.filter((item) => !item.startsWith('/')).join(','),
+    networks: inspect.value.networks
+      .filter((item) => !item.startsWith('database-platform') && !item.startsWith('whaledeck'))
+      .join(','),
+    labels: JSON.stringify(safeLabels, null, 2),
+    healthCommand:
+      inspect.value.healthCommand[0] === 'CMD-SHELL'
+        ? inspect.value.healthCommand.slice(1).join(' ')
+        : '',
+    healthIntervalSeconds: inspect.value.healthIntervalSeconds || 30,
+    healthTimeoutSeconds: inspect.value.healthTimeoutSeconds || 5,
+    healthRetries: inspect.value.healthRetries || 3,
+  })
+  detailVisible.value = false
+  createVisible.value = true
+  if (inspect.value.environmentNames.length)
+    ElMessage.info('环境变量值不会复制，请在创建前重新填写。')
 }
 
 onMounted(load)
@@ -153,7 +258,7 @@ onMounted(load)
       <div class="page-heading__actions">
         <el-button :loading="loading" @click="load"
           ><el-icon><RefreshRight /></el-icon>刷新</el-button
-        ><el-button type="primary" @click="createVisible = true"
+        ><el-button type="primary" @click="openCreate"
           ><el-icon><Plus /></el-icon>创建容器</el-button
         >
       </div>
@@ -205,9 +310,9 @@ onMounted(load)
         </div>
       </article>
     </section>
-    <el-dialog v-model="createVisible" title="创建受管容器" width="min(560px, calc(100vw - 32px))">
+    <el-dialog v-model="createVisible" title="创建受管容器" width="min(760px, calc(100vw - 32px))">
       <el-alert
-        title="仅支持无宿主端口、无宿主目录挂载的安全基础配置；复杂应用请使用应用模板。"
+        title="端口、命名卷和普通网络经过服务端预检；宿主目录和平台内部网络不会从此页面开放。"
         type="info"
         :closable="false"
         show-icon
@@ -224,6 +329,63 @@ onMounted(load)
             ><el-input-number v-model="form.cpus" :min="0.1" :max="32" :step="0.5" /></el-form-item
           ><el-form-item label="内存 (MiB)"
             ><el-input-number v-model="form.memoryMb" :min="32" :max="32768" :step="128"
+          /></el-form-item>
+        </div>
+        <el-form-item label="重启策略">
+          <el-select v-model="form.restartPolicy">
+            <el-option label="除非手动停止" value="unless-stopped" />
+            <el-option label="失败时重启" value="on-failure" />
+            <el-option label="不自动重启" value="no" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="命令（JSON 字符串数组）">
+          <el-input v-model="form.command" placeholder='["nginx", "-g", "daemon off;"]' />
+        </el-form-item>
+        <el-form-item label="Entrypoint（JSON 字符串数组）">
+          <el-input v-model="form.entrypoint" placeholder='["/docker-entrypoint.sh"]' />
+        </el-form-item>
+        <el-form-item label="环境变量">
+          <el-input v-model="form.environment" type="textarea" :rows="4" placeholder="KEY=value" />
+          <span class="form-hint">值通过一次性 Secret 传输，任务记录只保留字段名。</span>
+        </el-form-item>
+        <el-form-item label="端口映射">
+          <el-input v-model="form.ports" placeholder="0.0.0.0:8088:80/tcp,127.0.0.1:9090:90/tcp" />
+          <span class="form-hint">多个映射用逗号分隔；只允许全网卡或本机回环地址。</span>
+        </el-form-item>
+        <el-form-item label="命名卷">
+          <el-input
+            v-model="form.volumes"
+            placeholder="my-data:/var/lib/app:rw,my-config:/etc/app:ro"
+          />
+          <span class="form-hint">不接受任意宿主机路径，平台和数据库卷不可使用。</span>
+        </el-form-item>
+        <el-form-item label="网络">
+          <el-input v-model="form.networks" placeholder="bridge,team-apps" />
+          <span class="form-hint">平台与 database-platform 内部网络不可从通用容器流程加入。</span>
+        </el-form-item>
+        <el-form-item label="标签（JSON）">
+          <el-input
+            v-model="form.labels"
+            type="textarea"
+            :rows="3"
+            placeholder='{"team":"platform"}'
+          />
+        </el-form-item>
+        <el-form-item label="健康检查命令">
+          <el-input
+            v-model="form.healthCommand"
+            placeholder="wget -qO- http://127.0.0.1/health || exit 1"
+          />
+        </el-form-item>
+        <div v-if="form.healthCommand" class="container-form__health">
+          <el-form-item label="间隔（秒）"
+            ><el-input-number v-model="form.healthIntervalSeconds" :min="5" :max="3600"
+          /></el-form-item>
+          <el-form-item label="超时（秒）"
+            ><el-input-number v-model="form.healthTimeoutSeconds" :min="1" :max="300"
+          /></el-form-item>
+          <el-form-item label="重试"
+            ><el-input-number v-model="form.healthRetries" :min="1" :max="20"
           /></el-form-item>
         </div>
         <el-form-item label="自动更新"
@@ -249,6 +411,11 @@ onMounted(load)
       size="min(760px, 96vw)"
     >
       <div v-loading="detailLoading" class="container-detail">
+        <div class="container-detail__actions">
+          <el-button :disabled="!inspect || selected?.isProtected" @click="copyContainer"
+            >复制配置创建</el-button
+          >
+        </div>
         <el-descriptions v-if="selected" :column="2" border>
           <el-descriptions-item label="镜像" :span="2">{{ selected.image }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ selected.status }}</el-descriptions-item>
@@ -262,6 +429,36 @@ onMounted(load)
           <el-descriptions-item label="网络 I/O">{{ stats.network || '—' }}</el-descriptions-item>
           <el-descriptions-item label="磁盘 I/O">{{ stats.block || '—' }}</el-descriptions-item>
           <el-descriptions-item label="进程数">{{ stats.pids || '—' }}</el-descriptions-item>
+          <template v-if="inspect">
+            <el-descriptions-item label="重启策略">{{
+              inspect.restartPolicy
+            }}</el-descriptions-item>
+            <el-descriptions-item label="资源限制"
+              >{{ inspect.cpus || '默认' }} CPU ·
+              {{ inspect.memoryMb || '默认' }} MiB</el-descriptions-item
+            >
+            <el-descriptions-item label="端口" :span="2">{{
+              inspect.ports.join(', ') || '无'
+            }}</el-descriptions-item>
+            <el-descriptions-item label="网络" :span="2">{{
+              inspect.networks.join(', ') || '无'
+            }}</el-descriptions-item>
+            <el-descriptions-item label="挂载" :span="2">{{
+              inspect.volumes.join(', ') || '无'
+            }}</el-descriptions-item>
+            <el-descriptions-item label="环境变量名" :span="2">{{
+              inspect.environmentNames.join(', ') || '无'
+            }}</el-descriptions-item>
+            <el-descriptions-item label="命令" :span="2">{{
+              inspect.command.join(' ') || '继承镜像'
+            }}</el-descriptions-item>
+            <el-descriptions-item label="Entrypoint" :span="2">{{
+              inspect.entrypoint.join(' ') || '继承镜像'
+            }}</el-descriptions-item>
+            <el-descriptions-item label="健康检查" :span="2">{{
+              inspect.healthCommand.join(' ') || '未配置'
+            }}</el-descriptions-item>
+          </template>
         </el-descriptions>
         <div class="log-heading">
           <h3>最近一小时日志</h3>
@@ -324,10 +521,21 @@ onMounted(load)
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+.container-form__health {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
 .form-hint {
-  margin-left: 10px;
+  display: block;
+  width: 100%;
+  margin-top: 5px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.container-detail__actions {
+  display: flex;
+  justify-content: flex-end;
 }
 .container-detail {
   display: grid;
@@ -369,6 +577,9 @@ onMounted(load)
     grid-column: 2 / -1;
   }
   .container-form__resources {
+    grid-template-columns: 1fr;
+  }
+  .container-form__health {
     grid-template-columns: 1fr;
   }
 }

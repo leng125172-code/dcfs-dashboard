@@ -35,6 +35,10 @@ public sealed class ManagementController(
     public async Task<IActionResult> ContainerStats(string containerId, CancellationToken cancellationToken = default) =>
         Ok(await agent.GetContainerStatsAsync(containerId, cancellationToken));
 
+    [HttpGet("containers/{containerId}/inspect")]
+    public async Task<IActionResult> ContainerInspect(string containerId, CancellationToken cancellationToken = default) =>
+        Ok(await agent.InspectContainerAsync(containerId, cancellationToken));
+
     [HttpGet("applications/popular")]
     public async Task<IActionResult> Popular(CancellationToken cancellationToken) => Ok(await catalog.GetPopularAsync(cancellationToken));
 

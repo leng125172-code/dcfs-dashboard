@@ -104,6 +104,51 @@ public sealed class DockerGrpcService(DockerEngine docker, ResourceRegistry regi
         return response;
     }
 
+    public override async Task<ContainerInspectResponse> InspectContainer(ResourceReference request, ServerCallContext context)
+    {
+        var metadata = await docker.InspectContainerAsync(request.ResourceId, context.CancellationToken);
+        var response = new ContainerInspectResponse
+        {
+            Id = metadata.ID ?? string.Empty,
+            Name = metadata.Name?.TrimStart('/') ?? string.Empty,
+            Image = metadata.Config?.Image ?? metadata.Image ?? string.Empty,
+            RestartPolicy = metadata.HostConfig?.RestartPolicy?.Name switch
+            {
+                Docker.DotNet.Models.RestartPolicyKind.UnlessStopped => "unless-stopped",
+                Docker.DotNet.Models.RestartPolicyKind.OnFailure => "on-failure",
+                Docker.DotNet.Models.RestartPolicyKind.Always => "always",
+                _ => "no"
+            },
+            Cpus = (metadata.HostConfig?.NanoCPUs ?? 0) / 1_000_000_000d,
+            MemoryMb = (metadata.HostConfig?.Memory ?? 0) / (1024 * 1024),
+            HealthIntervalSeconds = checked((long)(metadata.Config?.Healthcheck?.Interval.TotalSeconds ?? 0)),
+            HealthTimeoutSeconds = checked((long)(metadata.Config?.Healthcheck?.Timeout.TotalSeconds ?? 0)),
+            HealthRetries = metadata.Config?.Healthcheck?.Retries ?? 0
+        };
+        response.EnvironmentNames.AddRange((metadata.Config?.Env ?? [])
+            .Select(item => item.Split('=', 2)[0]).Where(item => !string.IsNullOrWhiteSpace(item)).Distinct(StringComparer.Ordinal));
+        response.Command.AddRange((metadata.Config?.Cmd ?? []).Select(RedactArgument));
+        response.Entrypoint.AddRange((metadata.Config?.Entrypoint ?? []).Select(RedactArgument));
+        response.HealthCommand.AddRange((metadata.Config?.Healthcheck?.Test ?? []).Select(RedactArgument));
+        if (metadata.Config?.Labels is not null)
+        {
+            foreach (var label in metadata.Config.Labels.Where(item => !IsSensitiveLabel(item.Key)))
+                response.Labels[label.Key] = label.Value;
+        }
+        if (metadata.HostConfig?.PortBindings is not null)
+        {
+            foreach (var (containerPort, bindings) in metadata.HostConfig.PortBindings)
+            {
+                foreach (var binding in bindings ?? [])
+                    response.Ports.Add($"{binding.HostIP}:{binding.HostPort}:{containerPort}");
+            }
+        }
+        response.Volumes.AddRange((metadata.Mounts ?? []).Select(item =>
+            $"{(string.IsNullOrWhiteSpace(item.Name) ? item.Source : item.Name)}:{item.Destination}:{(item.RW ? "rw" : "ro")}"));
+        response.Networks.AddRange(metadata.NetworkSettings?.Networks?.Keys ?? []);
+        return response;
+    }
+
     public override Task<OperationHandle> ChangeContainerState(ChangeContainerStateRequest request, ServerCallContext context) =>
         docker.ChangeContainerStateAsync(
             request.ContainerId,
@@ -172,7 +217,7 @@ public sealed class DockerGrpcService(DockerEngine docker, ResourceRegistry regi
     }
 
     public override Task<PlanResponse> PlanAction(RegisteredActionRequest request, ServerCallContext context) =>
-        Task.FromResult(docker.Plan(request.Resource?.ResourceId ?? string.Empty, request.Action, request.Parameters));
+        docker.PlanAsync(request.Resource?.ResourceId ?? string.Empty, request.Action, request.Parameters, context.CancellationToken);
 
     public override Task<OperationHandle> RunAction(RegisteredActionRequest request, ServerCallContext context) =>
         docker.RunActionAsync(request.Resource?.ResourceId ?? string.Empty, request.Action, request.Parameters,
@@ -183,6 +228,14 @@ public sealed class DockerGrpcService(DockerEngine docker, ResourceRegistry regi
         key.Contains("password", StringComparison.OrdinalIgnoreCase) ||
         key.Contains("token", StringComparison.OrdinalIgnoreCase) ||
         key.Contains("secret", StringComparison.OrdinalIgnoreCase);
+
+    private static string RedactArgument(string value) =>
+        value.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("token", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("credential", StringComparison.OrdinalIgnoreCase)
+            ? "[REDACTED]"
+            : value;
 
     private async Task<string> ResolveContainerIdAsync(string value, CancellationToken cancellationToken)
     {

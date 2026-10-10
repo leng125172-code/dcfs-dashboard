@@ -118,6 +118,25 @@ public sealed record ContainerLogsDto(IReadOnlyCollection<string> Lines, bool Tr
 
 public sealed record ContainerStatsDto(IReadOnlyDictionary<string, string> Values);
 
+public sealed record ContainerInspectDto(
+    string Id,
+    string Name,
+    string Image,
+    IReadOnlyCollection<string> EnvironmentNames,
+    IReadOnlyCollection<string> Command,
+    IReadOnlyCollection<string> Entrypoint,
+    IReadOnlyDictionary<string, string> Labels,
+    IReadOnlyCollection<string> Ports,
+    IReadOnlyCollection<string> Volumes,
+    IReadOnlyCollection<string> Networks,
+    string RestartPolicy,
+    double Cpus,
+    long MemoryMb,
+    IReadOnlyCollection<string> HealthCommand,
+    long HealthIntervalSeconds,
+    long HealthTimeoutSeconds,
+    long HealthRetries);
+
 public sealed record OverviewDto(
     string Scope,
     string PlatformStatus,

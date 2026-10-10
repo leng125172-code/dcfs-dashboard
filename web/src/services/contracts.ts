@@ -68,6 +68,26 @@ export interface ContainerStats {
   values: Record<string, string>
 }
 
+export interface ContainerInspect {
+  id: string
+  name: string
+  image: string
+  environmentNames: string[]
+  command: string[]
+  entrypoint: string[]
+  labels: Record<string, string>
+  ports: string[]
+  volumes: string[]
+  networks: string[]
+  restartPolicy: string
+  cpus: number
+  memoryMb: number
+  healthCommand: string[]
+  healthIntervalSeconds: number
+  healthTimeoutSeconds: number
+  healthRetries: number
+}
+
 export interface MetricValue {
   kind: string
   deviceId: string

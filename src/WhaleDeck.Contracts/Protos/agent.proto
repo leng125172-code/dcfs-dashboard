@@ -170,6 +170,26 @@ message ContainerStatsResponse {
   map<string, string> values = 1;
 }
 
+message ContainerInspectResponse {
+  string id = 1;
+  string name = 2;
+  string image = 3;
+  repeated string environment_names = 4;
+  repeated string command = 5;
+  repeated string entrypoint = 6;
+  map<string, string> labels = 7;
+  repeated string ports = 8;
+  repeated string volumes = 9;
+  repeated string networks = 10;
+  string restart_policy = 11;
+  double cpus = 12;
+  int64 memory_mb = 13;
+  repeated string health_command = 14;
+  int64 health_interval_seconds = 15;
+  int64 health_timeout_seconds = 16;
+  int64 health_retries = 17;
+}
+
 message ImageMetadataRequest {
   RequestContext context = 1;
   string image = 2;
@@ -270,6 +290,7 @@ service DockerService {
   rpc ListContainers(ListContainersRequest) returns (ListContainersResponse);
   rpc GetContainerLogs(ContainerLogsRequest) returns (ContainerLogsResponse);
   rpc GetContainerStats(ResourceReference) returns (ContainerStatsResponse);
+  rpc InspectContainer(ResourceReference) returns (ContainerInspectResponse);
   rpc ChangeContainerState(ChangeContainerStateRequest) returns (OperationHandle);
   rpc ListImages(google.protobuf.Empty) returns (ResourceCollectionResponse);
   rpc ListNetworks(google.protobuf.Empty) returns (ResourceCollectionResponse);
