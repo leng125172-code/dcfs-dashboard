@@ -73,6 +73,8 @@ message HostInfoResponse {
 
 message MetricsRequest {
   RequestContext context = 1;
+  // Zero requests one batch and closes the stream. Values from 6 through 60
+  // keep the stream open at the requested sampling interval.
   uint32 interval_seconds = 2;
 }
 

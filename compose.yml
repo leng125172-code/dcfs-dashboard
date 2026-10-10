@@ -90,10 +90,12 @@ services:
       Authentication__Authentik__ApiBaseUrl: http://authentik:9000/api/v3/
       Authentication__Authentik__ApiToken: ${WHALEDECK_AUTHENTIK_API_TOKEN:?set WHALEDECK_AUTHENTIK_API_TOKEN}
       Authentication__Authentik__AdministratorGroupId: ${WHALEDECK_AUTHENTIK_ADMIN_GROUP_ID:?set WHALEDECK_AUTHENTIK_ADMIN_GROUP_ID}
+      DataProtection__KeyDirectory: /var/lib/whaledeck/data-protection
     volumes:
       # Mount the parent directory so reconnects see the new socket inode after an Agent restart.
       - /run/whaledeck:/run/whaledeck:ro
       - /etc/whaledeck/agent-capability.key:/run/secrets/agent-capability.key:ro
+      - whaledeck_api_data_protection:/var/lib/whaledeck/data-protection
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -177,3 +179,7 @@ networks:
   valkey_backend:
     name: database-platform-cache-general
     external: true
+
+volumes:
+  whaledeck_api_data_protection:
+    name: whaledeck-api-data-protection

@@ -25,6 +25,7 @@ public sealed class HostGrpcService(HostReader host, OperationStore operations) 
 
     public override async Task StreamMetrics(MetricsRequest request, IServerStreamWriter<MetricPoint> responseStream, ServerCallContext context)
     {
+        var singleBatch = request.IntervalSeconds == 0;
         var interval = TimeSpan.FromSeconds(Math.Clamp(request.IntervalSeconds, 6, 60));
         while (!context.CancellationToken.IsCancellationRequested)
         {
@@ -37,6 +38,7 @@ public sealed class HostGrpcService(HostReader host, OperationStore operations) 
                 await responseStream.WriteAsync(new MetricPoint { MetricKind = metric.Kind, DeviceId = metric.DeviceId, Value = metric.Value, Unit = metric.Unit, Quality = "Good", SampledAtUtc = timestamp });
             }
             await responseStream.WriteAsync(new MetricPoint { MetricKind = "batch.complete", DeviceId = "host", Unit = "none", Quality = "Good", SampledAtUtc = timestamp });
+            if (singleBatch) return;
             await Task.Delay(interval, context.CancellationToken);
         }
     }

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
@@ -45,6 +46,13 @@ try
     }
 
     builder.Services.AddInfrastructure(builder.Configuration);
+    var dataProtection = builder.Services.AddDataProtection().SetApplicationName("WhaleDeck.Api");
+    var dataProtectionDirectory = builder.Configuration["DataProtection:KeyDirectory"];
+    if (!string.IsNullOrWhiteSpace(dataProtectionDirectory))
+    {
+        Directory.CreateDirectory(dataProtectionDirectory);
+        dataProtection.PersistKeysToFileSystem(new DirectoryInfo(dataProtectionDirectory));
+    }
     // The global MVC antiforgery filter depends on ViewFeatures services even
     // though Whale Deck itself exposes controller APIs rather than Razor views.
     builder.Services.AddControllersWithViews(options => options.Filters.Add(new AutoValidateAntiforgeryTokenAttribute()));

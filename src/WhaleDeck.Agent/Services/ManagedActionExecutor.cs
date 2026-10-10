@@ -158,10 +158,10 @@ public sealed partial class ManagedActionExecutor(
 
         string[] command = action switch
         {
-            "create-principal" => ["ACL", "SETUSER", principal, "on", "resetpass", $">{Required(password, "password")}", "resetkeys", $"~{prefix}*", "resetchannels", "resetcommands", .. ValkeyPermissions(role)],
+            "create-principal" => ["ACL", "SETUSER", principal, "on", "resetpass", $">{Required(password, "password")}", "resetkeys", $"~{prefix}*", "resetchannels", "nocommands", .. ValkeyPermissions(role)],
             "delete-principal" => ["ACL", "DELUSER", principal],
             "disable-principal" => ["ACL", "SETUSER", principal, "off"],
-            "grant" => ["ACL", "SETUSER", principal, "on", "resetkeys", $"~{prefix}*", "resetchannels", "resetcommands", .. ValkeyPermissions(role)],
+            "grant" => ["ACL", "SETUSER", principal, "on", "resetkeys", $"~{prefix}*", "resetchannels", "nocommands", .. ValkeyPermissions(role)],
             "rotate" => ["ACL", "SETUSER", principal, "resetpass", $">{Required(password, "password")}"],
             "terminate-connection" => ["CLIENT", "KILL", "USER", principal],
             _ => throw new InvalidOperationException("The Valkey action is unsupported.")

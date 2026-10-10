@@ -177,7 +177,11 @@ def assert_present(engine: Engine, database: str, principal: str) -> None:
         output = docker_output(["exec", engine.container, "sh", "-ec", 'exec mongosh --quiet --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "$1"', "--", script])
     else:
         output = docker_output(["exec", engine.container, "sh", "-ec", 'exec valkey-cli --no-auth-warning -a "$VALKEY_PASSWORD" ACL GETUSER "$1"', "--", principal])
-    if (engine.has_database and (database not in output or principal not in output)) or (not engine.has_database and "flags" not in output):
+    if engine.name in {"postgres", "mariadb", "sqlserver"} and (database not in output or principal not in output):
+        raise RuntimeError(f"{engine.name} temporary resources were not visible after creation")
+    if engine.name == "mongodb" and "present" not in output:
+        raise RuntimeError("mongodb temporary resources were not visible after creation")
+    if not engine.has_database and "flags" not in output:
         raise RuntimeError(f"{engine.name} temporary resources were not visible after creation")
 
 
@@ -292,9 +296,23 @@ def main() -> int:
     )
     api = Api(base_url, session)
     suffix = f"{int(time.time()) % 1_000_000}_{secrets.token_hex(2)}"
-    for engine in ENGINES:
+    selected_names = {
+        item.strip().lower()
+        for item in os.environ.get("VALIDATION_ENGINES", "").split(",")
+        if item.strip()
+    }
+    unknown_names = selected_names.difference(engine.name for engine in ENGINES)
+    if unknown_names:
+        raise RuntimeError(f"Unknown validation engines: {', '.join(sorted(unknown_names))}")
+    selected_engines = [engine for engine in ENGINES if not selected_names or engine.name in selected_names]
+    if not selected_engines:
+        raise RuntimeError("No database validation engines were selected")
+    for engine in selected_engines:
         validate_engine(api, engine, suffix)
-    print("Database validation passed: six adapters completed managed lifecycle and cleanup")
+    print(
+        "Database validation passed: "
+        f"{', '.join(engine.name for engine in selected_engines)} completed managed lifecycle and cleanup"
+    )
     return 0
 
 

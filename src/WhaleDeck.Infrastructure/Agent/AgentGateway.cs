@@ -138,7 +138,10 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
 
     public async Task<IReadOnlyCollection<MetricValueDto>> GetMetricsSnapshotAsync(CancellationToken cancellationToken)
     {
-        using var call = _host.StreamMetrics(new MetricsRequest { IntervalSeconds = 6 },
+        // The Worker owns the six-second schedule. Ask the Agent for exactly
+        // one batch so a normal sample does not end by canceling a live gRPC
+        // stream and produce a stack trace every collection cycle.
+        using var call = _host.StreamMetrics(new MetricsRequest { IntervalSeconds = 0 },
             Headers("/whaledeck.agent.v1.HostService/StreamMetrics"), cancellationToken: cancellationToken);
         var values = new List<MetricValueDto>();
         while (await call.ResponseStream.MoveNext(cancellationToken))
