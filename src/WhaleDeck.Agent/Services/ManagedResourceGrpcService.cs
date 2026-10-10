@@ -127,7 +127,9 @@ public sealed class ManagedResourceGrpcService(
             }
             coordinator.Start(
                 operation,
-                $"AGENT_{category.ToUpperInvariant()}_FAILED",
+                category == "Database" && request.Action is "run" or "verify"
+                    ? "AGENT_BACKUP_FAILED"
+                    : $"AGENT_{category.ToUpperInvariant()}_FAILED",
                 cancellationToken => executor.ExecuteAsync(category, resource, request.Action, request.Parameters, cancellationToken),
                 maintenance ? "Whale Deck 正在执行平台维护。" : null);
             return operation;

@@ -13,7 +13,9 @@ public sealed class OperationService(IJobRepository jobs)
             ["containers"] = new(StringComparer.OrdinalIgnoreCase) { "create", "start", "stop", "restart", "delete", "pull", "prune" },
             ["docker"] = new(StringComparer.OrdinalIgnoreCase) { "validate-settings", "apply-settings" },
             ["databases"] = new(StringComparer.OrdinalIgnoreCase) { "create", "delete", "create-principal", "delete-principal", "disable-principal", "grant", "rotate", "terminate-connection" },
-            ["backups"] = new(StringComparer.OrdinalIgnoreCase) { "run", "verify", "cancel", "save-policy" },
+            // Active backups are canceled through the job cancellation API so
+            // cancellation targets a concrete persisted Agent operation.
+            ["backups"] = new(StringComparer.OrdinalIgnoreCase) { "run", "verify", "save-policy" },
             ["applications"] = new(StringComparer.OrdinalIgnoreCase) { "install", "start", "stop", "restart", "update", "reinstall", "uninstall" },
             ["host"] = new(StringComparer.OrdinalIgnoreCase) { "update-check", "update-install", "reboot", "systemd-start", "systemd-stop", "systemd-restart" },
             ["config-repository"] = new(StringComparer.OrdinalIgnoreCase) { "snapshot", "commit-push" },

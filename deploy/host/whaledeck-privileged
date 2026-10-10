@@ -61,6 +61,29 @@ case "$action" in
     [[ "$unit" == whaledeck-agent.service && "$verb" == restart ]] || exit 2
     exec /usr/bin/systemd-run --unit=whaledeck-agent-restart --collect --on-active=3s /usr/bin/systemctl restart "$unit"
     ;;
+  database-backup)
+    [[ $# -eq 6 ]] || exit 2
+    engine=$2
+    verb=$3
+    critical_percent=$4
+    retention_days=$5
+    retention_count=$6
+    [[ "$engine" =~ ^(postgres|mariaDb|mongoDb|sqlServer|valkey|valkey72)$ ]] || exit 2
+    [[ "$verb" =~ ^(run|verify)$ ]] || exit 2
+    [[ "$critical_percent" =~ ^[0-9]+$ && "$critical_percent" -ge 51 && "$critical_percent" -le 99 ]] || exit 2
+    [[ "$retention_days" =~ ^[0-9]+$ && "$retention_days" -ge 1 && "$retention_days" -le 3650 ]] || exit 2
+    [[ "$retention_count" =~ ^[0-9]+$ && "$retention_count" -ge 1 && "$retention_count" -le 365 ]] || exit 2
+    if [[ "$verb" == run ]]; then
+      used_percent=$(/usr/bin/df --output=pcent /data/DockerData | /usr/bin/tail -n 1 | /usr/bin/tr -dc '0-9')
+      [[ -n "$used_percent" && "$used_percent" -lt "$critical_percent" ]] || {
+        echo 'Backup target has reached the configured critical capacity threshold.' >&2
+        exit 75
+      }
+      export BACKUP_RETENTION_DAYS="$retention_days" BACKUP_RETENTION_COUNT="$retention_count"
+      exec "/data/GitRepos/database-platform/$engine/scripts/backup.sh"
+    fi
+    exec "/data/GitRepos/database-platform/$engine/scripts/verify-backup.sh"
+    ;;
   platform-update-schedule)
     [[ $# -eq 1 ]] || exit 2
     exec /usr/bin/systemd-run --unit=whaledeck-platform-update --collect --on-active=3s /usr/local/libexec/whaledeck-platform-maintenance update

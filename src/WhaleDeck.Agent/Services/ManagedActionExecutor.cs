@@ -39,7 +39,7 @@ public sealed partial class ManagedActionExecutor(
         CancellationToken cancellationToken)
     {
         if (action is "run" or "verify" or "cancel" or "save-policy")
-            return ExecuteBackupAsync(resource, action, cancellationToken);
+            return ExecuteBackupAsync(resource, action, parameters, cancellationToken);
 
         return resource.Id switch
         {
@@ -171,11 +171,15 @@ public sealed partial class ManagedActionExecutor(
         await RunDockerStdinAsync(["exec", "-i", container, "sh", "-ec", shell], resp, "DATABASE_VALKEY_FAILED", cancellationToken);
     }
 
-    private async Task ExecuteBackupAsync(RegisteredResource resource, string action, CancellationToken cancellationToken)
+    private async Task ExecuteBackupAsync(
+        RegisteredResource resource,
+        string action,
+        IReadOnlyDictionary<string, string> parameters,
+        CancellationToken cancellationToken)
     {
         if (action == "cancel") throw new InvalidOperationException("Cancel the active backup job instead of starting a second backup action.");
         if (action == "save-policy") return;
-        var directory = resource.Id switch
+        var engine = resource.Id switch
         {
             "database-platform.postgres" => "postgres",
             "database-platform.mariadb" => "mariaDb",
@@ -185,8 +189,20 @@ public sealed partial class ManagedActionExecutor(
             "database-platform.valkey72" => "valkey72",
             _ => throw new InvalidOperationException("The backup resource is unsupported.")
         };
-        var script = Path.Combine(DatabaseRepository, directory, "scripts", action == "verify" ? "check.sh" : "backup.sh");
-        await processes.RunAsync(script, [], null, LongTimeout, "BACKUP_OPERATION_FAILED", cancellationToken, DatabaseRepository);
+        var criticalPercent = BoundedInteger(parameters, "capacityCriticalPercent", 51, 99, 95);
+        var retentionDays = BoundedInteger(parameters, "retentionDays", 1, 3650, 14);
+        var retentionCount = BoundedInteger(parameters, "retentionCount", 1, 365, 14);
+        await processes.RunAsync(
+            "/usr/bin/sudo",
+            [PrivilegedHelper, "database-backup", engine, action,
+                criticalPercent.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                retentionDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                retentionCount.ToString(System.Globalization.CultureInfo.InvariantCulture)],
+            null,
+            LongTimeout,
+            "BACKUP_OPERATION_FAILED",
+            cancellationToken,
+            DatabaseRepository);
     }
 
     private async Task ExecuteHostAsync(RegisteredResource resource, string action, CancellationToken cancellationToken)
@@ -476,6 +492,10 @@ public sealed partial class ManagedActionExecutor(
     private static string OptionalRole(IReadOnlyDictionary<string, string> parameters) => parameters.TryGetValue("role", out var value) && value is "readonly" or "readwrite" or "admin" ? value : "readonly";
     private static string? OptionalSecret(IReadOnlyDictionary<string, string> parameters) => parameters.TryGetValue("password", out var value) && value.Length is >= 16 and <= 256 && !value.Contains('\0') ? value : parameters.ContainsKey("password") ? throw new InvalidOperationException("password is invalid.") : null;
     private static string Required(string? value, string name) => !string.IsNullOrWhiteSpace(value) ? value : throw new InvalidOperationException($"{name} is required.");
+    private static int BoundedInteger(IReadOnlyDictionary<string, string> parameters, string name, int minimum, int maximum, int fallback) =>
+        !parameters.TryGetValue(name, out var value) ? fallback :
+        int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var parsed) && parsed >= minimum && parsed <= maximum
+            ? parsed : throw new InvalidOperationException($"{name} is outside the approved range.");
     private static string PgIdentifier(string value) => $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
     private static string MySqlIdentifier(string value) => $"`{value.Replace("`", "``", StringComparison.Ordinal)}`";
     private static string SqlServerIdentifier(string value) => $"[{value.Replace("]", "]]", StringComparison.Ordinal)}]";

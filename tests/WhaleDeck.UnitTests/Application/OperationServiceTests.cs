@@ -65,6 +65,16 @@ public sealed class OperationServiceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command with { Confirmed = true }, default));
     }
 
+    [Fact]
+    public async Task BackupCancellationTargetsTheExistingJobEndpoint()
+    {
+        var service = new OperationService(new RecordingJobRepository());
+        var command = new OperationCommand("backups", "cancel", "database-platform.postgres", "key-1",
+            "{\"parameters\":{}}", null, false);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.EnqueueAsync("subject", "trace", command, default));
+    }
+
     [Theory]
     [InlineData("password")]
     [InlineData("apiToken")]
