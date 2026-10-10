@@ -34,7 +34,10 @@ LockPersonality=true
 # Docker shutdown/restart and report dependency health through the UDS.
 RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
 SystemCallArchitectures=native
-CapabilityBoundingSet=
+# The process receives no ambient capabilities. The bounding set only permits
+# the setuid helper to enter the root identity and write approved backup paths;
+# sudoers and whaledeck-privileged still constrain every executable action.
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER CAP_CHOWN CAP_AUDIT_WRITE
 AmbientCapabilities=
 
 [Install]
