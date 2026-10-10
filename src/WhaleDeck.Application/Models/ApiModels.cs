@@ -76,7 +76,10 @@ public sealed record OverviewDto(
     IReadOnlyCollection<PortalItemDto> Portals,
     AgentHealthDto? Agent,
     HostInfoDto? Host,
-    IReadOnlyCollection<ManagedResourceDto>? Resources);
+    IReadOnlyCollection<ManagedResourceDto>? Resources,
+    IReadOnlyCollection<MetricValueDto>? Metrics,
+    IReadOnlyCollection<CatalogApplicationDto>? Applications,
+    bool CatalogIsStale);
 
 public sealed record OperationCommand(
     string Area,

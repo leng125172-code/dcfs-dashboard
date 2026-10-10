@@ -1,3 +1,6 @@
+import { apiRequest } from '@/services/apiClient'
+import type { OverviewResponse, PortalItem } from '@/services/contracts'
+
 export type ResourceKey = 'agents' | 'websites' | 'databases' | 'containers'
 export type ContainerState = 'available' | 'running' | 'stopped' | 'restarting'
 
@@ -60,6 +63,10 @@ export interface RecommendedApplication {
 }
 
 export interface WorkstationOverviewSnapshot {
+  scope: 'Public' | 'Administrator'
+  sampledAtUtc: string
+  platformStatus: string
+  portals: PortalItem[]
   resources: ResourceSummary[]
   healthMessage: string
   healthDetail: string
@@ -73,6 +80,10 @@ export interface WorkstationOverviewSnapshot {
 const labels = ['20:31', '20:32', '20:33', '20:34', '20:35', '20:36', '20:37', '20:38']
 
 export const demoWorkstationOverview: WorkstationOverviewSnapshot = {
+  scope: 'Administrator',
+  sampledAtUtc: new Date().toISOString(),
+  platformStatus: 'Preview',
+  portals: [],
   resources: [
     { key: 'agents', label: '智能体', value: 4, unit: '个', detail: '2 个正在执行任务' },
     { key: 'websites', label: '网站', value: 6, unit: '个', detail: '6 个站点可正常访问' },
@@ -268,6 +279,70 @@ export const demoWorkstationOverview: WorkstationOverviewSnapshot = {
 }
 
 export async function fetchWorkstationOverview(): Promise<WorkstationOverviewSnapshot> {
-  // 后端接入后仅替换这里：前端组件继续消费相同的数据契约。
-  return structuredClone(demoWorkstationOverview)
+  if (import.meta.env.DEV) return structuredClone(demoWorkstationOverview)
+
+  const response = await apiRequest<OverviewResponse>('overview')
+  if (response.scope === 'Public') {
+    return {
+      ...structuredClone(demoWorkstationOverview),
+      scope: 'Public',
+      sampledAtUtc: response.sampledAtUtc,
+      platformStatus: response.platformStatus,
+      portals: response.portals,
+      resources: [], usage: [], system: [], applications: [],
+      healthMessage: '平台在线',
+      healthDetail: '当前账号可访问个人门户与已发布入口',
+    }
+  }
+
+  const resources = response.resources ?? []
+  const metric = (kind: string) => response.metrics?.find((item) => item.kind === kind)?.value ?? 0
+  const cpu = metric('cpu.utilization')
+  const memory = metric('memory.utilization')
+  const containers = resources.filter((item) => item.type === 'Container')
+  const running = containers.filter((item) => item.state.toLowerCase() === 'running').length
+  const uptime = response.host?.uptime || '未知'
+  const bootTime = response.host?.bootTimeUtc ? new Date(response.host.bootTimeUtc).toLocaleString() : '未知'
+  const applications = (response.applications ?? []).slice(0, 6).map((app, index) => ({
+    id: app.id,
+    name: app.name,
+    version: app.version,
+    description: app.description,
+    category: '容器应用',
+    icon: (['gateway', 'database', 'cache', 'ai', 'runtime', 'developer'] as const)[index % 6]!,
+    state: (app.installed ? (app.state?.toLowerCase() === 'stopped' ? 'stopped' : 'running') : 'available') as ContainerState,
+    installedVersion: app.installed ? app.version : undefined,
+  }))
+
+  return {
+    ...structuredClone(demoWorkstationOverview),
+    scope: response.scope,
+    sampledAtUtc: response.sampledAtUtc,
+    platformStatus: response.platformStatus,
+    portals: response.portals,
+    resources: [
+      { key: 'agents', label: '智能体', value: response.agent?.available ? 1 : 0, unit: '个', detail: response.agent?.status || '不可用' },
+      { key: 'websites', label: '网站', value: response.portals.length, unit: '个', detail: '可访问门户入口' },
+      { key: 'databases', label: '数据库', value: containers.filter((item) => item.name.includes('database-platform')).length, unit: '个', detail: '基础依赖容器' },
+      { key: 'containers', label: '容器', value: containers.length, unit: '个', detail: `${running} 运行 · ${containers.length - running} 未运行` },
+    ],
+    healthMessage: response.agent?.available && response.agent.dockerAvailable ? '主机资源正常' : '管理服务降级',
+    healthDetail: `Agent ${response.agent?.status || '不可用'} · 采样 ${new Date(response.sampledAtUtc).toLocaleTimeString()}`,
+    usage: [
+      { key: 'cpu', label: 'CPU 使用率', percentage: cpu, value: `${cpu.toFixed(1)}%`, detail: '6 秒采样' },
+      { key: 'memory', label: '内存使用率', percentage: memory, value: `${memory.toFixed(1)}%`, detail: response.host ? `${(response.host.totalMemoryBytes / 1024 ** 3).toFixed(1)} GB 总内存` : '无主机数据' },
+      { key: 'disk', label: '硬盘使用率', percentage: 0, value: '等待磁盘采样', detail: 'Agent 正在补充设备指标' },
+    ],
+    system: [
+      { label: '主机名称', value: response.host?.hostName || '未知' },
+      { label: '发行版本', value: response.host?.distribution || '未知' },
+      { label: '内核版本', value: response.host?.kernelVersion || '未知' },
+      { label: '系统类型', value: response.host?.architecture || '未知' },
+      { label: '内网地址', value: '192.168.22.19', hint: '容器访问' },
+      { label: '外网地址', value: '192.168.100.13', hint: '下载与局域网访问' },
+      { label: '启动时间', value: bootTime },
+      { label: '运行时间', value: uptime },
+    ],
+    applications,
+  }
 }

@@ -47,6 +47,7 @@ public sealed class OperationService(IJobRepository jobs)
         {
             JobType = $"{command.Area}.{command.Action}",
             ActorSubject = actorSubject,
+            ResourceId = Guid.TryParse(command.ResourceId, out var resourceId) ? resourceId : null,
             IdempotencyKey = command.IdempotencyKey,
             RequestJson = command.RequestJson
         };

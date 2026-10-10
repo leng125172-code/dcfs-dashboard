@@ -28,6 +28,8 @@ import {
 type MonitorMode = 'network' | 'disk'
 
 const snapshot = ref(structuredClone(demoWorkstationOverview))
+const loading = ref(true)
+const loadError = ref('')
 const monitorMode = ref<MonitorMode>('network')
 const networkFilter = ref('all')
 const diskFilter = ref('all')
@@ -90,7 +92,15 @@ function gaugeColor(percentage: number) {
 }
 
 async function loadOverview() {
-  snapshot.value = await fetchWorkstationOverview()
+  loading.value = true
+  loadError.value = ''
+  try {
+    snapshot.value = await fetchWorkstationOverview()
+  } catch (reason) {
+    loadError.value = reason instanceof Error ? reason.message : '读取工作站状态失败'
+  } finally {
+    loading.value = false
+  }
 }
 
 function showDeferredAction(action: 'details' | 'install' | 'manage', app: RecommendedApplication) {
@@ -165,14 +175,25 @@ onMounted(() => {
         <div class="page-heading__meta">
           <el-tag size="small" type="primary" effect="light" round>WORKSTATION</el-tag>
           <span>Precision-7920-Tower</span>
-          <el-tag size="small" type="warning" effect="plain" round>演示数据</el-tag>
+          <el-tag v-if="snapshot.platformStatus" size="small" :type="snapshot.platformStatus === 'Healthy' ? 'success' : 'info'" effect="plain" round>{{ snapshot.platformStatus }}</el-tag>
         </div>
         <h1>工作站概览</h1>
-        <p>集中查看资源、运行状态、实时监控、系统信息与容器应用。</p>
+        <p>{{ snapshot.scope === 'Administrator' ? '集中查看资源、运行状态、实时监控、系统信息与容器应用。' : '访问公共入口和你自己的常用服务。' }}</p>
       </div>
     </section>
 
-    <div class="overview-dashboard">
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" />
+
+    <section v-if="snapshot.scope === 'Public'" class="portal-overview" v-loading="loading">
+      <el-empty v-if="snapshot.portals.length === 0" description="还没有可用的门户入口" />
+      <a v-for="portal in snapshot.portals" :key="portal.id" class="panel portal-overview__card" :href="portal.url" target="_blank" rel="noopener noreferrer">
+        <span>{{ portal.name.slice(0, 1).toUpperCase() }}</span>
+        <strong>{{ portal.name }}</strong>
+        <small>{{ portal.description || portal.url }}</small>
+      </a>
+    </section>
+
+    <div v-else class="overview-dashboard" v-loading="loading">
       <div class="overview-dashboard__main">
         <section id="resources" class="resource-grid content-anchor" aria-label="资源概览">
           <article
@@ -433,6 +454,13 @@ onMounted(() => {
   display: grid;
   gap: 20px;
 }
+
+.portal-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; min-height: 220px; }
+.portal-overview > .el-empty { grid-column: 1 / -1; }
+.portal-overview__card { display: grid; min-width: 0; padding: 20px; color: inherit; text-decoration: none; }
+.portal-overview__card > span { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 12px; color: var(--el-color-primary); background: var(--el-color-primary-light-9); font-size: 20px; font-weight: 800; }
+.portal-overview__card strong { margin-top: 14px; font-size: 14px; }
+.portal-overview__card small { overflow: hidden; margin-top: 4px; color: var(--el-text-color-secondary); text-overflow: ellipsis; white-space: nowrap; }
 
 .overview-heading {
   margin-bottom: 2px;
@@ -1091,6 +1119,7 @@ onMounted(() => {
 }
 
 @media (max-width: 760px) {
+  .portal-overview { grid-template-columns: 1fr; }
   .overview-panel__header,
   .monitoring-panel__header,
   .application-header {

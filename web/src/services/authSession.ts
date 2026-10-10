@@ -1,14 +1,13 @@
 import { readonly, ref } from 'vue'
-
-interface AuthenticatedUser {
-  name: string | null
-  claims: Array<{ type: string; value: string }>
-}
+import { runtimeConfig } from '@/config/runtime'
+import { ApiError, apiRequest } from '@/services/apiClient'
+import type { CurrentUser } from '@/services/contracts'
 
 const previewStorageKey = 'whaledeck-preview-authenticated'
 const authenticated = ref(false)
 const initialized = ref(false)
-const user = ref<AuthenticatedUser | null>(null)
+const user = ref<CurrentUser | null>(null)
+const unavailable = ref(false)
 
 async function initializeAuthSession() {
   if (initialized.value) return
@@ -16,7 +15,13 @@ async function initializeAuthSession() {
   if (import.meta.env.DEV && sessionStorage.getItem(previewStorageKey) === 'true') {
     authenticated.value = true
     initialized.value = true
-    user.value = { name: 'Preview User', claims: [] }
+    user.value = {
+      subject: 'preview-user',
+      name: 'Preview User',
+      groups: ['preview-administrators'],
+      isAdministrator: true,
+      permissionExpiresAtUtc: new Date(Date.now() + 7_200_000).toISOString(),
+    }
     return
   }
 
@@ -32,19 +37,13 @@ async function initializeAuthSession() {
   const timeout = window.setTimeout(() => controller.abort(), 2500)
 
   try {
-    const response = await fetch('/api/v1/auth/me', {
-      credentials: 'include',
-      headers: { Accept: 'application/json' },
-      signal: controller.signal,
-    })
-
-    if (response.ok) {
-      user.value = (await response.json()) as AuthenticatedUser
-      authenticated.value = true
-    }
-  } catch {
+    user.value = await apiRequest<CurrentUser>('auth/me', { signal: controller.signal })
+    authenticated.value = true
+    unavailable.value = false
+  } catch (reason) {
     authenticated.value = false
     user.value = null
+    unavailable.value = !(reason instanceof ApiError && reason.status === 401)
   } finally {
     window.clearTimeout(timeout)
     initialized.value = true
@@ -56,20 +55,42 @@ function authenticatePreview() {
   sessionStorage.setItem(previewStorageKey, 'true')
   authenticated.value = true
   initialized.value = true
-  user.value = { name: 'Preview User', claims: [] }
+  user.value = {
+    subject: 'preview-user',
+    name: 'Preview User',
+    groups: ['preview-administrators'],
+    isAdministrator: true,
+    permissionExpiresAtUtc: new Date(Date.now() + 7_200_000).toISOString(),
+  }
   return true
 }
 
 function redirectToAuthentik(returnUrl = '/') {
   const safeReturnUrl = returnUrl.startsWith('/') && !returnUrl.startsWith('//') ? returnUrl : '/'
-  window.location.assign(`/api/v1/auth/login?returnUrl=${encodeURIComponent(safeReturnUrl)}`)
+  window.location.assign(`${runtimeConfig.apiBaseUrl}/auth/login?returnUrl=${encodeURIComponent(safeReturnUrl)}`)
+}
+
+async function logout() {
+  if (import.meta.env.DEV) {
+    sessionStorage.removeItem(previewStorageKey)
+    authenticated.value = false
+    user.value = null
+    window.location.assign('/login')
+    return
+  }
+  await apiRequest<void>('auth/logout', { method: 'POST' })
+  authenticated.value = false
+  user.value = null
+  window.location.assign('/login')
 }
 
 export const authSession = {
   authenticated: readonly(authenticated),
   initialized: readonly(initialized),
+  unavailable: readonly(unavailable),
   user: readonly(user),
   initialize: initializeAuthSession,
   authenticatePreview,
   redirectToAuthentik,
+  logout,
 }
