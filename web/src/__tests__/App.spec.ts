@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
@@ -10,6 +10,106 @@ import OverviewView from '@/views/OverviewView.vue'
 import router from '@/router'
 
 const globalPlugins = () => [createPinia(), router, ElementPlus]
+
+const jsonResponse = (value: unknown) =>
+  new Response(JSON.stringify(value), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/metrics?')) {
+        const points = [
+          { sampledAtUtc: '2026-10-10T10:00:00Z', value: 1024 * 1024, quality: 'Good' },
+          { sampledAtUtc: '2026-10-10T10:00:06Z', value: 2 * 1024 * 1024, quality: 'Good' },
+        ]
+        return jsonResponse([
+          { kind: 'network.receive', deviceId: 'eno1', unit: 'bytesPerSecond', points },
+          { kind: 'network.send', deviceId: 'eno1', unit: 'bytesPerSecond', points },
+          { kind: 'disk.read', deviceId: 'nvme0n1', unit: 'bytesPerSecond', points },
+          { kind: 'disk.write', deviceId: 'nvme0n1', unit: 'bytesPerSecond', points },
+        ])
+      }
+      if (url.endsWith('/overview')) {
+        return jsonResponse({
+          scope: 'Administrator',
+          platformStatus: 'Ready',
+          sampledAtUtc: '2026-10-10T10:00:06Z',
+          portals: [
+            {
+              id: '63d533e4-a53a-4072-a42b-c04ee68dd9d1',
+              scope: 'Personal',
+              name: '开发门户',
+              description: '常用开发服务',
+              url: 'http://precision-7920-tower.local:8080',
+              iconKind: 'BuiltIn',
+              iconValue: 'Link',
+              color: 'primary',
+              sortOrder: 0,
+              isEnabled: true,
+              version: 1,
+            },
+          ],
+          agent: {
+            available: true,
+            dockerAvailable: true,
+            systemdAvailable: true,
+            status: 'Ready',
+            observedAtUtc: '2026-10-10T10:00:06Z',
+          },
+          host: {
+            hostName: 'Precision-7920-Tower',
+            distribution: 'Ubuntu 24.04 LTS',
+            kernelVersion: 'Linux 6.17',
+            architecture: 'X64',
+            bootTimeUtc: '2026-10-09T10:00:00Z',
+            uptime: '1.00:00:06',
+            logicalProcessorCount: 48,
+            totalMemoryBytes: 128 * 1024 ** 3,
+            addresses: [
+              { interfaceName: 'eno1', address: '192.168.22.19' },
+              { interfaceName: 'usb0', address: '192.168.100.13' },
+            ],
+          },
+          resources: Array.from({ length: 11 }, (_, index) => ({
+            id: `container-${index}`,
+            name: index < 8 ? `database-platform-${index}` : `whaledeck-${index}`,
+            type: 'Container',
+            state: index === 10 ? 'exited' : 'running',
+            version: 'test:latest',
+            isProtected: index < 8,
+            attributes: {},
+          })),
+          metrics: [
+            { kind: 'cpu.utilization', deviceId: 'host', value: 18.6, unit: 'percent' },
+            { kind: 'memory.utilization', deviceId: 'host', value: 42.8, unit: 'percent' },
+            { kind: 'disk.utilization', deviceId: '/', value: 6.1, unit: 'percent' },
+            { kind: 'network.receive.total', deviceId: 'eno1', value: 1024 ** 4, unit: 'bytes' },
+            { kind: 'network.send.total', deviceId: 'eno1', value: 512 * 1024 ** 3, unit: 'bytes' },
+          ].map((item) => ({ ...item, quality: 'Good', sampledAtUtc: '2026-10-10T10:00:06Z' })),
+          applications: Array.from({ length: 6 }, (_, index) => ({
+            id: `application-${index}`,
+            name: `应用 ${index + 1}`,
+            description: '来自真实目录快照',
+            image: `example/app-${index}:1.0`,
+            version: '1.0',
+            iconUrl: null,
+            installed: index === 0,
+            state: index === 0 ? 'running' : null,
+          })),
+          catalogIsStale: false,
+        })
+      }
+      return new Response(null, { status: 404 })
+    }),
+  )
+})
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('WhaleDeck entry flow', () => {
   it('renders the platform shell after authentication', async () => {

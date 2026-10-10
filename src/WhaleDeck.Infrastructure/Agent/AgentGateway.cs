@@ -61,7 +61,8 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
         var response = await _host.GetHostInfoAsync(new Empty(), Headers("/whaledeck.agent.v1.HostService/GetHostInfo"), cancellationToken: cancellationToken);
         return new HostInfoDto(response.HostName, response.Distribution, response.KernelVersion, response.Architecture,
             DateTimeOffset.FromUnixTimeSeconds(response.BootTimeUnixSeconds), TimeSpan.FromSeconds(response.UptimeSeconds),
-            checked((int)response.LogicalProcessorCount), response.TotalMemoryBytes);
+            checked((int)response.LogicalProcessorCount), response.TotalMemoryBytes,
+            response.Addresses.Select(item => new HostAddressDto(item.InterfaceName, item.Address)).ToArray());
     }
 
     public async Task<IReadOnlyCollection<ContainerDto>> ListContainersAsync(bool includeStopped, CancellationToken cancellationToken)

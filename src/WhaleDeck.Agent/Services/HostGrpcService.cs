@@ -10,7 +10,7 @@ public sealed class HostGrpcService(HostReader host, OperationStore operations) 
     public override Task<HostInfoResponse> GetHostInfo(Empty request, ServerCallContext context)
     {
         var snapshot = host.Read();
-        return Task.FromResult(new HostInfoResponse
+        var response = new HostInfoResponse
         {
             HostName = snapshot.HostName,
             Distribution = snapshot.Distribution,
@@ -20,7 +20,13 @@ public sealed class HostGrpcService(HostReader host, OperationStore operations) 
             UptimeSeconds = snapshot.UptimeSeconds,
             LogicalProcessorCount = snapshot.ProcessorCount,
             TotalMemoryBytes = snapshot.TotalMemoryBytes
-        });
+        };
+        response.Addresses.AddRange(snapshot.Addresses.Select(item => new HostAddress
+        {
+            InterfaceName = item.InterfaceName,
+            Address = item.Address
+        }));
+        return Task.FromResult(response);
     }
 
     public override async Task StreamMetrics(MetricsRequest request, IServerStreamWriter<MetricPoint> responseStream, ServerCallContext context)

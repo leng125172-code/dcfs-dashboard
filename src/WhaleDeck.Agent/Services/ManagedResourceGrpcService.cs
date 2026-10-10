@@ -60,11 +60,12 @@ public sealed class ManagedResourceGrpcService(
         return response;
     }
 
-    public override Task<ResourceCollectionResponse> ListComposeProjects(Empty request, ServerCallContext context)
+    public override async Task<ResourceCollectionResponse> ListComposeProjects(Empty request, ServerCallContext context)
     {
         var response = new ResourceCollectionResponse();
         var root = registry.All.SingleOrDefault(item => item.Id == "whaledeck.apps")?.Path;
-        if (root is null || !Directory.Exists(root)) return Task.FromResult(response);
+        if (root is null || !Directory.Exists(root)) return response;
+        var containers = await docker.ListContainersAsync(true, context.CancellationToken);
         foreach (var directory in Directory.EnumerateDirectories(root).Order(StringComparer.Ordinal))
         {
             var manifestPath = Path.Combine(directory, "manifest.json");
@@ -74,18 +75,31 @@ public sealed class ManagedResourceGrpcService(
                 using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
                 var slug = Path.GetFileName(directory);
                 var image = manifest.RootElement.TryGetProperty("image", out var imageValue) ? imageValue.GetString() ?? string.Empty : string.Empty;
-                response.Resources.Add(new ResourceSnapshot
+                var project = $"whaledeck-app-{slug}";
+                var members = containers.Where(item => item.Labels.TryGetValue("com.docker.compose.project", out var value) &&
+                                                       string.Equals(value, project, StringComparison.Ordinal)).ToArray();
+                var state = members.Length == 0
+                    ? "Stopped"
+                    : members.Any(item => string.Equals(item.State, "restarting", StringComparison.OrdinalIgnoreCase))
+                        ? "Restarting"
+                        : members.All(item => string.Equals(item.State, "running", StringComparison.OrdinalIgnoreCase))
+                            ? "Running"
+                            : "Stopped";
+                var snapshot = new ResourceSnapshot
                 {
                     ResourceId = $"application:{slug}", DisplayName = slug, ResourceType = "ComposeApplication",
-                    State = "Installed", Version = image, ProtectedResource = false
-                });
+                    State = state, Version = image, ProtectedResource = false
+                };
+                snapshot.Attributes["composeProject"] = project;
+                snapshot.Attributes["containerCount"] = members.Length.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                response.Resources.Add(snapshot);
             }
             catch (JsonException)
             {
                 // Invalid manifests stay invisible to normal management and are handled by diagnostics.
             }
         }
-        return Task.FromResult(response);
+        return response;
     }
 
     public override Task<ResourceSnapshot> GetConfigRepositoryStatus(RegisteredResourceRequest request, ServerCallContext context)

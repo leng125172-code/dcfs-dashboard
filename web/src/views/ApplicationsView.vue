@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiRequest } from '@/services/apiClient'
 import { enqueueOperation, planOperation, stageSecret } from '@/services/operations'
@@ -10,6 +11,7 @@ import type {
 } from '@/services/contracts'
 
 const catalog = ref<CatalogApplication[]>([])
+const route = useRoute()
 const installed = ref<ManagedResource[]>([])
 const stale = ref(false)
 const loading = ref(false)
@@ -125,7 +127,13 @@ async function lifecycle(
   ElMessage.success(`任务已提交：${job.id}`)
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  if (route.query.action === 'install' && typeof route.query.app === 'string') {
+    const item = catalog.value.find((candidate) => candidate.id === route.query.app)
+    if (item && !item.installed) openInstall(item)
+  }
+})
 </script>
 
 <template>

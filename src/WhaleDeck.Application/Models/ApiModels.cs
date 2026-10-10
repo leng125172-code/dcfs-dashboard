@@ -48,7 +48,10 @@ public sealed record HostInfoDto(
     DateTimeOffset BootTimeUtc,
     TimeSpan Uptime,
     int LogicalProcessorCount,
-    ulong TotalMemoryBytes);
+    ulong TotalMemoryBytes,
+    IReadOnlyCollection<HostAddressDto> Addresses);
+
+public sealed record HostAddressDto(string InterfaceName, string Address);
 
 public sealed record ManagedResourceDto(
     string Id,

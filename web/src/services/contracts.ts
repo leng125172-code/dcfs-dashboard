@@ -37,6 +37,7 @@ export interface HostInfo {
   uptime: string
   logicalProcessorCount: number
   totalMemoryBytes: number
+  addresses: Array<{ interfaceName: string; address: string }>
 }
 
 export interface ManagedResource {

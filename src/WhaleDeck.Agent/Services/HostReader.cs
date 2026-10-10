@@ -1,4 +1,7 @@
 using System.Runtime.InteropServices;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 
 namespace WhaleDeck.Agent.Services;
 
@@ -10,7 +13,10 @@ public sealed record HostSnapshot(
     long BootTimeUnixSeconds,
     long UptimeSeconds,
     uint ProcessorCount,
-    ulong TotalMemoryBytes);
+    ulong TotalMemoryBytes,
+    IReadOnlyCollection<HostAddressSnapshot> Addresses);
+
+public sealed record HostAddressSnapshot(string InterfaceName, string Address);
 
 public sealed class HostReader
 {
@@ -31,7 +37,8 @@ public sealed class HostReader
             DateTimeOffset.UtcNow.ToUnixTimeSeconds() - uptime,
             uptime,
             (uint)Environment.ProcessorCount,
-            ReadTotalMemory());
+            ReadTotalMemory(),
+            ReadHostAddresses());
     }
 
     public (double CpuPercent, double MemoryPercent) ReadUsage()
@@ -99,6 +106,18 @@ public sealed class HostReader
     }
 
     private static ulong ReadTotalMemory() => ReadMemoryInfo().Total;
+
+    private static HostAddressSnapshot[] ReadHostAddresses() =>
+        NetworkInterface.GetAllNetworkInterfaces()
+            .Where(item => item.OperationalStatus == OperationalStatus.Up &&
+                           item.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+            .SelectMany(item => item.GetIPProperties().UnicastAddresses
+                .Where(address => address.Address.AddressFamily == AddressFamily.InterNetwork &&
+                                  !IPAddress.IsLoopback(address.Address))
+                .Select(address => new HostAddressSnapshot(item.Name, address.Address.ToString())))
+            .OrderBy(item => item.InterfaceName, StringComparer.Ordinal)
+            .ThenBy(item => item.Address, StringComparer.Ordinal)
+            .ToArray();
 
     private static (ulong Total, ulong Available) ReadMemoryInfo()
     {

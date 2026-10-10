@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowRight,
@@ -10,6 +11,7 @@ import {
   Cpu,
   DataAnalysis,
   MagicStick,
+  Link,
   Monitor,
   Platform,
   Promotion,
@@ -18,16 +20,20 @@ import {
 } from '@element-plus/icons-vue'
 import TelemetryChart from '@/components/overview/TelemetryChart.vue'
 import {
-  demoWorkstationOverview,
+  createEmptyWorkstationOverview,
   fetchWorkstationOverview,
   type ContainerState,
   type RecommendedApplication,
   type ResourceKey,
 } from '@/services/workstationOverview'
+import { apiRequest } from '@/services/apiClient'
+import { enqueueOperation } from '@/services/operations'
+import type { Job } from '@/services/contracts'
 
 type MonitorMode = 'network' | 'disk'
 
-const snapshot = ref(structuredClone(demoWorkstationOverview))
+const router = useRouter()
+const snapshot = ref(createEmptyWorkstationOverview())
 const loading = ref(true)
 const loadError = ref('')
 const monitorMode = ref<MonitorMode>('network')
@@ -104,8 +110,7 @@ async function loadOverview() {
 }
 
 function showDeferredAction(action: 'details' | 'install' | 'manage', app: RecommendedApplication) {
-  const actionLabel = action === 'details' ? '更多详情' : action === 'manage' ? '管理' : '安装'
-  ElMessage.info(`${app.name}：${actionLabel}将在后端服务接入后开放`)
+  void router.push({ name: 'applications', query: { app: app.id, action } })
 }
 
 async function copySystemValue(label: string, value: string) {
@@ -137,7 +142,7 @@ async function confirmContainerAction(
 
   try {
     await ElMessageBox.confirm(
-      `将${actionLabel} ${app.name} ${app.installedVersion ?? ''}。当前为前端预览，仅更新页面状态。`,
+      `将${actionLabel} ${app.name} ${app.installedVersion ?? ''}。操作会提交到工作站任务队列。`,
       `${actionLabel}容器确认`,
       {
         type: 'warning',
@@ -150,17 +155,30 @@ async function confirmContainerAction(
     return
   }
 
-  if (action === 'restart') {
-    app.state = 'restarting'
-    ElMessage.success(`${app.name} 已在预览中标记为重启中`)
-    window.setTimeout(() => {
-      app.state = 'running'
-    }, 900)
-    return
-  }
+  const job = await enqueueOperation(
+    'applications',
+    action,
+    '',
+    { slug: app.id, deleteVolumes: 'false' },
+    true,
+  )
+  app.state = 'restarting'
+  ElMessage.success(`${app.name} ${actionLabel}任务已提交`)
+  await waitForJob(job.id)
+  await loadOverview()
+}
 
-  app.state = action === 'stop' ? 'stopped' : 'running'
-  ElMessage.success(`${app.name} 已在预览中标记为${action === 'stop' ? '已停止' : '运行中'}`)
+async function waitForJob(jobId: string) {
+  const deadline = Date.now() + 120_000
+  while (Date.now() < deadline) {
+    const job = await apiRequest<Job>(`jobs/${encodeURIComponent(jobId)}`)
+    if (job.state === 'Succeeded') return
+    if (['Failed', 'Canceled', 'RolledBack'].includes(job.state)) {
+      throw new Error(job.errorCode || `任务${job.state}`)
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 1500))
+  }
+  throw new Error('等待应用任务完成超时')
 }
 
 onMounted(() => {
@@ -197,7 +215,12 @@ onMounted(() => {
 
     <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" />
 
-    <section v-if="snapshot.scope === 'Public'" class="portal-overview" v-loading="loading">
+    <section
+      v-if="snapshot.portals.length > 0 || snapshot.scope === 'Public'"
+      class="portal-overview"
+      v-loading="loading"
+      aria-label="门户入口"
+    >
       <el-empty v-if="snapshot.portals.length === 0" description="还没有可用的门户入口" />
       <a
         v-for="portal in snapshot.portals"
@@ -207,13 +230,15 @@ onMounted(() => {
         target="_blank"
         rel="noopener noreferrer"
       >
-        <span>{{ portal.name.slice(0, 1).toUpperCase() }}</span>
+        <span
+          ><el-icon><Link /></el-icon
+        ></span>
         <strong>{{ portal.name }}</strong>
         <small>{{ portal.description || portal.url }}</small>
       </a>
     </section>
 
-    <div v-else class="overview-dashboard" v-loading="loading">
+    <div v-if="snapshot.scope === 'Administrator'" class="overview-dashboard" v-loading="loading">
       <div class="overview-dashboard__main">
         <section id="resources" class="resource-grid content-anchor" aria-label="资源概览">
           <article
@@ -343,7 +368,7 @@ onMounted(() => {
               <div class="system-item__value">
                 <strong>{{ item.value }}</strong>
                 <el-button
-                  v-if="item.label.endsWith('地址')"
+                  v-if="item.label.startsWith('主机地址')"
                   class="system-item__copy"
                   link
                   type="primary"
@@ -364,11 +389,20 @@ onMounted(() => {
             <div>
               <span class="panel__eyebrow">XUANYUAN POPULAR</span>
               <h2>轩辕热门应用</h2>
-              <p>后端接入后从轩辕镜像服务获取并缓存，当前为 Top 6 演示内容。</p>
+              <p>
+                后端定时同步轩辕热门目录；无法联网时保留最近一次有效快照。
+                <el-tag v-if="snapshot.catalogIsStale" size="small" type="warning" effect="plain"
+                  >快照已过期</el-tag
+                >
+              </p>
             </div>
           </header>
 
           <div class="application-grid">
+            <el-empty
+              v-if="!loading && snapshot.applications.length === 0"
+              description="暂无可用的热门应用快照"
+            />
             <article
               v-for="app in snapshot.applications"
               :key="app.id"
