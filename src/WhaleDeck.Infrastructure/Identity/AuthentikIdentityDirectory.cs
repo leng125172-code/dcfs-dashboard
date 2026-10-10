@@ -133,12 +133,20 @@ public sealed class AuthentikIdentityDirectory(
         {
             return new GroupResolution(allowClaimFallback ? fallback.ToArray() : [], false);
         }
+        if (!Guid.TryParse(subject, out var userUuid))
+        {
+            return new GroupResolution([], false);
+        }
         try
         {
-            using var response = await Client().GetAsync($"core/users/{Uri.EscapeDataString(subject)}/", cancellationToken);
+            using var response = await Client().GetAsync(
+                $"core/users/?uuid={Uri.EscapeDataString(userUuid.ToString())}&include_groups=true&page_size=2",
+                cancellationToken);
             if (!response.IsSuccessStatusCode) return new GroupResolution([], false);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-            var user = document.RootElement;
+            if (!document.RootElement.TryGetProperty("results", out var results) || results.GetArrayLength() != 1)
+                return new GroupResolution([], false);
+            var user = results[0];
             if (user.TryGetProperty("is_active", out var active) && !active.GetBoolean())
                 throw new UnauthorizedAccessException("The Authentik account is disabled.");
             if (!user.TryGetProperty("groups_obj", out var groups)) return new GroupResolution([], true);
