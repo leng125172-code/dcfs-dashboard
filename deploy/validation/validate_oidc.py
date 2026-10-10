@@ -228,7 +228,40 @@ def main() -> int:
     if not profile.get("subject") or not profile.get("isAdministrator"):
         raise RuntimeError("OIDC session is not an authenticated administrator")
 
-    print("OIDC validation passed: authenticated administrator session established")
+    containers = session.get(f"{base_url}/api/v1/containers", timeout=20)
+    containers.raise_for_status()
+    container_payload = containers.json()
+    if not isinstance(container_payload, list):
+        raise RuntimeError("Administrator container endpoint returned an unexpected payload")
+    print(f"Administrator policy passed: {len(container_payload)} containers visible")
+
+    csrf = session.get(f"{base_url}/api/v1/auth/csrf", timeout=20)
+    csrf.raise_for_status()
+    csrf_payload = csrf.json()
+    header_name = csrf_payload.get("headerName")
+    token = csrf_payload.get("token")
+    if not header_name or not token:
+        raise RuntimeError("Whale Deck did not issue an antiforgery token")
+
+    rejected = session.post(
+        f"{base_url}/api/v1/auth/logout",
+        headers={"Origin": base_url},
+        allow_redirects=False,
+        timeout=20,
+    )
+    if rejected.status_code != 400:
+        raise RuntimeError(f"Logout without CSRF token returned HTTP {rejected.status_code}, expected 400")
+
+    logout = session.post(
+        f"{base_url}/api/v1/auth/logout",
+        headers={"Origin": base_url, header_name: token},
+        allow_redirects=False,
+        timeout=20,
+    )
+    if logout.status_code not in REDIRECT_STATUSES:
+        raise RuntimeError(f"Authenticated logout returned HTTP {logout.status_code}")
+
+    print("OIDC validation passed: administrator policy, origin and CSRF protections verified")
     return 0
 
 

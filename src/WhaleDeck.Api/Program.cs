@@ -112,6 +112,7 @@ try
             : Serilog.Events.LogEventLevel.Debug);
     app.UseRateLimiter();
     app.UseAuthentication();
+    app.Use(SameOriginWriteProtection.InvokeAsync);
     app.UseAuthorization();
     app.UseAntiforgery();
 
