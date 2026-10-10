@@ -234,6 +234,8 @@ public sealed class ManagedResourceGrpcService(
             RedirectStandardError = true,
             UseShellExecute = false
         };
+        start.ArgumentList.Add("-c");
+        start.ArgumentList.Add($"safe.directory={Path.GetFullPath(path)}");
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
         using var process = System.Diagnostics.Process.Start(start)
             ?? throw new InvalidOperationException("Unable to start git.");

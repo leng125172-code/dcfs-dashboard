@@ -398,7 +398,7 @@ public sealed partial class ManagedActionExecutor(
     {
         try
         {
-            return await processes.RunAsync("/usr/bin/git", arguments, null, ShortTimeout, "CONFIG_REPOSITORY_FAILED", cancellationToken, directory,
+            return await processes.RunAsync("/usr/bin/git", ["-c", $"safe.directory={Path.GetFullPath(directory)}", .. arguments], null, ShortTimeout, "CONFIG_REPOSITORY_FAILED", cancellationToken, directory,
                 new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" });
         }
         catch (InvalidOperationException) when (allowExitCodeOne)
