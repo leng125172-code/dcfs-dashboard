@@ -83,6 +83,11 @@ public interface IApplicationRepository
     Task<IReadOnlyCollection<ApplicationUpdateRun>> ListUpdateRunsAsync(Guid applicationId, int take, CancellationToken cancellationToken);
 }
 
+public interface IContainerUpdateRepository
+{
+    Task<IReadOnlyCollection<ContainerUpdateRun>> ListAsync(string? containerIdOrName, int take, CancellationToken cancellationToken);
+}
+
 public interface IGovernanceRepository
 {
     Task<IReadOnlyCollection<ScheduledTask>> ListSchedulesAsync(CancellationToken cancellationToken);

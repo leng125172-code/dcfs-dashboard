@@ -88,6 +88,7 @@ public sealed class DockerEngine : IDisposable
         CancellationToken cancellationToken)
     {
         ContainerConfiguration? createConfiguration = null;
+        ContainerUpdatePlan? updatePlan = null;
         string? deleteName = null;
         long? unusedImageBytes = null;
         if (action == "create")
@@ -101,6 +102,10 @@ public sealed class DockerEngine : IDisposable
             deleteName = container.Names.FirstOrDefault()?.TrimStart('/') ?? container.ID;
             if (_registry.IsProtectedContainer(deleteName, container.Labels))
                 throw new InvalidOperationException("Protected containers require the platform maintenance workflow.");
+        }
+        else if (action == "update")
+        {
+            updatePlan = await ValidateContainerUpdateAsync(resourceId, parameters, cancellationToken);
         }
         else if (action == "prune")
         {
@@ -119,6 +124,14 @@ public sealed class DockerEngine : IDisposable
             if (createConfiguration.Mounts.Count > 0) response.Changes.Add($"挂载 {createConfiguration.Mounts.Count} 个命名卷");
             if (createConfiguration.Networks.Length > 0) response.Changes.Add($"连接网络：{string.Join(", ", createConfiguration.Networks)}");
             if (createConfiguration.AutoUpdate) response.Warnings.Add("此容器已允许进入自动镜像更新计划。");
+        }
+        else if (updatePlan is not null)
+        {
+            response.Changes.Clear();
+            response.Changes.Add($"检查并更新容器 {updatePlan.Name}");
+            response.Changes.Add($"重新拉取镜像 {updatePlan.Image}");
+            response.Changes.Add("更新成功后删除旧容器；健康检查失败时自动回滚。");
+            response.Warnings.Add("容器更新期间会有短暂服务中断。");
         }
         else if (deleteName is not null)
         {
@@ -157,7 +170,7 @@ public sealed class DockerEngine : IDisposable
 
         try
         {
-            if (action is "create" or "prune")
+            if (action is "create" or "prune" or "update")
                 _plans.VerifyAndConsume(planHash ?? string.Empty, resourceId, action, NormalizePlanParameters(parameters));
             switch (action)
             {
@@ -166,6 +179,9 @@ public sealed class DockerEngine : IDisposable
                     break;
                 case "create":
                     await CreateManagedContainerAsync(parameters, cancellationToken);
+                    break;
+                case "update":
+                    operation.ResultJson = await UpdateManagedContainerAsync(resourceId, parameters, jobId, cancellationToken);
                     break;
                 case "prune":
                     await PruneAsync(parameters, cancellationToken);
@@ -176,6 +192,13 @@ public sealed class DockerEngine : IDisposable
             operation.State = OperationState.Succeeded;
             operation.Phase = "Completed";
             operation.ProgressPercent = 100;
+        }
+        catch (ContainerUpdateException exception)
+        {
+            operation.State = OperationState.Failed;
+            operation.Phase = exception.RolledBack ? "RolledBack" : "Failed";
+            operation.ErrorCode = "CONTAINER_UPDATE_FAILED";
+            operation.ResultJson = exception.ResultJson;
         }
         catch
         {
@@ -211,7 +234,9 @@ public sealed class DockerEngine : IDisposable
             {
                 ["io.whaledeck.managed"] = "true",
                 ["io.whaledeck.protected"] = "false",
-                ["io.whaledeck.autoupdate"] = configuration.AutoUpdate ? "true" : "false"
+                ["io.whaledeck.autoupdate"] = configuration.AutoUpdate ? "true" : "false",
+                ["io.whaledeck.update.version-policy"] = configuration.VersionPolicy,
+                ["io.whaledeck.update.maintenance-window"] = configuration.MaintenanceWindow
             };
             var response = await _client.Containers.CreateContainerAsync(new CreateContainerParameters
             {
@@ -274,6 +299,221 @@ public sealed class DockerEngine : IDisposable
             }
             throw;
         }
+    }
+
+    private async Task<ContainerUpdatePlan> ValidateContainerUpdateAsync(
+        string resourceId,
+        IReadOnlyDictionary<string, string> parameters,
+        CancellationToken cancellationToken)
+    {
+        var container = await ResolveContainerAsync(resourceId, cancellationToken);
+        var name = container.Names.FirstOrDefault()?.TrimStart('/') ?? container.ID;
+        if (_registry.IsProtectedContainer(name, container.Labels))
+            throw new InvalidOperationException("Protected containers require the platform maintenance workflow.");
+        if (container.Labels.TryGetValue("com.docker.compose.project", out var composeProject) && !string.IsNullOrWhiteSpace(composeProject))
+            throw new InvalidOperationException("Compose containers must be updated through their application workflow.");
+        if (!IsAutoUpdateEnabled(container.Labels))
+            throw new InvalidOperationException("Container updates require the autoupdate=true label.");
+
+        var metadata = await _client.Containers.InspectContainerAsync(container.ID, cancellationToken);
+        var image = metadata.Config?.Image ?? throw new InvalidOperationException("The container image reference is unavailable.");
+        ValidateImage(image);
+        if (image.Contains('@', StringComparison.Ordinal))
+            throw new InvalidOperationException("Digest-pinned containers cannot discover an update automatically.");
+        if (metadata.HostConfig?.AutoRemove == true)
+            throw new InvalidOperationException("Auto-remove containers cannot be updated with rollback protection.");
+
+        var policy = container.Labels.TryGetValue("io.whaledeck.update.version-policy", out var configuredPolicy)
+            ? configuredPolicy
+            : "*";
+        var tag = SplitImage(image).Tag.TrimStart('v');
+        if (!VersionMatchesPolicy(tag, policy))
+            throw new InvalidOperationException("The current image tag is outside the configured update version policy.");
+        var automatic = parameters.TryGetValue("automatic", out var automaticValue) &&
+            bool.TryParse(automaticValue, out var automaticEnabled) && automaticEnabled;
+        if (automatic)
+        {
+            var window = container.Labels.TryGetValue("io.whaledeck.update.maintenance-window", out var configuredWindow)
+                ? configuredWindow
+                : "Sun@20:00-23:59";
+            if (!IsInMaintenanceWindow(window, DateTimeOffset.UtcNow))
+                throw new InvalidOperationException("The container is outside its automatic update maintenance window.");
+        }
+        return new ContainerUpdatePlan(container.ID, name, image, metadata.Image ?? string.Empty, policy);
+    }
+
+    private async Task<string> UpdateManagedContainerAsync(
+        string resourceId,
+        IReadOnlyDictionary<string, string> parameters,
+        string jobId,
+        CancellationToken cancellationToken)
+    {
+        var plan = await ValidateContainerUpdateAsync(resourceId, parameters, cancellationToken);
+        var original = await _client.Containers.InspectContainerAsync(plan.Id, cancellationToken);
+        await PullImageAsync(plan.Image, cancellationToken);
+        var replacementImage = await _client.Images.InspectImageAsync(plan.Image, cancellationToken);
+        var newImageId = replacementImage.ID ?? string.Empty;
+        if (string.Equals(plan.OldImageId, newImageId, StringComparison.Ordinal))
+        {
+            return JsonSerializer.Serialize(new
+            {
+                containerId = plan.Id,
+                containerName = plan.Name,
+                image = plan.Image,
+                oldImageId = plan.OldImageId,
+                imageId = newImageId,
+                versionPolicy = plan.VersionPolicy,
+                updated = false,
+                rolledBack = false
+            });
+        }
+
+        var wasRunning = original.State?.Running == true;
+        var rollbackName = BuildRollbackName(plan.Name, jobId);
+        string? replacementId = null;
+        var oldRenamed = false;
+        try
+        {
+            if (wasRunning)
+            {
+                await _client.Containers.StopContainerAsync(plan.Id,
+                    new ContainerStopParameters { WaitBeforeKillSeconds = 20 }, cancellationToken);
+            }
+            await _client.Containers.RenameContainerAsync(plan.Id,
+                new ContainerRenameParameters { NewName = rollbackName }, cancellationToken);
+            oldRenamed = true;
+
+            var create = BuildReplacementParameters(original, plan.Name, plan.Image);
+            var created = await _client.Containers.CreateContainerAsync(create, cancellationToken);
+            replacementId = created.ID;
+            if (created.Warnings is { Count: > 0 })
+                throw new InvalidOperationException("Docker returned warnings while creating the replacement container.");
+            if (wasRunning)
+            {
+                await _client.Containers.StartContainerAsync(replacementId, new ContainerStartParameters(), cancellationToken);
+                await WaitForContainerHealthAsync(replacementId, original.Config?.Healthcheck is not null,
+                    TimeSpan.FromSeconds(60), cancellationToken);
+            }
+            await _client.Containers.RemoveContainerAsync(plan.Id,
+                new ContainerRemoveParameters { Force = false, RemoveVolumes = false }, cancellationToken);
+            return JsonSerializer.Serialize(new
+            {
+                containerId = replacementId,
+                containerName = plan.Name,
+                image = plan.Image,
+                oldImageId = plan.OldImageId,
+                imageId = newImageId,
+                versionPolicy = plan.VersionPolicy,
+                updated = true,
+                rolledBack = false
+            });
+        }
+        catch (Exception exception)
+        {
+            var rolledBack = false;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(replacementId))
+                {
+                    await _client.Containers.RemoveContainerAsync(replacementId,
+                        new ContainerRemoveParameters { Force = true, RemoveVolumes = false }, CancellationToken.None);
+                }
+                if (oldRenamed)
+                {
+                    await _client.Containers.RenameContainerAsync(plan.Id,
+                        new ContainerRenameParameters { NewName = plan.Name }, CancellationToken.None);
+                    if (wasRunning)
+                        await _client.Containers.StartContainerAsync(plan.Id, new ContainerStartParameters(), CancellationToken.None);
+                    rolledBack = true;
+                }
+            }
+            catch (DockerApiException)
+            {
+                rolledBack = false;
+            }
+            var result = JsonSerializer.Serialize(new
+            {
+                containerId = plan.Id,
+                containerName = plan.Name,
+                image = plan.Image,
+                oldImageId = plan.OldImageId,
+                imageId = newImageId,
+                versionPolicy = plan.VersionPolicy,
+                updated = false,
+                rolledBack
+            });
+            throw new ContainerUpdateException("Container update failed.", result, rolledBack, exception);
+        }
+    }
+
+    private static CreateContainerParameters BuildReplacementParameters(
+        Docker.DotNet.Models.ContainerInspectResponse original,
+        string name,
+        string image)
+    {
+        var config = original.Config ?? throw new InvalidOperationException("The original container configuration is unavailable.");
+        var host = original.HostConfig ?? throw new InvalidOperationException("The original host configuration is unavailable.");
+        var endpoints = original.NetworkSettings?.Networks?.ToDictionary(
+            item => item.Key,
+            item => new EndpointSettings
+            {
+                Aliases = item.Value.Aliases,
+                DriverOpts = item.Value.DriverOpts,
+                Links = item.Value.Links,
+                IPAMConfig = item.Value.IPAMConfig
+            }, StringComparer.Ordinal);
+        return new CreateContainerParameters
+        {
+            Name = name,
+            Image = image,
+            Hostname = config.Hostname,
+            Domainname = config.Domainname,
+            User = config.User,
+            AttachStdin = config.AttachStdin,
+            AttachStdout = config.AttachStdout,
+            AttachStderr = config.AttachStderr,
+            ExposedPorts = config.ExposedPorts,
+            Tty = config.Tty,
+            OpenStdin = config.OpenStdin,
+            StdinOnce = config.StdinOnce,
+            Env = config.Env,
+            Cmd = config.Cmd,
+            Healthcheck = config.Healthcheck,
+            ArgsEscaped = config.ArgsEscaped,
+            Volumes = config.Volumes,
+            WorkingDir = config.WorkingDir,
+            Entrypoint = config.Entrypoint,
+            NetworkDisabled = config.NetworkDisabled,
+            MacAddress = config.MacAddress,
+            OnBuild = config.OnBuild,
+            Labels = config.Labels,
+            StopSignal = config.StopSignal,
+            StopTimeout = config.StopTimeout,
+            Shell = config.Shell,
+            HostConfig = host,
+            NetworkingConfig = endpoints is null ? null : new NetworkingConfig { EndpointsConfig = endpoints }
+        };
+    }
+
+    private async Task WaitForContainerHealthAsync(
+        string containerId,
+        bool hasHealthcheck,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        do
+        {
+            var state = (await _client.Containers.InspectContainerAsync(containerId, cancellationToken)).State;
+            if (state?.Running != true) throw new InvalidOperationException("The replacement container stopped during startup.");
+            var health = state.Health?.Status;
+            if (!hasHealthcheck || string.Equals(health, "healthy", StringComparison.OrdinalIgnoreCase)) return;
+            if (string.Equals(health, "unhealthy", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The replacement container became unhealthy.");
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+        while (DateTimeOffset.UtcNow < deadline);
+        throw new TimeoutException("The replacement container did not become healthy before the timeout.");
     }
 
     private async Task PruneAsync(IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
@@ -435,6 +675,10 @@ public sealed class DockerEngine : IDisposable
             _ => throw new InvalidOperationException("Container restart policy is unsupported.")
         };
         var healthCommand = parameters.GetValueOrDefault("healthCommand")?.Trim();
+        var versionPolicy = ValidateVersionPolicy(parameters.GetValueOrDefault("versionPolicy", "*"));
+        var maintenanceWindow = parameters.GetValueOrDefault("maintenanceWindow", "Sun@20:00-23:59");
+        if (!TryParseMaintenanceWindow(maintenanceWindow, out _, out _, out _))
+            throw new InvalidOperationException("maintenanceWindow must use Day@HH:mm-HH:mm, for example Sun@20:00-23:59.");
         HealthConfig? healthcheck = null;
         if (!string.IsNullOrWhiteSpace(healthCommand))
         {
@@ -454,6 +698,8 @@ public sealed class DockerEngine : IDisposable
             ParseLong(parameters, "memoryMb", 512, 32, 32768),
             ParseDouble(parameters, "cpus", 1, 0.1, 32),
             parameters.TryGetValue("autoUpdate", out var configured) && bool.TryParse(configured, out var enabled) && enabled,
+            versionPolicy,
+            maintenanceWindow,
             restartPolicy,
             ParseEnvironment(parameters.GetValueOrDefault("environment")),
             ParseStringArray(parameters.GetValueOrDefault("command"), "command"),
@@ -567,6 +813,84 @@ public sealed class DockerEngine : IDisposable
         key.Contains("password", StringComparison.OrdinalIgnoreCase) || key.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
         key.Contains("token", StringComparison.OrdinalIgnoreCase) || key.Contains("credential", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsAutoUpdateEnabled(IDictionary<string, string> labels) =>
+        (labels.TryGetValue("io.whaledeck.autoupdate", out var managed) && string.Equals(managed, "true", StringComparison.OrdinalIgnoreCase)) ||
+        (labels.TryGetValue("autoupdate", out var standard) && string.Equals(standard, "true", StringComparison.OrdinalIgnoreCase));
+
+    private static string ValidateVersionPolicy(string policy)
+    {
+        policy = policy.Trim();
+        if (policy == "*") return policy;
+        var candidate = policy.StartsWith(">=", StringComparison.Ordinal) ? policy[2..].TrimStart('v') : policy.TrimStart('v');
+        if (candidate.EndsWith(".*", StringComparison.Ordinal))
+        {
+            var components = candidate[..^2].Split('.');
+            if (components.Length is 1 or 2 && components.All(item => int.TryParse(item, out _))) return policy;
+        }
+        else if (System.Version.TryParse(candidate, out _))
+        {
+            return policy;
+        }
+        throw new InvalidOperationException("versionPolicy must be *, 1.*, 1.2.*, >=1.2.3 or an exact version.");
+    }
+
+    private static bool VersionMatchesPolicy(string version, string policy)
+    {
+        ValidateVersionPolicy(policy);
+        if (policy == "*") return true;
+        if (!System.Version.TryParse(version.TrimStart('v'), out var candidate)) return false;
+        if (policy.EndsWith(".*", StringComparison.Ordinal))
+        {
+            var prefix = policy[..^2].Split('.');
+            return candidate.Major.ToString(System.Globalization.CultureInfo.InvariantCulture) == prefix[0] &&
+                   (prefix.Length == 1 || candidate.Minor.ToString(System.Globalization.CultureInfo.InvariantCulture) == prefix[1]);
+        }
+        if (policy.StartsWith(">=", StringComparison.Ordinal) && System.Version.TryParse(policy[2..].TrimStart('v'), out var minimum))
+            return candidate >= minimum;
+        return System.Version.TryParse(policy.TrimStart('v'), out var exact) && candidate == exact;
+    }
+
+    private static bool IsInMaintenanceWindow(string window, DateTimeOffset utcNow)
+    {
+        if (!TryParseMaintenanceWindow(window, out var day, out var start, out var end))
+            throw new InvalidOperationException("maintenanceWindow must use Day@HH:mm-HH:mm, for example Sun@20:00-23:59.");
+        var local = TimeZoneInfo.ConvertTime(utcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Shanghai"));
+        var time = TimeOnly.FromDateTime(local.DateTime);
+        return local.DayOfWeek == day && time >= start && time <= end;
+    }
+
+    private static bool TryParseMaintenanceWindow(string window, out DayOfWeek day, out TimeOnly start, out TimeOnly end)
+    {
+        day = default;
+        start = default;
+        end = default;
+        var parts = window.Split('@', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length != 2) return false;
+        day = parts[0].ToLowerInvariant() switch
+        {
+            "sun" or "sunday" => DayOfWeek.Sunday,
+            "mon" or "monday" => DayOfWeek.Monday,
+            "tue" or "tuesday" => DayOfWeek.Tuesday,
+            "wed" or "wednesday" => DayOfWeek.Wednesday,
+            "thu" or "thursday" => DayOfWeek.Thursday,
+            "fri" or "friday" => DayOfWeek.Friday,
+            "sat" or "saturday" => DayOfWeek.Saturday,
+            _ => (DayOfWeek)(-1)
+        };
+        if (!Enum.IsDefined(day)) return false;
+        var times = parts[1].Split('-', 2, StringSplitOptions.TrimEntries);
+        return times.Length == 2 && TimeOnly.TryParseExact(times[0], "HH:mm", out start) &&
+               TimeOnly.TryParseExact(times[1], "HH:mm", out end) && start <= end;
+    }
+
+    private static string BuildRollbackName(string name, string jobId)
+    {
+        var suffix = Regex.Replace(jobId, "[^a-zA-Z0-9]", string.Empty, RegexOptions.CultureInvariant);
+        suffix = suffix.Length > 8 ? suffix[..8] : suffix;
+        var maximumBaseLength = Math.Max(1, 63 - suffix.Length - 4);
+        return $"{name[..Math.Min(name.Length, maximumBaseLength)]}-old-{suffix}";
+    }
+
     private static Dictionary<string, string> NormalizePlanParameters(IReadOnlyDictionary<string, string> parameters)
     {
         var normalized = new Dictionary<string, string>(parameters, StringComparer.Ordinal);
@@ -632,6 +956,8 @@ public sealed class DockerEngine : IDisposable
         long MemoryMb,
         double Cpus,
         bool AutoUpdate,
+        string VersionPolicy,
+        string MaintenanceWindow,
         RestartPolicyKind RestartPolicy,
         List<string> Environment,
         string[]? Command,
@@ -641,4 +967,18 @@ public sealed class DockerEngine : IDisposable
         string[] Networks,
         Dictionary<string, string> Labels,
         HealthConfig? Healthcheck);
+
+    private sealed record ContainerUpdatePlan(
+        string Id,
+        string Name,
+        string Image,
+        string OldImageId,
+        string VersionPolicy);
+
+    private sealed class ContainerUpdateException(string message, string resultJson, bool rolledBack, Exception innerException)
+        : InvalidOperationException(message, innerException)
+    {
+        public string ResultJson { get; } = resultJson;
+        public bool RolledBack { get; } = rolledBack;
+    }
 }

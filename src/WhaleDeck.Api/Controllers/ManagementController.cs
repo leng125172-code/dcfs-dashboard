@@ -17,7 +17,8 @@ public sealed class ManagementController(
     ICatalogProvider catalog,
     IIdentityDirectory identity,
     OperationService operations,
-    ApplicationService applications) : ControllerBase
+    ApplicationService applications,
+    ContainerUpdateService containerUpdates) : ControllerBase
 {
     [HttpGet("containers")]
     public async Task<IActionResult> Containers([FromQuery] bool includeStopped = true, CancellationToken cancellationToken = default) =>
@@ -38,6 +39,13 @@ public sealed class ManagementController(
     [HttpGet("containers/{containerId}/inspect")]
     public async Task<IActionResult> ContainerInspect(string containerId, CancellationToken cancellationToken = default) =>
         Ok(await agent.InspectContainerAsync(containerId, cancellationToken));
+
+    [HttpGet("containers/update-history")]
+    public async Task<IActionResult> ContainerUpdateHistory(
+        [FromQuery] string? containerId,
+        [FromQuery] int take = 100,
+        CancellationToken cancellationToken = default) =>
+        Ok(await containerUpdates.ListAsync(containerId, take, cancellationToken));
 
     [HttpGet("applications/popular")]
     public async Task<IActionResult> Popular(CancellationToken cancellationToken) => Ok(await catalog.GetPopularAsync(cancellationToken));

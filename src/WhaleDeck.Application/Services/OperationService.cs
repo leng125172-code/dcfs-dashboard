@@ -10,7 +10,7 @@ public sealed class OperationService(IJobRepository jobs)
     private static readonly Dictionary<string, HashSet<string>> AllowedActions =
         new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase)
         {
-            ["containers"] = new(StringComparer.OrdinalIgnoreCase) { "create", "start", "stop", "restart", "delete", "pull", "prune" },
+            ["containers"] = new(StringComparer.OrdinalIgnoreCase) { "create", "start", "stop", "restart", "delete", "pull", "prune", "update" },
             ["docker"] = new(StringComparer.OrdinalIgnoreCase) { "validate-settings", "apply-settings" },
             ["databases"] = new(StringComparer.OrdinalIgnoreCase) { "create", "delete", "create-principal", "delete-principal", "disable-principal", "grant", "rotate", "terminate-connection" },
             // Active backups are canceled through the job cancellation API so

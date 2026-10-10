@@ -185,6 +185,8 @@ onMounted(load)
               ><el-option label="数据库备份" value="Backup" /><el-option
                 label="应用更新"
                 value="ApplicationUpdate" /><el-option
+                label="独立容器更新"
+                value="ContainerUpdate" /><el-option
                 label="系统更新"
                 value="SystemUpdate" /><el-option
                 label="指标聚合"

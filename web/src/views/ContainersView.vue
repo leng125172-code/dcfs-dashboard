@@ -4,7 +4,12 @@ import { Box, Delete, Plus, RefreshRight, VideoPause, VideoPlay } from '@element
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiRequest } from '@/services/apiClient'
 import { enqueueOperation, planOperation, stageSecret } from '@/services/operations'
-import type { ContainerInspect, ContainerLogs, ContainerStats } from '@/services/contracts'
+import type {
+  ContainerInspect,
+  ContainerLogs,
+  ContainerStats,
+  ContainerUpdateRun,
+} from '@/services/contracts'
 
 interface Container {
   id: string
@@ -27,6 +32,8 @@ const form = reactive({
   cpus: 1,
   memoryMb: 512,
   autoUpdate: false,
+  versionPolicy: '*',
+  maintenanceWindow: 'Sun@20:00-23:59',
   restartPolicy: 'unless-stopped',
   command: '',
   entrypoint: '',
@@ -46,6 +53,7 @@ const selected = ref<Container | null>(null)
 const logs = ref<ContainerLogs>({ lines: [], truncated: false })
 const stats = ref<Record<string, string>>({})
 const inspect = ref<ContainerInspect | null>(null)
+const updateHistory = ref<ContainerUpdateRun[]>([])
 
 function resetForm() {
   Object.assign(form, {
@@ -54,6 +62,8 @@ function resetForm() {
     cpus: 1,
     memoryMb: 512,
     autoUpdate: false,
+    versionPolicy: '*',
+    maintenanceWindow: 'Sun@20:00-23:59',
     restartPolicy: 'unless-stopped',
     command: '',
     entrypoint: '',
@@ -130,6 +140,35 @@ async function removeContainer(item: Container) {
   ElMessage.success(`删除任务已提交：${job.id}`)
 }
 
+function canUpdate(item: Container) {
+  const enabled =
+    item.labels['io.whaledeck.autoupdate'] === 'true' || item.labels.autoupdate === 'true'
+  return enabled && !item.isProtected && !item.labels['com.docker.compose.project']
+}
+
+async function updateContainer(item: Container) {
+  if (!canUpdate(item)) {
+    ElMessage.warning('只有启用 autoupdate=true 的非受保护独立容器可以更新')
+    return
+  }
+  const parameters: Record<string, string> = { automatic: 'false' }
+  const plan = await planOperation('containers', 'update', item.id, parameters)
+  await ElMessageBox.confirm(
+    [...plan.changes, ...plan.warnings].join('\n'),
+    `更新容器 ${item.name}`,
+    { type: 'warning', confirmButtonText: '更新', cancelButtonText: '取消' },
+  )
+  const job = await enqueueOperation(
+    'containers',
+    'update',
+    item.id,
+    parameters,
+    true,
+    plan.planHash,
+  )
+  ElMessage.success(`更新任务已提交：${job.id}`)
+}
+
 async function createContainer() {
   submitting.value = true
   try {
@@ -139,6 +178,8 @@ async function createContainer() {
       cpus: String(form.cpus),
       memoryMb: String(form.memoryMb),
       autoUpdate: String(form.autoUpdate),
+      versionPolicy: form.versionPolicy.trim() || '*',
+      maintenanceWindow: form.maintenanceWindow.trim(),
       restartPolicy: form.restartPolicy,
     }
     if (form.command.trim()) parameters.command = form.command.trim()
@@ -189,18 +230,23 @@ async function openDetails(item: Container) {
   logs.value = { lines: [], truncated: false }
   stats.value = {}
   inspect.value = null
+  updateHistory.value = []
   try {
     const id = encodeURIComponent(item.id)
-    const [logResult, statsResult, inspectResult] = await Promise.all([
+    const [logResult, statsResult, inspectResult, historyResult] = await Promise.all([
       apiRequest<ContainerLogs>(`containers/${id}/logs?tail=500&sinceMinutes=60`),
       item.state === 'running'
         ? apiRequest<ContainerStats>(`containers/${id}/stats`)
         : Promise.resolve({ values: {} }),
       apiRequest<ContainerInspect>(`containers/${id}/inspect`),
+      apiRequest<ContainerUpdateRun[]>(
+        `containers/update-history?containerId=${encodeURIComponent(item.name)}&take=20`,
+      ),
     ])
     logs.value = logResult
     stats.value = statsResult.values
     inspect.value = inspectResult
+    updateHistory.value = historyResult
   } finally {
     detailLoading.value = false
   }
@@ -219,6 +265,9 @@ function copyContainer() {
     cpus: inspect.value.cpus || 1,
     memoryMb: inspect.value.memoryMb || 512,
     autoUpdate: inspect.value.labels['io.whaledeck.autoupdate'] === 'true',
+    versionPolicy: inspect.value.labels['io.whaledeck.update.version-policy'] || '*',
+    maintenanceWindow:
+      inspect.value.labels['io.whaledeck.update.maintenance-window'] || 'Sun@20:00-23:59',
     restartPolicy:
       inspect.value.restartPolicy === 'always' ? 'unless-stopped' : inspect.value.restartPolicy,
     command: inspect.value.command.length ? JSON.stringify(inspect.value.command) : '',
@@ -281,6 +330,9 @@ onMounted(load)
         }}</el-tag>
         <div class="container-card__actions">
           <el-button link type="primary" @click="openDetails(item)">详情</el-button>
+          <el-button v-if="canUpdate(item)" link type="primary" @click="updateContainer(item)"
+            ><el-icon><RefreshRight /></el-icon>更新</el-button
+          >
           <el-button
             v-if="item.state !== 'running'"
             link
@@ -390,9 +442,17 @@ onMounted(load)
         </div>
         <el-form-item label="自动更新"
           ><el-switch v-model="form.autoUpdate" /><span class="form-hint"
-            >只有启用此标签的普通应用才进入自动更新。</span
+            >只有启用此标签的普通容器才进入自动更新。</span
           ></el-form-item
         >
+        <div v-if="form.autoUpdate" class="container-form__resources">
+          <el-form-item label="版本策略">
+            <el-input v-model="form.versionPolicy" placeholder="*、1.*、1.2.*、>=1.2.3" />
+          </el-form-item>
+          <el-form-item label="维护窗口">
+            <el-input v-model="form.maintenanceWindow" placeholder="Sun@20:00-23:59" />
+          </el-form-item>
+        </div>
       </el-form>
       <template #footer
         ><el-button @click="createVisible = false">取消</el-button
@@ -460,6 +520,18 @@ onMounted(load)
             }}</el-descriptions-item>
           </template>
         </el-descriptions>
+        <div class="log-heading">
+          <h3>更新历史</h3>
+        </div>
+        <el-table v-if="updateHistory.length" :data="updateHistory" size="small">
+          <el-table-column prop="startedAtUtc" label="时间" min-width="180" />
+          <el-table-column prop="image" label="镜像" min-width="180" />
+          <el-table-column prop="result" label="结果" width="100" />
+          <el-table-column label="回滚" width="80">
+            <template #default="scope">{{ scope.row.wasRolledBack ? '是' : '否' }}</template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="暂无更新记录" :image-size="64" />
         <div class="log-heading">
           <h3>最近一小时日志</h3>
           <el-tag v-if="logs.truncated" type="warning" effect="plain">已按 64 KiB 截断</el-tag>

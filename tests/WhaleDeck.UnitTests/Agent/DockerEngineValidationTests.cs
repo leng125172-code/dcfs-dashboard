@@ -61,6 +61,36 @@ public sealed class DockerEngineValidationTests
         Assert.Equal("demo", normalized["name"]);
     }
 
+    [Theory]
+    [InlineData("*")]
+    [InlineData("1.*")]
+    [InlineData("1.2.*")]
+    [InlineData(">=1.2.3")]
+    [InlineData("v2.4.1")]
+    public void VersionPolicyAcceptsSupportedSyntax(string policy) => Invoke("ValidateVersionPolicy", policy);
+
+    [Theory]
+    [InlineData("latest")]
+    [InlineData("1.x")]
+    [InlineData(">=")]
+    public void VersionPolicyRejectsAmbiguousSyntax(string policy) => AssertInvalid("ValidateVersionPolicy", policy);
+
+    [Theory]
+    [InlineData("1.2.4", "1.2.*", true)]
+    [InlineData("1.3.0", "1.2.*", false)]
+    [InlineData("2.0.0", ">=1.2.3", true)]
+    public void VersionMatchingHonorsPolicy(string version, string policy, bool expected) =>
+        Assert.Equal(expected, InvokeBoolean("VersionMatchesPolicy", version, policy));
+
+    [Fact]
+    public void ShanghaiMaintenanceWindowUsesConfiguredDayAndTime()
+    {
+        var inside = new DateTimeOffset(2026, 10, 11, 12, 30, 0, TimeSpan.Zero);
+        var outside = inside.AddHours(4);
+        Assert.True(InvokeBoolean("IsInMaintenanceWindow", "Sun@20:00-21:00", inside));
+        Assert.False(InvokeBoolean("IsInMaintenanceWindow", "Sun@20:00-21:00", outside));
+    }
+
     private static void AssertInvalid(string method, string value)
     {
         var exception = Assert.Throws<TargetInvocationException>(() => Invoke(method, value));
@@ -79,5 +109,12 @@ public sealed class DockerEngineValidationTests
         var method = typeof(DockerEngine).GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException($"{methodName} was not found.");
         return method.Invoke(null, [value]);
+    }
+
+    private static bool InvokeBoolean(string methodName, params object[] values)
+    {
+        var method = typeof(DockerEngine).GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException($"{methodName} was not found.");
+        return Assert.IsType<bool>(method.Invoke(null, values));
     }
 }

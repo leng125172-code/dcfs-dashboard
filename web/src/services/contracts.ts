@@ -88,6 +88,22 @@ export interface ContainerInspect {
   healthRetries: number
 }
 
+export interface ContainerUpdateRun {
+  id: string
+  externalContainerId: string
+  containerName: string
+  image: string
+  oldImageDigest: string | null
+  newImageDigest: string | null
+  versionPolicy: string | null
+  jobId: string
+  startedAtUtc: string
+  completedAtUtc: string | null
+  result: string
+  wasRolledBack: boolean
+  errorSummary: string | null
+}
+
 export interface MetricValue {
   kind: string
   deviceId: string

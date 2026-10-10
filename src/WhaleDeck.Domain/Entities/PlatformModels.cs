@@ -91,6 +91,23 @@ public sealed class ApplicationUpdateRun
     public string? ErrorSummary { get; set; }
 }
 
+public sealed class ContainerUpdateRun
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public required string ExternalContainerId { get; init; }
+    public required string ContainerName { get; init; }
+    public required string Image { get; init; }
+    public string? OldImageDigest { get; init; }
+    public string? NewImageDigest { get; init; }
+    public string? VersionPolicy { get; init; }
+    public Guid JobId { get; init; }
+    public DateTimeOffset StartedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? CompletedAtUtc { get; set; }
+    public string Result { get; set; } = "Running";
+    public bool WasRolledBack { get; set; }
+    public string? ErrorSummary { get; set; }
+}
+
 public sealed class OperationJob
 {
     public Guid Id { get; init; } = Guid.NewGuid();

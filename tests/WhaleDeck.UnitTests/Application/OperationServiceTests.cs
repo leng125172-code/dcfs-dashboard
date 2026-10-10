@@ -55,6 +55,17 @@ public sealed class OperationServiceTests
     }
 
     [Fact]
+    public async Task ContainerUpdateRequiresConfirmationAndPlan()
+    {
+        var service = new OperationService(new RecordingJobRepository());
+        var command = new OperationCommand("containers", "update", "container-1", "key-1",
+            "{\"parameters\":{}}", null, false);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command, default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command with { Confirmed = true }, default));
+    }
+
+    [Fact]
     public async Task DatabasePrincipalDeletionRequiresConfirmationAndPlan()
     {
         var service = new OperationService(new RecordingJobRepository());

@@ -257,3 +257,18 @@ public sealed record ApplicationDetailDto(
     ApplicationInstallationDto Installation,
     IReadOnlyCollection<ApplicationResourceDto> Resources,
     IReadOnlyCollection<ApplicationUpdateRunDto> UpdateHistory);
+
+public sealed record ContainerUpdateRunDto(
+    Guid Id,
+    string ExternalContainerId,
+    string ContainerName,
+    string Image,
+    string? OldImageDigest,
+    string? NewImageDigest,
+    string? VersionPolicy,
+    Guid JobId,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? CompletedAtUtc,
+    string Result,
+    bool WasRolledBack,
+    string? ErrorSummary);

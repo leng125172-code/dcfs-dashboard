@@ -7,7 +7,7 @@ namespace WhaleDeck.Application.Services;
 public sealed class GovernanceService(IGovernanceRepository repository)
 {
     private static readonly HashSet<string> ScheduleTypes = new(StringComparer.OrdinalIgnoreCase)
-        { "Backup", "ApplicationUpdate", "SystemUpdate", "MetricsRollup", "RetentionCleanup" };
+        { "Backup", "ApplicationUpdate", "ContainerUpdate", "SystemUpdate", "MetricsRollup", "RetentionCleanup" };
     private static readonly HashSet<string> SettingKeys = new(StringComparer.OrdinalIgnoreCase)
         { "maintenance.window", "applications.autoupdate", "metrics.retention", "catalog.refresh", "ui.branding" };
     private static readonly HashSet<string> AlertTypes = new(StringComparer.OrdinalIgnoreCase)

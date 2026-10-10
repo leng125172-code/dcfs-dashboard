@@ -15,6 +15,7 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
     public DbSet<ApplicationInstallation> ApplicationInstallations => Set<ApplicationInstallation>();
     public DbSet<ApplicationResource> ApplicationResources => Set<ApplicationResource>();
     public DbSet<ApplicationUpdateRun> ApplicationUpdateRuns => Set<ApplicationUpdateRun>();
+    public DbSet<ContainerUpdateRun> ContainerUpdateRuns => Set<ContainerUpdateRun>();
     public DbSet<OperationJob> OperationJobs => Set<OperationJob>();
     public DbSet<OperationJobEvent> OperationJobEvents => Set<OperationJobEvent>();
     public DbSet<ScheduledTask> ScheduledTasks => Set<ScheduledTask>();
@@ -135,6 +136,16 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             entity.ToTable("application_update_runs");
             entity.HasKey(item => item.Id);
             entity.HasIndex(item => new { item.ApplicationId, item.StartedAtUtc });
+            entity.HasIndex(item => item.JobId).IsUnique();
+        });
+        modelBuilder.Entity<ContainerUpdateRun>(entity =>
+        {
+            entity.ToTable("container_update_runs");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.ExternalContainerId).HasMaxLength(128);
+            entity.Property(item => item.ContainerName).HasMaxLength(128);
+            entity.Property(item => item.Image).HasMaxLength(512);
+            entity.HasIndex(item => new { item.ContainerName, item.StartedAtUtc });
             entity.HasIndex(item => item.JobId).IsUnique();
         });
     }

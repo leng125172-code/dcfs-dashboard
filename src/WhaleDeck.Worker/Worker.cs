@@ -123,8 +123,11 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             {
                 resource = new ManagedResource
                 {
-                    ResourceType = item.Type, ExternalId = item.Id, DisplayName = item.Name,
-                    ProtectionLevel = item.IsProtected ? "Protected" : "Managed", Source = "Agent"
+                    ResourceType = item.Type,
+                    ExternalId = item.Id,
+                    DisplayName = item.Name,
+                    ProtectionLevel = item.IsProtected ? "Protected" : "Managed",
+                    Source = "Agent"
                 };
                 db.ManagedResources.Add(resource);
             }
@@ -212,6 +215,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             {
                 "Backup" => ("backups", "run", string.Empty),
                 "ApplicationUpdate" => ("applications", "update", string.Empty),
+                "ContainerUpdate" => ("containers", "update", string.Empty),
                 "SystemUpdate" => ("host", "update-install", "whaledeck.host"),
                 "MetricsRollup" => ("internal", "metrics-rollup", string.Empty),
                 "RetentionCleanup" => ("internal", "retention-cleanup", string.Empty),
@@ -221,14 +225,15 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             var parameters = root.TryGetProperty("parameters", out var parameterValue) && parameterValue.ValueKind == JsonValueKind.Object
                 ? parameterValue.EnumerateObject().ToDictionary(item => item.Name, item => item.Value.ToString(), StringComparer.Ordinal)
                 : new Dictionary<string, string>();
-            if (schedule.TaskType == "ApplicationUpdate") parameters["automatic"] = "true";
+            if (schedule.TaskType is "ApplicationUpdate" or "ContainerUpdate") parameters["automatic"] = "true";
             string? planHash = null;
             if (action is "update" or "update-install")
                 planHash = (await agent.PlanAsync(area, action, resourceId, parameters, cancellationToken)).PlanHash;
 
             var job = new OperationJob
             {
-                JobType = $"{area}.{action}", ActorSubject = "system:scheduler",
+                JobType = $"{area}.{action}",
+                ActorSubject = "system:scheduler",
                 IdempotencyKey = $"schedule:{schedule.Id:D}:{scheduledFor.ToUnixTimeSeconds()}",
                 RequestJson = JsonSerializer.Serialize(new { resourceId, parameters, planHash })
             };
@@ -236,8 +241,13 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             db.ScheduledTaskRuns.Add(new ScheduledTaskRun { ScheduleId = schedule.Id, JobId = job.Id, ScheduledForUtc = scheduledFor });
             db.AuditEvents.Add(new AuditEvent
             {
-                ActorSubject = "system:scheduler", Action = job.JobType, TargetType = "schedule", TargetId = schedule.Id.ToString("D"),
-                Result = "Accepted", JobId = job.Id, TraceId = job.Id.ToString("N")
+                ActorSubject = "system:scheduler",
+                Action = job.JobType,
+                TargetType = "schedule",
+                TargetId = schedule.Id.ToString("D"),
+                Result = "Accepted",
+                JobId = job.Id,
+                TraceId = job.Id.ToString("N")
             });
             if (area == "internal")
             {
@@ -275,7 +285,8 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             if (resource is null) continue;
             var job = new OperationJob
             {
-                JobType = "backups.run", ActorSubject = "system:backup-policy",
+                JobType = "backups.run",
+                ActorSubject = "system:backup-policy",
                 IdempotencyKey = $"backup-policy:{policy.Id:D}:{next.ToUnixTimeSeconds()}",
                 RequestJson = JsonSerializer.Serialize(new
                 {
@@ -293,14 +304,21 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             db.OperationJobs.Add(job);
             db.BackupRecords.Add(new BackupRecord
             {
-                InstanceResourceId = policy.InstanceResourceId, PolicyId = policy.Id, JobId = job.Id,
+                InstanceResourceId = policy.InstanceResourceId,
+                PolicyId = policy.Id,
+                JobId = job.Id,
                 ExpiresAtUtc = now.AddDays(policy.RetentionDays)
             });
             db.OutboxMessages.Add(new OutboxMessage { MessageType = "OperationRequested", PayloadJson = JsonSerializer.Serialize(new { jobId = job.Id }) });
             db.AuditEvents.Add(new AuditEvent
             {
-                ActorSubject = "system:backup-policy", Action = "backups.run", TargetType = "backup-policy", TargetId = policy.Id.ToString("D"),
-                Result = "Accepted", JobId = job.Id, TraceId = job.Id.ToString("N")
+                ActorSubject = "system:backup-policy",
+                Action = "backups.run",
+                TargetType = "backup-policy",
+                TargetId = policy.Id.ToString("D"),
+                Result = "Accepted",
+                JobId = job.Id,
+                TraceId = job.Id.ToString("N")
             });
         }
         await db.SaveChangesAsync(cancellationToken);
@@ -492,41 +510,41 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                 case "CpuUtilization":
                 case "MemoryUtilization":
                 case "DiskUtilization":
-                {
-                    var kind = rule.RuleType switch
                     {
-                        "CpuUtilization" => "cpu.utilization",
-                        "MemoryUtilization" => "memory.utilization",
-                        _ => "disk.utilization"
-                    };
-                    var threshold = ReadThreshold(rule.ThresholdJson);
-                    var cutoff = now.AddSeconds(-rule.EvaluationWindowSeconds);
-                    var series = await db.MetricSeries.Where(item => item.MetricKind == kind).ToArrayAsync(cancellationToken);
-                    foreach (var item in series)
-                    {
-                        var average = await db.MetricSamples.Where(sample => sample.SeriesId == item.Id && sample.SampledAtUtc >= cutoff && sample.ValueDouble != null)
-                            .AverageAsync(sample => sample.ValueDouble, cancellationToken);
-                        if (average >= threshold) triggeredResources.Add(item.ResourceId);
+                        var kind = rule.RuleType switch
+                        {
+                            "CpuUtilization" => "cpu.utilization",
+                            "MemoryUtilization" => "memory.utilization",
+                            _ => "disk.utilization"
+                        };
+                        var threshold = ReadThreshold(rule.ThresholdJson);
+                        var cutoff = now.AddSeconds(-rule.EvaluationWindowSeconds);
+                        var series = await db.MetricSeries.Where(item => item.MetricKind == kind).ToArrayAsync(cancellationToken);
+                        foreach (var item in series)
+                        {
+                            var average = await db.MetricSamples.Where(sample => sample.SeriesId == item.Id && sample.SampledAtUtc >= cutoff && sample.ValueDouble != null)
+                                .AverageAsync(sample => sample.ValueDouble, cancellationToken);
+                            if (average >= threshold) triggeredResources.Add(item.ResourceId);
+                        }
+                        break;
                     }
-                    break;
-                }
                 case "AgentOffline":
-                {
-                    var host = await db.ManagedResources.SingleOrDefaultAsync(item => item.ResourceType == "Host" && item.ExternalId == "local", cancellationToken);
-                    if (host is null || host.LastSeenAtUtc < now.AddSeconds(-rule.EvaluationWindowSeconds)) triggeredResources.Add(host?.Id);
-                    break;
-                }
-                case "ContainerHealth":
-                {
-                    var containers = await db.ManagedResources.Where(item => item.ResourceType == "Container").ToArrayAsync(cancellationToken);
-                    foreach (var container in containers)
                     {
-                        using var labels = JsonDocument.Parse(container.LabelsJson);
-                        var state = labels.RootElement.TryGetProperty("state", out var stateValue) ? stateValue.GetString() : null;
-                        if (state is not "running") triggeredResources.Add(container.Id);
+                        var host = await db.ManagedResources.SingleOrDefaultAsync(item => item.ResourceType == "Host" && item.ExternalId == "local", cancellationToken);
+                        if (host is null || host.LastSeenAtUtc < now.AddSeconds(-rule.EvaluationWindowSeconds)) triggeredResources.Add(host?.Id);
+                        break;
                     }
-                    break;
-                }
+                case "ContainerHealth":
+                    {
+                        var containers = await db.ManagedResources.Where(item => item.ResourceType == "Container").ToArrayAsync(cancellationToken);
+                        foreach (var container in containers)
+                        {
+                            using var labels = JsonDocument.Parse(container.LabelsJson);
+                            var state = labels.RootElement.TryGetProperty("state", out var stateValue) ? stateValue.GetString() : null;
+                            if (state is not "running") triggeredResources.Add(container.Id);
+                        }
+                        break;
+                    }
                 case "BackupFailure":
                     triggeredResources.AddRange(await db.BackupRecords.Where(item => item.Status == "Failed" && item.CompletedAtUtc >= now.AddSeconds(-rule.EvaluationWindowSeconds))
                         .Select(item => (Guid?)item.InstanceResourceId).Distinct().ToArrayAsync(cancellationToken));
@@ -542,8 +560,12 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                 {
                     existing = new AlertEvent
                     {
-                        RuleId = rule.Id, ResourceId = resourceId, Fingerprint = fingerprint, Severity = rule.Severity,
-                        SummaryCode = $"ALERT_{rule.RuleType.ToUpperInvariant()}", DetailJson = rule.ThresholdJson
+                        RuleId = rule.Id,
+                        ResourceId = resourceId,
+                        Fingerprint = fingerprint,
+                        Severity = rule.Severity,
+                        SummaryCode = $"ALERT_{rule.RuleType.ToUpperInvariant()}",
+                        DetailJson = rule.ThresholdJson
                     };
                     db.AlertEvents.Add(existing);
                     db.AlertEventHistory.Add(new AlertEventHistory { AlertEventId = existing.Id, State = "Active", ActorSubject = "system:alert-evaluator" });
@@ -640,7 +662,38 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             scheduleRun.StartedAtUtc ??= job.StartedAtUtc;
         }
         await ProjectApplicationOperation(db, job, state, errorCode, cancellationToken);
+        await ProjectContainerUpdate(db, job, state, errorCode, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task ProjectContainerUpdate(
+        PlatformDbContext db,
+        OperationJob job,
+        string state,
+        string? errorCode,
+        CancellationToken cancellationToken)
+    {
+        if (job.JobType != "containers.update" || state is not ("Succeeded" or "Failed" or "Canceled") ||
+            await db.ContainerUpdateRuns.AnyAsync(item => item.JobId == job.Id, cancellationToken)) return;
+
+        using var request = JsonDocument.Parse(job.RequestJson);
+        var resourceId = request.RootElement.TryGetProperty("resourceId", out var resource) ? resource.GetString() ?? string.Empty : string.Empty;
+        var result = ReadJsonObject(job.ResultJson);
+        db.ContainerUpdateRuns.Add(new ContainerUpdateRun
+        {
+            ExternalContainerId = ReadString(result, "containerId") ?? resourceId,
+            ContainerName = ReadString(result, "containerName") ?? resourceId,
+            Image = ReadString(result, "image") ?? "unknown",
+            OldImageDigest = ReadString(result, "oldImageId"),
+            NewImageDigest = ReadString(result, "imageId"),
+            VersionPolicy = ReadString(result, "versionPolicy"),
+            JobId = job.Id,
+            StartedAtUtc = job.StartedAtUtc ?? job.CreatedAtUtc,
+            CompletedAtUtc = job.CompletedAtUtc ?? DateTimeOffset.UtcNow,
+            Result = state,
+            WasRolledBack = ReadBoolean(result, "rolledBack"),
+            ErrorSummary = errorCode
+        });
     }
 
     private static async Task ProjectApplicationOperation(
@@ -815,19 +868,25 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             .Where(item => item.SampledAtUtc >= start && item.SampledAtUtc < end && item.ValueDouble != null)
             .ToArrayAsync(cancellationToken);
         foreach (var group in samples.GroupBy(item => new
-                 {
-                     item.SeriesId,
-                     Window = new DateTimeOffset(item.SampledAtUtc.Year, item.SampledAtUtc.Month, item.SampledAtUtc.Day,
+        {
+            item.SeriesId,
+            Window = new DateTimeOffset(item.SampledAtUtc.Year, item.SampledAtUtc.Month, item.SampledAtUtc.Day,
                          item.SampledAtUtc.Hour, item.SampledAtUtc.Minute, 0, TimeSpan.Zero)
-                 }))
+        }))
         {
             if (await db.MetricRollups.AnyAsync(item => item.SeriesId == group.Key.SeriesId &&
                     item.WindowStartUtc == group.Key.Window && item.Resolution == "1m", cancellationToken)) continue;
             var values = group.Select(item => item.ValueDouble!.Value).ToArray();
             db.MetricRollups.Add(new MetricRollup
             {
-                SeriesId = group.Key.SeriesId, WindowStartUtc = group.Key.Window, Resolution = "1m",
-                Minimum = values.Min(), Maximum = values.Max(), Average = values.Average(), Sum = values.Sum(), SampleCount = values.LongLength
+                SeriesId = group.Key.SeriesId,
+                WindowStartUtc = group.Key.Window,
+                Resolution = "1m",
+                Minimum = values.Min(),
+                Maximum = values.Max(),
+                Average = values.Average(),
+                Sum = values.Sum(),
+                SampleCount = values.LongLength
             });
         }
         await db.SaveChangesAsync(cancellationToken);
