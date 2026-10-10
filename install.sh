@@ -338,6 +338,14 @@ for key in DOTNET_SDK_IMAGE ASPNET_IMAGE DOTNET_RUNTIME_IMAGE NODE_IMAGE NGINX_I
 done
 # Validate prerequisites before installing or restarting host services.
 if [[ ! -r $source_dir/.env ]]; then
+  provisioned_environment="$source_dir/.authentik-provision.env"
+  if [[ -z ${WHALEDECK_OIDC_INTERNAL_CLIENT_ID:-} || -z ${WHALEDECK_OIDC_EXTERNAL_CLIENT_ID:-} || -z ${WHALEDECK_AUTHENTIK_API_TOKEN:-} ]]; then
+    "$source_dir/deploy/install/provision-authentik.sh" "$provisioned_environment"
+    set -a
+    # shellcheck disable=SC1090
+    source "$provisioned_environment"
+    set +a
+  fi
   for key in WHALEDECK_OIDC_INTERNAL_AUTHORITY WHALEDECK_OIDC_INTERNAL_CLIENT_ID WHALEDECK_OIDC_INTERNAL_CLIENT_SECRET WHALEDECK_OIDC_EXTERNAL_AUTHORITY WHALEDECK_OIDC_EXTERNAL_CLIENT_ID WHALEDECK_OIDC_EXTERNAL_CLIENT_SECRET WHALEDECK_AUTHENTIK_API_TOKEN WHALEDECK_AUTHENTIK_ADMIN_GROUP_ID; do
     if [[ -z ${!key:-} && $non_interactive == false ]]; then
       read -r -s -p "$key: " "$key"
@@ -348,6 +356,7 @@ if [[ ! -r $source_dir/.env ]]; then
 fi
 "$source_dir/deploy/host/publish-and-install.sh"
 write_runtime_environment "$source_dir" "$database_dir"
+rm -f -- "${provisioned_environment:-}"
 compose=(docker compose --project-directory "$source_dir" --env-file "$source_dir/.env" --env-file "$source_dir/.images.env" -f "$source_dir/compose.yml")
 "${compose[@]}" --profile tools config --quiet
 "${compose[@]}" --profile tools build --pull

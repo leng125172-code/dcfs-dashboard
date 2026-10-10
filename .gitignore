@@ -1,5 +1,7 @@
 # Secrets and local configuration
 .env
+.authentik-provision.env
+__pycache__/
 .env.*
 .images.env
 !.env.example

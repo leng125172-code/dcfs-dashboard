@@ -1,0 +1,115 @@
+"""Idempotently provision Whale Deck in an existing Authentik instance.
+
+Executed through ``ak shell`` by provision-authentik.sh.  Output is a private
+environment fragment consumed by the installer; callers must redirect stdout
+to a mode-0600 file and must never print it.
+"""
+
+import secrets
+
+from authentik.core.models import Application, Group, Token, User
+from authentik.flows.models import Flow
+from authentik.providers.oauth2.models import OAuth2Provider
+
+
+def require_flow(slug: str) -> Flow:
+    return Flow.objects.get(slug=slug)
+
+
+def ensure_provider(slug: str, address: str, callback: str, signout_callback: str):
+    provider_name = f"Whale Deck {slug.title()}"
+    redirect_uris = [
+        {
+            "matching_mode": "strict",
+            "url": f"http://{address}:8080{callback}",
+            "redirect_uri_type": "authorization",
+        },
+        {
+            "matching_mode": "strict",
+            "url": f"http://{address}:8080{signout_callback}",
+            "redirect_uri_type": "logout",
+        },
+    ]
+    provider = OAuth2Provider.objects.filter(name=provider_name).first()
+    if provider is None:
+        provider = OAuth2Provider(
+            name=provider_name,
+            client_id=secrets.token_urlsafe(32),
+            client_secret=secrets.token_urlsafe(48),
+        )
+    provider.authentication_flow = None
+    provider.authorization_flow = require_flow("default-provider-authorization-explicit-consent")
+    provider.invalidation_flow = require_flow("default-provider-invalidation-flow")
+    provider.client_type = "confidential"
+    provider.grant_types = ["authorization_code", "refresh_token"]
+    provider._redirect_uris = redirect_uris
+    provider.include_claims_in_id_token = True
+    provider.sub_mode = "hashed_user_id"
+    provider.issuer_mode = "per_provider"
+    provider.save()
+
+    application, _ = Application.objects.update_or_create(
+        slug=f"whaledeck-{slug}",
+        defaults={
+            "name": provider_name,
+            "provider": provider,
+            "meta_launch_url": f"http://{address}:8080/",
+            "open_in_new_tab": False,
+        },
+    )
+    if application.provider_id != provider.pk:
+        application.provider = provider
+        application.save(update_fields=["provider"])
+    return provider
+
+
+admin = User.objects.filter(username="akadmin", is_active=True).first()
+if admin is None:
+    admin = User.objects.filter(is_superuser=True, is_active=True).order_by("pk").first()
+if admin is None:
+    raise RuntimeError("No active Authentik administrator exists.")
+
+admin_group = Group.objects.filter(name="authentik Admins", is_superuser=True).first()
+if admin_group is None:
+    admin_group = Group.objects.filter(is_superuser=True).order_by("name").first()
+if admin_group is None:
+    raise RuntimeError("No Authentik superuser group exists.")
+
+api_token, _ = Token.objects.get_or_create(
+    identifier="whaledeck-api",
+    defaults={
+        "user": admin,
+        "intent": "api",
+        "expiring": False,
+        "description": "Whale Deck management API",
+        "key": secrets.token_urlsafe(48),
+    },
+)
+changed = False
+if api_token.user_id != admin.pk:
+    api_token.user = admin
+    changed = True
+if api_token.intent != "api" or api_token.expiring:
+    api_token.intent = "api"
+    api_token.expiring = False
+    changed = True
+if changed:
+    api_token.save()
+
+internal = ensure_provider("internal", "192.168.22.19", "/signin-oidc/internal", "/signout-callback-oidc/internal")
+external = ensure_provider("external", "192.168.100.13", "/signin-oidc/external", "/signout-callback-oidc/external")
+
+values = {
+    "WHALEDECK_OIDC_INTERNAL_AUTHORITY": "http://192.168.22.19:8081/application/o/whaledeck-internal/",
+    "WHALEDECK_OIDC_INTERNAL_CLIENT_ID": internal.client_id,
+    "WHALEDECK_OIDC_INTERNAL_CLIENT_SECRET": internal.client_secret,
+    "WHALEDECK_OIDC_EXTERNAL_AUTHORITY": "http://192.168.100.13:8081/application/o/whaledeck-external/",
+    "WHALEDECK_OIDC_EXTERNAL_CLIENT_ID": external.client_id,
+    "WHALEDECK_OIDC_EXTERNAL_CLIENT_SECRET": external.client_secret,
+    "WHALEDECK_AUTHENTIK_API_TOKEN": api_token.key,
+    "WHALEDECK_AUTHENTIK_ADMIN_GROUP_ID": str(admin_group.pk),
+}
+for key, value in values.items():
+    if "\n" in value or "\r" in value or "'" in value:
+        raise RuntimeError(f"Unsafe generated value for {key}")
+    print(f"{key}='{value}'")
