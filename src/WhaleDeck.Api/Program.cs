@@ -43,7 +43,9 @@ try
     }
 
     builder.Services.AddInfrastructure(builder.Configuration);
-    builder.Services.AddControllers(options => options.Filters.Add(new AutoValidateAntiforgeryTokenAttribute()));
+    // The global MVC antiforgery filter depends on ViewFeatures services even
+    // though Whale Deck itself exposes controller APIs rather than Razor views.
+    builder.Services.AddControllersWithViews(options => options.Filters.Add(new AutoValidateAntiforgeryTokenAttribute()));
     builder.Services.AddProblemDetails();
     builder.Services.AddOpenApi();
     builder.Services.AddHealthChecks();
