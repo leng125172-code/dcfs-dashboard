@@ -38,7 +38,7 @@ function open(item?: ScheduledTask) {
           scheduleKind: item.scheduleKind,
           scheduleExpression: item.scheduleExpression,
           timezone: item.timezone,
-          parametersJson: '{}',
+          parametersJson: item.parametersJson,
           concurrencyPolicy: item.concurrencyPolicy,
           timeoutSeconds: item.timeoutSeconds,
           isEnabled: item.isEnabled,
@@ -151,8 +151,10 @@ onMounted(load)
           ><el-form-item label="并发策略"
             ><el-select v-model="form.concurrencyPolicy"
               ><el-option label="禁止重叠" value="Forbid" /><el-option
-                label="跳过本次"
-                value="Skip" /></el-select></el-form-item
+                label="替换运行中的任务"
+                value="Replace" /><el-option
+                label="允许并行"
+                value="Allow" /></el-select></el-form-item
           ><el-form-item label="超时秒数"
             ><el-input-number v-model="form.timeoutSeconds" :min="30" :max="86400" /></el-form-item
           ><el-form-item label="启用"><el-switch v-model="form.isEnabled" /></el-form-item>

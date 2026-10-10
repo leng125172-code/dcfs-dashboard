@@ -128,7 +128,7 @@ public sealed class GovernanceService(IGovernanceRepository repository)
             item.OccurredAtUtc)).ToArray();
 
     private static ScheduledTaskDto Map(Domain.Entities.ScheduledTask item) => new(item.Id, item.TaskType, item.Name,
-        item.ScheduleKind, item.ScheduleExpression, item.Timezone, item.ConcurrencyPolicy, item.TimeoutSeconds, item.IsEnabled,
+        item.ScheduleKind, item.ScheduleExpression, item.Timezone, item.ParametersJson, item.ConcurrencyPolicy, item.TimeoutSeconds, item.IsEnabled,
         item.NextRunAtUtc, item.Version);
     private static AlertRuleDto Map(Domain.Entities.AlertRule item) => new(item.Id, item.RuleType, item.ResourceSelectorJson,
         item.ThresholdJson, item.EvaluationWindowSeconds, item.Severity, item.IsEnabled, item.Version);

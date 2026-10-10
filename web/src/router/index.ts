@@ -17,6 +17,8 @@ import DockerSettingsView from '@/views/DockerSettingsView.vue'
 import IdentityView from '@/views/IdentityView.vue'
 import PlatformMaintenanceView from '@/views/PlatformMaintenanceView.vue'
 import SchedulesView from '@/views/SchedulesView.vue'
+import AlertsView from '@/views/AlertsView.vue'
+import SettingsView from '@/views/SettingsView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -124,12 +126,8 @@ const router = createRouter({
         {
           path: 'alerts',
           name: 'alerts',
-          component: RecordsView,
-          meta: {
-            administratorOnly: true,
-            title: '告警',
-            endpoint: 'alerts?includeRecovered=true',
-          },
+          component: AlertsView,
+          meta: { administratorOnly: true, title: '告警' },
         },
         {
           path: 'audit',
@@ -140,8 +138,8 @@ const router = createRouter({
         {
           path: 'settings',
           name: 'settings',
-          component: RecordsView,
-          meta: { administratorOnly: true, title: '平台设置', endpoint: 'settings' },
+          component: SettingsView,
+          meta: { administratorOnly: true, title: '平台设置' },
         },
         {
           path: 'settings/config-repository',

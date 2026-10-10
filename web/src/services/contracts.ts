@@ -129,11 +129,46 @@ export interface ScheduledTask {
   scheduleKind: string
   scheduleExpression: string
   timezone: string
+  parametersJson: string
   concurrencyPolicy: string
   timeoutSeconds: number
   isEnabled: boolean
   nextRunAtUtc: string | null
   version: number
+}
+
+export interface AlertRule {
+  id: string
+  ruleType: string
+  resourceSelectorJson: string
+  thresholdJson: string
+  evaluationWindowSeconds: number
+  severity: 'Info' | 'Warning' | 'Critical'
+  isEnabled: boolean
+  version: number
+}
+
+export interface AlertEvent {
+  id: string
+  ruleId: string
+  resourceId: string | null
+  state: string
+  severity: 'Info' | 'Warning' | 'Critical'
+  occurrenceCount: number
+  firstOccurredAtUtc: string
+  lastOccurredAtUtc: string
+  recoveredAtUtc: string | null
+  acknowledgedBySubject: string | null
+  acknowledgedAtUtc: string | null
+  silencedUntilUtc: string | null
+  summaryCode: string
+}
+
+export interface PlatformSetting {
+  key: string
+  valueJson: string
+  version: number
+  updatedAtUtc: string
 }
 
 export interface BackupPolicy {

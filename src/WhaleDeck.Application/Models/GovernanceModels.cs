@@ -1,7 +1,7 @@
 namespace WhaleDeck.Application.Models;
 
 public sealed record ScheduledTaskDto(Guid Id, string TaskType, string Name, string ScheduleKind, string ScheduleExpression,
-    string Timezone, string ConcurrencyPolicy, int TimeoutSeconds, bool IsEnabled, DateTimeOffset? NextRunAtUtc, long Version);
+    string Timezone, string ParametersJson, string ConcurrencyPolicy, int TimeoutSeconds, bool IsEnabled, DateTimeOffset? NextRunAtUtc, long Version);
 
 public sealed record SaveScheduledTaskCommand(Guid? Id, string TaskType, string Name, string ScheduleKind,
     string ScheduleExpression, string Timezone, string ParametersJson, string ConcurrencyPolicy, int TimeoutSeconds,
