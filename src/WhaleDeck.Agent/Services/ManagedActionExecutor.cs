@@ -459,7 +459,9 @@ public sealed partial class ManagedActionExecutor(
     {
         if (!ImagePattern().IsMatch(image) || image.Contains("..", StringComparison.Ordinal)) throw new InvalidOperationException("The image reference is invalid.");
         var first = image.Split('/')[0];
-        if (first.Contains('.') && first is not ("docker.io" or "ghcr.io" or "quay.io" or "xuanyuan.cloud" or "registry.cn-hangzhou.aliyuncs.com"))
+        var hasExplicitRegistry = image.Contains('/', StringComparison.Ordinal) &&
+            (first.Contains('.', StringComparison.Ordinal) || first.Contains(':', StringComparison.Ordinal) || first == "localhost");
+        if (hasExplicitRegistry && first is not ("docker.io" or "ghcr.io" or "quay.io" or "xuanyuan.cloud" or "registry.cn-hangzhou.aliyuncs.com"))
             throw new InvalidOperationException("The image registry is not approved.");
     }
 
