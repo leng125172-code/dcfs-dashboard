@@ -55,7 +55,7 @@ done
 [[ $install_root == /* && $install_root != / && $install_root != /root && $install_root != /home ]] || { echo 'Use an absolute, dedicated repository parent directory.' >&2; exit 2; }
 [[ -z $configure_mirror || $configure_mirror =~ ^[yYnN]$ ]] || { echo 'Mirror choice must be y or n.' >&2; exit 2; }
 if [[ $dry_run == true ]]; then
-  printf '%s\n' '1. Inspect Linux, systemd, storage and existing tools.' '2. Check package sources; measure HTTP response time.' '3. Install missing CLI tools, Docker plugins and .NET SDK.' '4. Optionally merge registry mirrors with validation and rollback.'
+  printf '%s\n' '1. Inspect Linux, systemd, storage and existing tools.' '2. Check package sources; measure HTTP response time.' '3. Install missing CLI tools and Docker plugins.' '4. Optionally merge registry mirrors with validation and rollback.'
   [[ $prepare_only == true ]] && exit 0
   printf '5. Clone/update database-platform (%s) under %s.\n' "$database_branch" "$install_root"
   printf '%s\n' '6. Prepare private settings, storage and database-platform-* dependencies.'
@@ -124,24 +124,8 @@ ensure_docker_source() {
     "$(dpkg --print-architecture)" "$ID" "$codename" > /etc/apt/sources.list.d/docker.list
 }
 
-ensure_dotnet_source() {
-  command -v dotnet >/dev/null 2>&1 && dotnet --list-sdks | grep -q '^10\.' && return
-  # Prefer the distribution's existing signed source when it supplies .NET 10.
-  if apt-cache show dotnet-sdk-10.0 >/dev/null 2>&1; then return; fi
-  [[ -f /etc/apt/sources.list.d/microsoft-prod.list ]] && return
-  log 'Adding the official Microsoft package source for .NET 10.'
-  local package temporary
-  temporary=$(mktemp -d)
-  package="$temporary/packages-microsoft-prod.deb"
-  curl -fsSL "https://packages.microsoft.com/config/$ID/$VERSION_ID/packages-microsoft-prod.deb" -o "$package"
-  dpkg -i "$package"
-  rm -f "$package"
-  rmdir "$temporary"
-}
-
 ensure_toolchain() {
   ensure_docker_source
-  ensure_dotnet_source
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
   if ! command -v docker >/dev/null 2>&1; then
@@ -149,14 +133,10 @@ ensure_toolchain() {
   fi
   if ! docker compose version >/dev/null 2>&1; then apt-get install -y docker-compose-plugin; fi
   if ! docker buildx version >/dev/null 2>&1; then apt-get install -y docker-buildx-plugin; fi
-  if ! dotnet --list-sdks 2>/dev/null | grep -q '^10\.'; then
-    apt-get install -y dotnet-sdk-10.0
-  fi
   systemctl enable --now docker
   docker version >/dev/null
   docker compose version >/dev/null
   git --version >/dev/null
-  dotnet --version >/dev/null
 }
 
 configure_registry_mirror() {
