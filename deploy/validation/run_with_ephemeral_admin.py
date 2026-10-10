@@ -64,6 +64,7 @@ def main() -> int:
     password = f"Wd!{secrets.token_urlsafe(24)}9aA"
     managed_username = f"whaledeck-api-validation-{secrets.token_hex(5)}"
     managed_password = f"Wd!{secrets.token_urlsafe(24)}9aA"
+    sso_slug = f"whaledeck-validation-{secrets.token_hex(5)}"
     user_id: str | None = None
     try:
         created = session.post(
@@ -92,6 +93,7 @@ def main() -> int:
         environment["VALIDATION_USER_ID"] = user_id
         environment["VALIDATION_MANAGED_USERNAME"] = managed_username
         environment["VALIDATION_MANAGED_PASSWORD"] = managed_password
+        environment["VALIDATION_SSO_SLUG"] = sso_slug
         completed = subprocess.run(
             [sys.executable, "-u", str(script), *sys.argv[2:]],
             env=environment,
@@ -99,6 +101,19 @@ def main() -> int:
         )
         return completed.returncode
     finally:
+        applications = session.get(
+            f"{AUTHENTIK_API}core/applications/",
+            params={"slug": sso_slug, "page_size": 20},
+            timeout=20,
+        )
+        if applications.ok:
+            for item in applications.json().get("results", []):
+                if item.get("slug") != sso_slug:
+                    continue
+                provider_id = item.get("provider")
+                session.delete(f"{AUTHENTIK_API}core/applications/{item['pk']}/", timeout=20)
+                if provider_id:
+                    session.delete(f"{AUTHENTIK_API}providers/oauth2/{provider_id}/", timeout=20)
         managed = session.get(
             f"{AUTHENTIK_API}core/users/",
             params={"username": managed_username, "page_size": 20},

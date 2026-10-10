@@ -85,11 +85,21 @@ public sealed class AuthentikIdentityDirectory(
                 var slug = Required(parameters, "slug", 1, 80);
                 var providerType = parameters.TryGetValue("providerType", out var type) ? type : "oauth2";
                 if (providerType != "oauth2") throw new InvalidOperationException("Only the approved OAuth2/OIDC provider type is currently supported.");
+                var authorizationFlow = parameters.TryGetValue("authorizationFlowId", out var authorizationFlowId) && !string.IsNullOrWhiteSpace(authorizationFlowId)
+                    ? authorizationFlowId
+                    : await ResolveFlowAsync(
+                        configuration["Authentication:Authentik:AuthorizationFlowSlug"] ?? "default-provider-authorization-explicit-consent",
+                        cancellationToken);
+                var invalidationFlow = parameters.TryGetValue("invalidationFlowId", out var invalidationFlowId) && !string.IsNullOrWhiteSpace(invalidationFlowId)
+                    ? invalidationFlowId
+                    : await ResolveFlowAsync(
+                        configuration["Authentication:Authentik:InvalidationFlowSlug"] ?? "default-provider-invalidation-flow",
+                        cancellationToken);
                 var providerPayload = new
                 {
                     name = Required(parameters, "name", 1, 150),
-                    authorization_flow = Required(parameters, "authorizationFlowId", 1, 100),
-                    invalidation_flow = Required(parameters, "invalidationFlowId", 1, 100),
+                    authorization_flow = authorizationFlow,
+                    invalidation_flow = invalidationFlow,
                     client_type = "confidential",
                     grant_types = new[] { "authorization_code", "refresh_token" },
                     redirect_uris = new[]
@@ -106,13 +116,25 @@ public sealed class AuthentikIdentityDirectory(
                 using var provider = await SendAsync(HttpMethod.Post, "providers/oauth2/", providerPayload, cancellationToken);
                 using var document = JsonDocument.Parse(await provider.Content.ReadAsStringAsync(cancellationToken));
                 var providerId = document.RootElement.GetProperty("pk").ToString();
-                await SendAndDisposeAsync(HttpMethod.Post, "core/applications/", new
+                try
                 {
-                    name = providerPayload.name,
-                    slug,
-                    provider = providerId,
-                    policy_engine_mode = "any"
-                }, cancellationToken);
+                    await SendAndDisposeAsync(HttpMethod.Post, "core/applications/", new
+                    {
+                        name = providerPayload.name,
+                        slug,
+                        provider = providerId,
+                        policy_engine_mode = "any"
+                    }, cancellationToken);
+                }
+                catch
+                {
+                    try
+                    {
+                        using var cleanup = await Client().DeleteAsync($"providers/oauth2/{Uri.EscapeDataString(providerId)}/", CancellationToken.None);
+                    }
+                    catch (HttpRequestException) { }
+                    throw;
+                }
                 return;
             }
             case "update-sso":
@@ -248,6 +270,19 @@ public sealed class AuthentikIdentityDirectory(
         using var response = await SendAsync(method, path, payload, cancellationToken);
     }
 
+    private async Task<string> ResolveFlowAsync(string slug, CancellationToken cancellationToken)
+    {
+        if (slug.Length is < 1 or > 100 || slug.Any(character => !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_')))
+            throw new InvalidOperationException("The configured Authentik flow slug is invalid.");
+        using var response = await Client().GetAsync($"flows/instances/?slug={Uri.EscapeDataString(slug)}&page_size=2", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        var results = document.RootElement.GetProperty("results");
+        if (results.GetArrayLength() != 1)
+            throw new InvalidOperationException($"The configured Authentik flow was not found: {slug}");
+        return results[0].GetProperty("pk").ToString();
+    }
+
     private static string ResourceId(string? value) => !string.IsNullOrWhiteSpace(value) && value.Length <= 100
         ? Uri.EscapeDataString(value) : throw new InvalidOperationException("The Authentik resource id is invalid.");
     private static string Required(IReadOnlyDictionary<string, string> values, string key, int minimum, int maximum) =>
@@ -259,7 +294,7 @@ public sealed class AuthentikIdentityDirectory(
     {
         var value = Required(values, "redirectUri", 1, 2048);
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttp ||
-            uri.Host is not ("192.168.22.19" or "192.168.100.13" or "127.0.0.1" or "localhost") ||
+            uri.Host is not ("192.168.22.19" or "192.168.100.13" or "127.0.0.1" or "localhost" or "precision-7920-tower.local") ||
             !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Fragment))
             throw new InvalidOperationException("The SSO redirect URI is not approved.");
         return uri.AbsoluteUri;

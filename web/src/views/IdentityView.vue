@@ -19,8 +19,6 @@ const form = reactive({
   email: '',
   password: '',
   slug: '',
-  authorizationFlowId: '',
-  invalidationFlowId: '',
   redirectUri: '',
   openInNewTab: false,
 })
@@ -41,8 +39,6 @@ function open(item?: ManagedResource) {
     email: '',
     password: '',
     slug: '',
-    authorizationFlowId: '',
-    invalidationFlowId: '',
     redirectUri: '',
     openInNewTab: false,
   })
@@ -69,8 +65,6 @@ async function submit() {
       Object.assign(parameters, {
         slug: form.slug.trim(),
         providerType: 'oauth2',
-        authorizationFlowId: form.authorizationFlowId.trim(),
-        invalidationFlowId: form.invalidationFlowId.trim(),
         redirectUri: form.redirectUri.trim(),
       })
   }
@@ -168,12 +162,11 @@ watch(() => route.fullPath, load)
         <template v-else
           ><el-form-item label="应用名称"><el-input v-model="form.name" /></el-form-item
           ><el-form-item v-if="!editing" label="Slug"><el-input v-model="form.slug" /></el-form-item
-          ><el-form-item v-if="!editing" label="授权 Flow ID"
-            ><el-input v-model="form.authorizationFlowId" /></el-form-item
-          ><el-form-item v-if="!editing" label="失效 Flow ID"
-            ><el-input v-model="form.invalidationFlowId" /></el-form-item
           ><el-form-item v-if="!editing" label="回调地址"
             ><el-input v-model="form.redirectUri" /></el-form-item
+          ><small v-if="!editing"
+            >授权与失效流程由 Whale Deck 从 Authentik 的批准默认流程自动解析。</small
+          >
           ><el-form-item label="在新窗口打开"
             ><el-switch v-model="form.openInNewTab" /></el-form-item
         ></template> </el-form

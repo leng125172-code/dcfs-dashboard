@@ -69,7 +69,40 @@ def main() -> int:
     if disabled is None or disabled.get("state") != "Disabled":
         raise RuntimeError("The Authentik user was not disabled through Whale Deck")
 
-    print("Authentik directory read, create, update, password and disable validation passed")
+    sso_slug = required_environment("VALIDATION_SSO_SLUG")
+    sso_name = f"Whale Deck validation {sso_slug[-8:]}"
+    api.run(
+        "create-sso",
+        "",
+        {
+            "slug": sso_slug,
+            "name": sso_name,
+            "providerType": "oauth2",
+            "redirectUri": "http://192.168.100.13:19999/oidc/callback",
+            "openInNewTab": "false",
+        },
+        area="identity",
+        timeout=120,
+    )
+    applications = session.get(f"{base_url}/api/v1/sso", timeout=30)
+    applications.raise_for_status()
+    created_sso = next((item for item in applications.json() if item.get("name") == sso_name), None)
+    if created_sso is None:
+        raise RuntimeError("The SSO application created through Whale Deck was not returned")
+    updated_sso_name = f"{sso_name} updated"
+    api.run(
+        "update-sso",
+        created_sso["id"],
+        {"name": updated_sso_name, "openInNewTab": "true"},
+        area="identity",
+        timeout=120,
+    )
+    applications = session.get(f"{base_url}/api/v1/sso", timeout=30)
+    applications.raise_for_status()
+    if not any(item.get("id") == created_sso["id"] and item.get("name") == updated_sso_name for item in applications.json()):
+        raise RuntimeError("The SSO application update was not visible through Whale Deck")
+
+    print("Authentik user and approved OIDC application lifecycle validation passed")
     return 0
 
 
