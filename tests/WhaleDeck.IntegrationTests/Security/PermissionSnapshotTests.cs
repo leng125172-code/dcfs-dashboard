@@ -74,6 +74,26 @@ public sealed class PermissionSnapshotTests
         Assert.Contains("include_groups=true", factory.LastRequestUri.Query, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task CreateUserSerializesAnonymousPayloadUsingItsRuntimeType()
+    {
+        var factory = new StubClientFactory(HttpStatusCode.Created, """{"pk":42}""");
+        var directory = new AuthentikIdentityDirectory(factory, NewCache(), Config("test-token"));
+
+        await directory.ExecuteAsync("create-user", null, new Dictionary<string, string>
+        {
+            ["username"] = "managed-user",
+            ["name"] = "Managed User",
+            ["email"] = "managed-user@example.invalid"
+        }, default);
+
+        Assert.NotNull(factory.LastRequestBody);
+        using var payload = JsonDocument.Parse(factory.LastRequestBody);
+        Assert.Equal("managed-user", payload.RootElement.GetProperty("username").GetString());
+        Assert.Equal("Managed User", payload.RootElement.GetProperty("name").GetString());
+        Assert.True(payload.RootElement.GetProperty("is_active").GetBoolean());
+    }
+
     private static MemoryDistributedCache NewCache() => new(Options.Create(new MemoryDistributedCacheOptions()));
 
     private static IConfigurationRoot Config(string? token = null) => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -86,19 +106,24 @@ public sealed class PermissionSnapshotTests
     private sealed class StubClientFactory(HttpStatusCode status, string payload = "{}") : IHttpClientFactory
     {
         public Uri? LastRequestUri { get; private set; }
+        public string? LastRequestBody { get; private set; }
 
-        public HttpClient CreateClient(string name) => new(new StubHandler(status, payload, uri => LastRequestUri = uri))
+        public HttpClient CreateClient(string name) => new(new StubHandler(status, payload, (uri, body) =>
+        {
+            LastRequestUri = uri;
+            LastRequestBody = body;
+        }))
         {
             BaseAddress = new Uri("http://authentik.invalid/api/v3/")
         };
     }
 
-    private sealed class StubHandler(HttpStatusCode status, string payload, Action<Uri?> captureRequestUri) : HttpMessageHandler
+    private sealed class StubHandler(HttpStatusCode status, string payload, Action<Uri?, string?> captureRequest) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            captureRequestUri(request.RequestUri);
-            return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(payload) });
+            captureRequest(request.RequestUri, request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken));
+            return new HttpResponseMessage(status) { Content = new StringContent(payload) };
         }
     }
 }

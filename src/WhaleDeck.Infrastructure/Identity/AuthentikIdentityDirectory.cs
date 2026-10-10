@@ -190,7 +190,10 @@ public sealed class AuthentikIdentityDirectory(
 
     private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, object payload, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(method, path) { Content = JsonContent.Create(payload) };
+        using var request = new HttpRequestMessage(method, path)
+        {
+            Content = JsonContent.Create(payload, payload.GetType())
+        };
         var response = await Client().SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
