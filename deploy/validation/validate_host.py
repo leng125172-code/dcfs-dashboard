@@ -6,6 +6,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import tarfile
 import time
 
@@ -50,20 +51,30 @@ def main() -> int:
     if not isinstance(logs.get("lines"), list) or not isinstance(logs.get("truncated"), bool):
         raise RuntimeError("The bounded container log query did not return the expected shape")
 
+    diagnostic_request = {
+        "resourceId": None,
+        "parameters": {},
+        "planHash": None,
+        "confirmed": False,
+        "idempotencyKey": "host-validation-" + os.urandom(8).hex(),
+    }
     submitted = request(
         api,
         "POST",
         "platform/diagnostic-bundle",
-        payload={
-            "resourceId": None,
-            "parameters": {},
-            "planHash": None,
-            "confirmed": False,
-            "idempotencyKey": "host-validation-" + os.urandom(8).hex(),
-        },
+        payload=diagnostic_request,
         expected=202,
     ).json()
     job_id = submitted["id"]
+    duplicate = request(
+        api,
+        "POST",
+        "platform/diagnostic-bundle",
+        payload=diagnostic_request,
+        expected=202,
+    ).json()
+    if duplicate.get("id") != job_id:
+        raise RuntimeError("The idempotency key created a duplicate job")
     deadline = time.monotonic() + 90
     job: dict[str, object] = submitted
     while time.monotonic() < deadline:
@@ -73,6 +84,24 @@ def main() -> int:
         time.sleep(2)
     if job.get("state") != "Succeeded":
         raise RuntimeError(f"Diagnostic bundle job ended in {job.get('state')} / {job.get('errorCode')}")
+
+    event_url = f"{base_url}/api/v1/jobs/{job_id}/events"
+    event_stream = session.get(event_url, headers={"Accept": "text/event-stream"}, timeout=20)
+    event_stream.raise_for_status()
+    if "text/event-stream" not in event_stream.headers.get("Content-Type", ""):
+        raise RuntimeError("The job event endpoint did not return an SSE stream")
+    event_ids = [int(value) for value in re.findall(r"^id:\s*(\d+)\s*$", event_stream.text, re.MULTILINE)]
+    if not event_ids:
+        raise RuntimeError("The job SSE stream did not contain progress events")
+    replay = session.get(
+        event_url,
+        headers={"Accept": "text/event-stream", "Last-Event-ID": str(max(event_ids))},
+        timeout=20,
+    )
+    replay.raise_for_status()
+    if re.search(r"^id:\s*\d+\s*$", replay.text, re.MULTILINE):
+        raise RuntimeError("Last-Event-ID replayed an already consumed job event")
+
     result = json.loads(str(job.get("resultJson") or "{}"))
     bundle_id = result.get("bundleId")
     if not isinstance(bundle_id, str) or len(bundle_id) != 32:
@@ -89,7 +118,8 @@ def main() -> int:
 
     print(
         f"Host validation passed: {len(interfaces)} interfaces, {len(storage)} storage records, "
-        f"{len(journal)} journal entries, container telemetry and a {len(download.content)} byte diagnostic bundle"
+        f"{len(journal)} journal entries, container telemetry, idempotent SSE jobs and a "
+        f"{len(download.content)} byte diagnostic bundle"
     )
     return 0
 

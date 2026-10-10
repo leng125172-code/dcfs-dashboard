@@ -10,6 +10,7 @@
 - Agent 使用 Unix peer credentials 校验调用进程，并验证短时签名能力声明。
 - `GetCapabilities` 返回 Agent 版本、协议版本和方法能力；未知主版本直接拒绝，次版本按能力协商。
 - 浏览器不得连接 Agent。宿主机稳定入口只读取 Agent 原子写入的脱敏维护快照。
+- 当前协议版本为 `1.3`。`1.3` 新增有界容器日志与单次容器统计能力，能力名分别为 `docker.logs` 和 `docker.stats`。
 
 ## 2. 通用消息
 
@@ -122,8 +123,8 @@ Agent 不提供“执行命令”“执行脚本”或任意 unit 名称接口�
 | --- | --- | --- | --- |
 | `RPC-DKR-001` | `DockerService.ListContainers` | Unary | 状态、健康、镜像、项目、网络和保护标记 |
 | `RPC-DKR-002` | `DockerService.InspectContainer` | Unary | 规范化详情，敏感环境变量值脱敏 |
-| `RPC-DKR-003` | `DockerService.StreamContainerLogs` | Server stream | 时间、尾部行数和大小有上限 |
-| `RPC-DKR-004` | `DockerService.StreamContainerStats` | Server stream | CPU、内存、网络和块 I/O，最多 6 秒一次 |
+| `RPC-DKR-003` | `DockerService.GetContainerLogs` | Unary | 时间、尾部行数和响应大小有上限 |
+| `RPC-DKR-004` | `DockerService.GetContainerStats` | Unary | 单次读取 CPU、内存、网络、块 I/O 和进程数 |
 | `RPC-DKR-005` | `DockerService.GetEngineInfo` | Unary | Engine/API 版本、存储和日志驱动 |
 | `RPC-DKR-006` | `DockerService.PlanCreateContainer` | Unary | 只读校验，返回计划哈希、冲突和资源摘要 |
 | `RPC-DKR-007` | `DockerService.CreateContainer` | Operation | 必须携带未过期计划哈希 |
