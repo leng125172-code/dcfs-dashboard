@@ -211,7 +211,18 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             {
                 JobType = "backups.run", ActorSubject = "system:backup-policy",
                 IdempotencyKey = $"backup-policy:{policy.Id:D}:{next.ToUnixTimeSeconds()}",
-                RequestJson = JsonSerializer.Serialize(new { resourceId = resource.ExternalId, parameters = new Dictionary<string, string>(), planHash = (string?)null })
+                RequestJson = JsonSerializer.Serialize(new
+                {
+                    resourceId = resource.ExternalId,
+                    parameters = new Dictionary<string, string>
+                    {
+                        ["retentionDays"] = policy.RetentionDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        ["retentionCount"] = policy.RetentionCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        ["capacityCriticalPercent"] = policy.CapacityCriticalPercent.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        ["verifyAfterBackup"] = policy.VerifyAfterBackup.ToString().ToLowerInvariant()
+                    },
+                    planHash = (string?)null
+                })
             };
             db.OperationJobs.Add(job);
             db.BackupRecords.Add(new BackupRecord
@@ -509,6 +520,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         CancellationToken cancellationToken)
     {
         var transition = AgentOperationStateMapper.Map(operation);
+        if (!string.IsNullOrWhiteSpace(operation.ResultJson)) job.ResultJson = operation.ResultJson;
         return Complete(db, job, transition.State, transition.Phase, transition.ErrorCode, cancellationToken, transition.ProgressPercent);
     }
 
@@ -539,7 +551,14 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             backup.Status = state;
             backup.CompletedAtUtc = DateTimeOffset.UtcNow;
             backup.ErrorCode = errorCode;
-            if (state == "Succeeded") backup.VerifiedAtUtc = DateTimeOffset.UtcNow;
+            if (state == "Succeeded" && TryReadBackupResult(job.ResultJson, out var backupResult))
+            {
+                backup.RelativePath = backupResult.RelativePath;
+                backup.SizeBytes = backupResult.SizeBytes;
+                backup.ChecksumAlgorithm = backupResult.ChecksumAlgorithm;
+                backup.Checksum = backupResult.Checksum;
+                backup.VerifiedAtUtc = backupResult.Verified ? DateTimeOffset.UtcNow : null;
+            }
         }
         var scheduleRun = await db.ScheduledTaskRuns.SingleOrDefaultAsync(item => item.JobId == job.Id, cancellationToken);
         if (scheduleRun is not null && state is "Succeeded" or "Failed" or "Canceled")
@@ -550,6 +569,41 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         }
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    private static bool TryReadBackupResult(string? json, out BackupResult result)
+    {
+        result = default;
+        if (string.IsNullOrWhiteSpace(json)) return false;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("primaryRelativePath", out var path) ||
+                !root.TryGetProperty("totalSizeBytes", out var size) ||
+                !root.TryGetProperty("checksumAlgorithm", out var algorithm) ||
+                !root.TryGetProperty("checksum", out var checksum)) return false;
+            result = new BackupResult(
+                path.GetString(),
+                size.GetInt64(),
+                algorithm.GetString(),
+                checksum.GetString(),
+                root.TryGetProperty("verified", out var verified) && verified.GetBoolean());
+            return !string.IsNullOrWhiteSpace(result.RelativePath) &&
+                   !string.IsNullOrWhiteSpace(result.ChecksumAlgorithm) &&
+                   !string.IsNullOrWhiteSpace(result.Checksum);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private readonly record struct BackupResult(
+        string? RelativePath,
+        long SizeBytes,
+        string? ChecksumAlgorithm,
+        string? Checksum,
+        bool Verified);
 
     private static async Task ApplyRetention(PlatformDbContext db, CancellationToken cancellationToken)
     {

@@ -192,7 +192,8 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
         }
 
         return new AgentOperationDto(response.OperationId, response.State.ToString(), response.Phase, response.ProgressPercent,
-            string.IsNullOrWhiteSpace(response.ErrorCode) ? null : response.ErrorCode);
+            string.IsNullOrWhiteSpace(response.ErrorCode) ? null : response.ErrorCode,
+            string.IsNullOrWhiteSpace(response.ResultJson) ? null : response.ResultJson);
     }
 
     public async Task<AgentOperationDto> GetOperationAsync(string operationId, CancellationToken cancellationToken)
@@ -250,5 +251,6 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
 
     private static AgentOperationDto Map(OperationHandle response) =>
         new(response.OperationId, response.State.ToString(), response.Phase, response.ProgressPercent,
-            string.IsNullOrWhiteSpace(response.ErrorCode) ? null : response.ErrorCode);
+            string.IsNullOrWhiteSpace(response.ErrorCode) ? null : response.ErrorCode,
+            string.IsNullOrWhiteSpace(response.ResultJson) ? null : response.ResultJson);
 }

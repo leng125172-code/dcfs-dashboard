@@ -74,6 +74,7 @@ public interface IGovernanceRepository
     Task<ScheduledTask> SaveScheduleAsync(string actorSubject, SaveScheduledTaskCommand command, CancellationToken cancellationToken);
     Task DeleteScheduleAsync(Guid id, long expectedVersion, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<BackupPolicy>> ListBackupPoliciesAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<BackupRecord>> ListBackupRecordsAsync(string? instanceResourceId, int take, CancellationToken cancellationToken);
     Task<string> ResolveResourceExternalIdAsync(Guid id, CancellationToken cancellationToken);
     Task<BackupPolicy> SaveBackupPolicyAsync(SaveBackupPolicyCommand command, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<AlertRule>> ListAlertRulesAsync(CancellationToken cancellationToken);

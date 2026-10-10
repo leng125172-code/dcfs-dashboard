@@ -36,6 +36,13 @@ public sealed class GovernanceController(GovernanceService governance) : Control
     public async Task<IActionResult> SaveBackupPolicy([FromBody] SaveBackupPolicyCommand command, CancellationToken cancellationToken) =>
         Ok(await governance.SaveBackupPolicyAsync(command, cancellationToken));
 
+    [HttpGet("backups/records")]
+    public async Task<IActionResult> BackupRecords(
+        [FromQuery] string? instanceResourceId,
+        [FromQuery] int take = 100,
+        CancellationToken cancellationToken = default) =>
+        Ok(await governance.ListBackupRecordsAsync(instanceResourceId, take, cancellationToken));
+
     [HttpGet("alerts/rules")]
     public async Task<IActionResult> AlertRules(CancellationToken cancellationToken) => Ok(await governance.ListAlertRulesAsync(cancellationToken));
 

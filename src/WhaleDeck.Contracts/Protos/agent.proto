@@ -37,6 +37,9 @@ message OperationHandle {
   string phase = 3;
   int32 progress_percent = 4;
   string error_code = 5;
+  // Structured, non-secret operation result. Sensitive values must continue
+  // to use the one-time secret store and never appear here.
+  string result_json = 6;
 }
 
 message OperationRequest {

@@ -17,31 +17,39 @@ public sealed partial class ManagedActionExecutor(
     private static readonly TimeSpan LongTimeout = TimeSpan.FromHours(2);
     private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
 
-    public Task ExecuteAsync(
+    public async Task<string?> ExecuteAsync(
         string category,
         RegisteredResource resource,
         string action,
         IReadOnlyDictionary<string, string> parameters,
-        CancellationToken cancellationToken) => category switch
+        CancellationToken cancellationToken)
+    {
+        if (category == "Database")
         {
-            "Database" => ExecuteDatabaseOrBackupAsync(resource, action, parameters, cancellationToken),
+            return await ExecuteDatabaseOrBackupAsync(resource, action, parameters, cancellationToken);
+        }
+        var task = category switch
+        {
             "Systemd" => ExecuteHostAsync(resource, action, cancellationToken),
             "Compose" => ExecuteApplicationAsync(action, parameters, cancellationToken),
             "ConfigRepository" => ExecuteRepositoryAsync(resource, action, parameters, cancellationToken),
             "PlatformMaintenance" => ExecutePlatformAsync(resource, action, parameters, cancellationToken),
             _ => throw new InvalidOperationException("The managed action category is unsupported.")
         };
+        await task;
+        return null;
+    }
 
-    private Task ExecuteDatabaseOrBackupAsync(
+    private async Task<string?> ExecuteDatabaseOrBackupAsync(
         RegisteredResource resource,
         string action,
         IReadOnlyDictionary<string, string> parameters,
         CancellationToken cancellationToken)
     {
         if (action is "run" or "verify" or "cancel" or "save-policy")
-            return ExecuteBackupAsync(resource, action, parameters, cancellationToken);
+            return await ExecuteBackupAsync(resource, action, parameters, cancellationToken);
 
-        return resource.Id switch
+        var task = resource.Id switch
         {
             "database-platform.postgres" => ExecutePostgresAsync(action, parameters, cancellationToken),
             "database-platform.mariadb" => ExecuteMariaDbAsync(action, parameters, cancellationToken),
@@ -51,6 +59,8 @@ public sealed partial class ManagedActionExecutor(
             "database-platform.valkey72" => ExecuteValkeyAsync("database-platform-valkey72", action, parameters, cancellationToken),
             _ => throw new InvalidOperationException("The registered resource is not a database instance.")
         };
+        await task;
+        return null;
     }
 
     private async Task ExecutePostgresAsync(string action, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
@@ -171,14 +181,14 @@ public sealed partial class ManagedActionExecutor(
         await RunDockerStdinAsync(["exec", "-i", container, "sh", "-ec", shell], resp, "DATABASE_VALKEY_FAILED", cancellationToken);
     }
 
-    private async Task ExecuteBackupAsync(
+    private async Task<string?> ExecuteBackupAsync(
         RegisteredResource resource,
         string action,
         IReadOnlyDictionary<string, string> parameters,
         CancellationToken cancellationToken)
     {
         if (action == "cancel") throw new InvalidOperationException("Cancel the active backup job instead of starting a second backup action.");
-        if (action == "save-policy") return;
+        if (action == "save-policy") return null;
         var engine = resource.Id switch
         {
             "database-platform.postgres" => "postgres",
@@ -192,17 +202,22 @@ public sealed partial class ManagedActionExecutor(
         var criticalPercent = BoundedInteger(parameters, "capacityCriticalPercent", 51, 99, 95);
         var retentionDays = BoundedInteger(parameters, "retentionDays", 1, 3650, 14);
         var retentionCount = BoundedInteger(parameters, "retentionCount", 1, 365, 14);
-        await processes.RunAsync(
+        var verifyAfterBackup = OptionalBoolean(parameters, "verifyAfterBackup", true);
+        var result = await processes.RunAsync(
             "/usr/bin/sudo",
             [PrivilegedHelper, "database-backup", engine, action,
                 criticalPercent.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 retentionDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                retentionCount.ToString(System.Globalization.CultureInfo.InvariantCulture)],
+                retentionCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                verifyAfterBackup.ToString().ToLowerInvariant()],
             null,
             LongTimeout,
             "BACKUP_OPERATION_FAILED",
             cancellationToken,
             DatabaseRepository);
+        var resultJson = result.StandardOutput.Trim();
+        using var _ = JsonDocument.Parse(resultJson);
+        return resultJson;
     }
 
     private async Task ExecuteHostAsync(RegisteredResource resource, string action, CancellationToken cancellationToken)
@@ -496,6 +511,9 @@ public sealed partial class ManagedActionExecutor(
         !parameters.TryGetValue(name, out var value) ? fallback :
         int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var parsed) && parsed >= minimum && parsed <= maximum
             ? parsed : throw new InvalidOperationException($"{name} is outside the approved range.");
+    private static bool OptionalBoolean(IReadOnlyDictionary<string, string> parameters, string name, bool fallback) =>
+        !parameters.TryGetValue(name, out var value) ? fallback :
+        bool.TryParse(value, out var parsed) ? parsed : throw new InvalidOperationException($"{name} must be true or false.");
     private static string PgIdentifier(string value) => $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
     private static string MySqlIdentifier(string value) => $"`{value.Replace("`", "``", StringComparison.Ordinal)}`";
     private static string SqlServerIdentifier(string value) => $"[{value.Replace("]", "]]", StringComparison.Ordinal)}]";

@@ -14,7 +14,7 @@ public sealed class OperationCoordinator(OperationStore store, ILogger<Operation
     public void Start(
         OperationHandle operation,
         string errorCode,
-        Func<CancellationToken, Task> action,
+        Func<CancellationToken, Task<string?>> action,
         string? maintenanceMessage = null)
     {
         var cancellation = new CancellationTokenSource();
@@ -34,7 +34,7 @@ public sealed class OperationCoordinator(OperationStore store, ILogger<Operation
                 operation.Phase = "Executing";
                 operation.ProgressPercent = 20;
                 store.Save(operation, maintenanceMessage);
-                await action(cancellation.Token);
+                operation.ResultJson = await action(cancellation.Token) ?? string.Empty;
                 cancellation.Token.ThrowIfCancellationRequested();
                 operation.State = OperationState.Succeeded;
                 operation.Phase = "Completed";

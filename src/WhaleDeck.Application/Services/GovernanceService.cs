@@ -40,6 +40,29 @@ public sealed class GovernanceService(IGovernanceRepository repository)
             item.Compression, item.VerifyAfterBackup, item.CapacityWarningPercent, item.CapacityCriticalPercent, item.Version)));
     }
 
+    public async Task<IReadOnlyCollection<BackupRecordDto>> ListBackupRecordsAsync(
+        string? instanceResourceId,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var records = await repository.ListBackupRecordsAsync(instanceResourceId, Math.Clamp(take, 1, 200), cancellationToken);
+        return await Task.WhenAll(records.Select(async item => new BackupRecordDto(
+            item.Id,
+            await repository.ResolveResourceExternalIdAsync(item.InstanceResourceId, cancellationToken),
+            item.PolicyId,
+            item.JobId,
+            item.Status,
+            item.RelativePath,
+            item.SizeBytes,
+            item.ChecksumAlgorithm,
+            item.Checksum,
+            item.StartedAtUtc,
+            item.CompletedAtUtc,
+            item.VerifiedAtUtc,
+            item.ExpiresAtUtc,
+            item.ErrorCode)));
+    }
+
     public async Task<BackupPolicyDto> SaveBackupPolicyAsync(SaveBackupPolicyCommand command, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(command.InstanceResourceId) || command.InstanceResourceId.Length > 160)

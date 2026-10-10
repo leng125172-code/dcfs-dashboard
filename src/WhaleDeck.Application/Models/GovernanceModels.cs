@@ -15,6 +15,22 @@ public sealed record SaveBackupPolicyCommand(Guid? Id, string InstanceResourceId
     string Timezone, int RetentionCount, int RetentionDays, string TargetDirectoryId, string Compression,
     bool VerifyAfterBackup, int CapacityWarningPercent, int CapacityCriticalPercent, long? ExpectedVersion);
 
+public sealed record BackupRecordDto(
+    Guid Id,
+    string InstanceResourceId,
+    Guid? PolicyId,
+    Guid JobId,
+    string Status,
+    string? RelativePath,
+    long? SizeBytes,
+    string? ChecksumAlgorithm,
+    string? Checksum,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? CompletedAtUtc,
+    DateTimeOffset? VerifiedAtUtc,
+    DateTimeOffset? ExpiresAtUtc,
+    string? ErrorCode);
+
 public sealed record AlertRuleDto(Guid Id, string RuleType, string ResourceSelectorJson, string ThresholdJson,
     int EvaluationWindowSeconds, string Severity, bool IsEnabled, long Version);
 

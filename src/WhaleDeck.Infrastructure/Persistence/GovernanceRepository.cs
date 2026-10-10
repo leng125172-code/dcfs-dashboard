@@ -62,6 +62,24 @@ public sealed class GovernanceRepository(PlatformDbContext db) : IGovernanceRepo
     public async Task<IReadOnlyCollection<BackupPolicy>> ListBackupPoliciesAsync(CancellationToken cancellationToken) =>
         await db.BackupPolicies.AsNoTracking().OrderBy(item => item.InstanceResourceId).ToArrayAsync(cancellationToken);
 
+    public async Task<IReadOnlyCollection<BackupRecord>> ListBackupRecordsAsync(
+        string? instanceResourceId,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var query = db.BackupRecords.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(instanceResourceId))
+        {
+            var resourceId = await db.ManagedResources
+                .Where(item => item.ResourceType == "Database" && item.ExternalId == instanceResourceId)
+                .Select(item => (Guid?)item.Id)
+                .SingleOrDefaultAsync(cancellationToken)
+                ?? throw new KeyNotFoundException("Managed database resource was not found.");
+            query = query.Where(item => item.InstanceResourceId == resourceId);
+        }
+        return await query.OrderByDescending(item => item.StartedAtUtc).Take(Math.Clamp(take, 1, 200)).ToArrayAsync(cancellationToken);
+    }
+
     public async Task<string> ResolveResourceExternalIdAsync(Guid id, CancellationToken cancellationToken) =>
         await db.ManagedResources.Where(item => item.Id == id).Select(item => item.ExternalId).SingleOrDefaultAsync(cancellationToken)
             ?? throw new KeyNotFoundException("Managed database resource was not found.");

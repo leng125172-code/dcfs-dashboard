@@ -45,6 +45,7 @@ public sealed class GovernanceServiceTests
         public Task<ScheduledTask> SaveScheduleAsync(string actorSubject, SaveScheduledTaskCommand command, CancellationToken cancellationToken) => throw new InvalidOperationException();
         public Task DeleteScheduleAsync(Guid id, long expectedVersion, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task<IReadOnlyCollection<BackupPolicy>> ListBackupPoliciesAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<BackupPolicy>>([]);
+        public Task<IReadOnlyCollection<BackupRecord>> ListBackupRecordsAsync(string? instanceResourceId, int take, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<BackupRecord>>([]);
         public Task<string> ResolveResourceExternalIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult("database-platform.postgres");
         public Task<BackupPolicy> SaveBackupPolicyAsync(SaveBackupPolicyCommand command, CancellationToken cancellationToken) => throw new InvalidOperationException();
         public Task<IReadOnlyCollection<AlertRule>> ListAlertRulesAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<AlertRule>>([]);

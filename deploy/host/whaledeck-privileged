@@ -62,17 +62,19 @@ case "$action" in
     exec /usr/bin/systemd-run --unit=whaledeck-agent-restart --collect --on-active=3s /usr/bin/systemctl restart "$unit"
     ;;
   database-backup)
-    [[ $# -eq 6 ]] || exit 2
+    [[ $# -eq 7 ]] || exit 2
     engine=$2
     verb=$3
     critical_percent=$4
     retention_days=$5
     retention_count=$6
+    verify_after_backup=$7
     [[ "$engine" =~ ^(postgres|mariaDb|mongoDb|sqlServer|valkey|valkey72)$ ]] || exit 2
     [[ "$verb" =~ ^(run|verify)$ ]] || exit 2
     [[ "$critical_percent" =~ ^[0-9]+$ && "$critical_percent" -ge 51 && "$critical_percent" -le 99 ]] || exit 2
     [[ "$retention_days" =~ ^[0-9]+$ && "$retention_days" -ge 1 && "$retention_days" -le 3650 ]] || exit 2
     [[ "$retention_count" =~ ^[0-9]+$ && "$retention_count" -ge 1 && "$retention_count" -le 365 ]] || exit 2
+    [[ "$verify_after_backup" == true || "$verify_after_backup" == false ]] || exit 2
     if [[ "$verb" == run ]]; then
       used_percent=$(/usr/bin/df --output=pcent /data/DockerData | /usr/bin/tail -n 1 | /usr/bin/tr -dc '0-9')
       [[ -n "$used_percent" && "$used_percent" -lt "$critical_percent" ]] || {
@@ -80,9 +82,16 @@ case "$action" in
         exit 75
       }
       export BACKUP_RETENTION_DAYS="$retention_days" BACKUP_RETENTION_COUNT="$retention_count"
-      exec "/data/GitRepos/database-platform/$engine/scripts/backup.sh"
+      "/data/GitRepos/database-platform/$engine/scripts/backup.sh" >&2
+      if [[ "$verify_after_backup" == true ]]; then
+        "/data/GitRepos/database-platform/$engine/scripts/verify-backup.sh" >&2
+      fi
+    else
+      verify_after_backup=true
+      "/data/GitRepos/database-platform/$engine/scripts/verify-backup.sh" >&2
     fi
-    exec "/data/GitRepos/database-platform/$engine/scripts/verify-backup.sh"
+    export BACKUP_VERIFIED="$verify_after_backup"
+    exec /data/GitRepos/database-platform/scripts/backup-metadata.sh "$engine"
     ;;
   platform-update-schedule)
     [[ $# -eq 1 ]] || exit 2

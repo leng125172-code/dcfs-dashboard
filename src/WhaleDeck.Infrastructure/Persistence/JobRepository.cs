@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using System.Text.Json;
 using WhaleDeck.Application.Abstractions;
 using WhaleDeck.Domain.Entities;
 
@@ -24,6 +25,27 @@ public sealed class JobRepository(PlatformDbContext dbContext) : IJobRepository
         });
         dbContext.OutboxMessages.Add(outbox);
         dbContext.AuditEvents.Add(audit);
+        if (job.JobType == "backups.run")
+        {
+            using var request = JsonDocument.Parse(job.RequestJson);
+            var resourceExternalId = request.RootElement.GetProperty("resourceId").GetString();
+            var resource = await dbContext.ManagedResources
+                .SingleOrDefaultAsync(item => item.ResourceType == "Database" && item.ExternalId == resourceExternalId, cancellationToken)
+                ?? throw new KeyNotFoundException("Managed database resource was not found.");
+            var retentionDays = 14;
+            if (request.RootElement.TryGetProperty("parameters", out var parameters) &&
+                parameters.TryGetProperty("retentionDays", out var configured) &&
+                int.TryParse(configured.GetString(), out var parsedRetentionDays))
+            {
+                retentionDays = Math.Clamp(parsedRetentionDays, 1, 3650);
+            }
+            dbContext.BackupRecords.Add(new BackupRecord
+            {
+                InstanceResourceId = resource.Id,
+                JobId = job.Id,
+                ExpiresAtUtc = DateTimeOffset.UtcNow.AddDays(retentionDays)
+            });
+        }
         // SaveChanges commits the job, event, outbox and audit atomically and is
         // compatible with the configured Npgsql retrying execution strategy.
         try
