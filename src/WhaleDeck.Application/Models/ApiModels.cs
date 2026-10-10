@@ -116,6 +116,9 @@ public sealed record PlanDto(
 
 public sealed record MetricValueDto(string Kind, string DeviceId, double Value, string Unit, string Quality, DateTimeOffset SampledAtUtc);
 
+public sealed record MetricPointDto(DateTimeOffset SampledAtUtc, double? Value, string Quality);
+public sealed record MetricSeriesSnapshotDto(string Kind, string DeviceId, string Unit, IReadOnlyCollection<MetricPointDto> Points);
+
 public sealed record AgentOperationDto(string OperationId, string State, string Phase, int ProgressPercent, string? ErrorCode);
 
 public sealed record OneTimeSecretTicketDto(string Token, DateTimeOffset ExpiresAtUtc);

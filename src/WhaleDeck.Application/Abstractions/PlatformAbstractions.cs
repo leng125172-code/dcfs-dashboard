@@ -56,6 +56,11 @@ public interface IManagementQuery
     Task<IReadOnlyCollection<ManagedResourceDto>> ListAsync(string area, CancellationToken cancellationToken);
 }
 
+public interface IMetricsQuery
+{
+    Task<IReadOnlyCollection<MetricSeriesSnapshotDto>> GetHistoryAsync(IReadOnlyCollection<string> kinds, int take, CancellationToken cancellationToken);
+}
+
 public interface IGovernanceRepository
 {
     Task<IReadOnlyCollection<ScheduledTask>> ListSchedulesAsync(CancellationToken cancellationToken);

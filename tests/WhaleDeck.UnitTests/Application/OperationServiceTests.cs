@@ -45,6 +45,28 @@ public sealed class OperationServiceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command, default));
     }
 
+    [Fact]
+    public async Task ContainerCreateRequiresPlan()
+    {
+        var service = new OperationService(new RecordingJobRepository());
+        var command = new OperationCommand("containers", "create", "new", "key-1",
+            "{\"parameters\":{\"image\":\"alpine:3.22\"}}", null, false);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueAsync("subject", "trace", command, default));
+    }
+
+    [Theory]
+    [InlineData("password")]
+    [InlineData("apiToken")]
+    [InlineData("clientSecret")]
+    [InlineData("credentialFile")]
+    public async Task JobParametersRejectSensitiveValues(string key)
+    {
+        var service = new OperationService(new RecordingJobRepository());
+        var request = $"{{\"parameters\":{{\"{key}\":\"must-not-persist\"}}}}";
+        var command = new OperationCommand("containers", "start", "container-1", "key-1", request, null, false);
+        await Assert.ThrowsAsync<ArgumentException>(() => service.EnqueueAsync("subject", "trace", command, default));
+    }
+
     private sealed class RecordingJobRepository : IJobRepository
     {
         public OperationJob? Job { get; private set; }

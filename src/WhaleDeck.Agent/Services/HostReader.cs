@@ -14,6 +14,12 @@ public sealed record HostSnapshot(
 
 public sealed class HostReader
 {
+    private readonly object _sync = new();
+    private CpuCounters? _previousCpu;
+    private DateTimeOffset _previousIoAtUtc;
+    private Dictionary<string, (ulong Received, ulong Sent)> _previousNetwork = new(StringComparer.Ordinal);
+    private Dictionary<string, (ulong Read, ulong Written)> _previousDisk = new(StringComparer.Ordinal);
+
     public HostSnapshot Read()
     {
         var uptime = ReadUptime();
@@ -32,7 +38,42 @@ public sealed class HostReader
     {
         var memory = ReadMemoryInfo();
         var used = memory.Total == 0 ? 0 : (memory.Total - memory.Available) * 100d / memory.Total;
-        return (ReadLoadAverage(), used);
+        return (ReadCpuPercent(), used);
+    }
+
+    public IReadOnlyCollection<HostMetric> ReadDeviceMetrics()
+    {
+        lock (_sync)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var elapsed = _previousIoAtUtc == default ? 0 : Math.Max((now - _previousIoAtUtc).TotalSeconds, 0.001);
+            var result = new List<HostMetric>();
+            var network = ReadNetworkCounters();
+            foreach (var (device, value) in network)
+            {
+                var previous = _previousNetwork.GetValueOrDefault(device);
+                result.Add(new("network.receive", device, Rate(value.Received, previous.Received, elapsed), "bytesPerSecond"));
+                result.Add(new("network.send", device, Rate(value.Sent, previous.Sent, elapsed), "bytesPerSecond"));
+                result.Add(new("network.receive.total", device, value.Received, "bytes"));
+                result.Add(new("network.send.total", device, value.Sent, "bytes"));
+            }
+            var disks = ReadDiskCounters();
+            foreach (var (device, value) in disks)
+            {
+                var previous = _previousDisk.GetValueOrDefault(device);
+                result.Add(new("disk.read", device, Rate(value.Read, previous.Read, elapsed), "bytesPerSecond"));
+                result.Add(new("disk.write", device, Rate(value.Written, previous.Written, elapsed), "bytesPerSecond"));
+            }
+            foreach (var drive in DriveInfo.GetDrives().Where(item => item.IsReady && item.TotalSize > 0))
+            {
+                var used = (drive.TotalSize - drive.AvailableFreeSpace) * 100d / drive.TotalSize;
+                result.Add(new("disk.utilization", drive.Name, used, "percent"));
+            }
+            _previousIoAtUtc = now;
+            _previousNetwork = network;
+            _previousDisk = disks;
+            return result;
+        }
     }
 
     private static long ReadUptime()
@@ -83,15 +124,61 @@ public sealed class HostReader
         return (total, available);
     }
 
-    private static double ReadLoadAverage()
+    private double ReadCpuPercent()
     {
-        if (!OperatingSystem.IsLinux() || !File.Exists("/proc/loadavg"))
+        if (!OperatingSystem.IsLinux() || !File.Exists("/proc/stat"))
         {
             return 0;
         }
-        var value = File.ReadAllText("/proc/loadavg").Split(' ', 2)[0];
-        return double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var load)
-            ? Math.Min(load / Math.Max(Environment.ProcessorCount, 1) * 100, 100)
-            : 0;
+        var parts = File.ReadLines("/proc/stat").First().Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1)
+            .Select(value => ulong.TryParse(value, out var parsed) ? parsed : 0).ToArray();
+        if (parts.Length < 5) return 0;
+        var current = new CpuCounters(parts.Aggregate(0UL, (sum, value) => sum + value), parts[3] + (parts.Length > 4 ? parts[4] : 0));
+        lock (_sync)
+        {
+            var previous = _previousCpu;
+            _previousCpu = current;
+            if (previous is null || current.Total <= previous.Total) return 0;
+            var total = current.Total - previous.Total;
+            var idle = current.Idle >= previous.Idle ? current.Idle - previous.Idle : 0;
+            return Math.Clamp((total - Math.Min(idle, total)) * 100d / total, 0, 100);
+        }
     }
+
+    private static Dictionary<string, (ulong Received, ulong Sent)> ReadNetworkCounters()
+    {
+        if (!OperatingSystem.IsLinux() || !File.Exists("/proc/net/dev")) return [];
+        var result = new Dictionary<string, (ulong, ulong)>(StringComparer.Ordinal);
+        foreach (var line in File.ReadLines("/proc/net/dev").Skip(2))
+        {
+            var halves = line.Split(':', 2);
+            if (halves.Length != 2) continue;
+            var values = halves[1].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (values.Length < 16 || !ulong.TryParse(values[0], out var received) || !ulong.TryParse(values[8], out var sent)) continue;
+            result[halves[0].Trim()] = (received, sent);
+        }
+        return result;
+    }
+
+    private static Dictionary<string, (ulong Read, ulong Written)> ReadDiskCounters()
+    {
+        if (!OperatingSystem.IsLinux() || !File.Exists("/proc/diskstats")) return [];
+        var result = new Dictionary<string, (ulong, ulong)>(StringComparer.Ordinal);
+        foreach (var line in File.ReadLines("/proc/diskstats"))
+        {
+            var values = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (values.Length < 14 || !ulong.TryParse(values[5], out var readSectors) || !ulong.TryParse(values[9], out var writtenSectors)) continue;
+            var name = values[2];
+            if (name.StartsWith("loop", StringComparison.Ordinal) || name.StartsWith("ram", StringComparison.Ordinal)) continue;
+            result[name] = (readSectors * 512, writtenSectors * 512);
+        }
+        return result;
+    }
+
+    private static double Rate(ulong current, ulong previous, double elapsed) =>
+        elapsed <= 0 || current < previous ? 0 : (current - previous) / elapsed;
+
+    private sealed record CpuCounters(ulong Total, ulong Idle);
 }
+
+public sealed record HostMetric(string Kind, string DeviceId, double Value, string Unit);

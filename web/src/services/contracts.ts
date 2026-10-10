@@ -58,6 +58,13 @@ export interface MetricValue {
   sampledAtUtc: string
 }
 
+export interface MetricSeriesSnapshot {
+  kind: string
+  deviceId: string
+  unit: string
+  points: Array<{ sampledAtUtc: string; value: number | null; quality: string }>
+}
+
 export interface CatalogApplication {
   id: string
   name: string

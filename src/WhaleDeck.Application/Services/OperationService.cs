@@ -1,6 +1,7 @@
 using WhaleDeck.Application.Abstractions;
 using WhaleDeck.Application.Models;
 using WhaleDeck.Domain.Entities;
+using System.Text.Json;
 
 namespace WhaleDeck.Application.Services;
 
@@ -42,6 +43,7 @@ public sealed class OperationService(IJobRepository jobs)
         {
             throw new ArgumentException("A valid idempotency key is required.");
         }
+        RejectSensitiveParameters(command.RequestJson);
 
         var job = new OperationJob
         {
@@ -86,8 +88,24 @@ public sealed class OperationService(IJobRepository jobs)
         "update" or "reinstall" or "reboot" or "update-install" or "commit-push" or "apply-update" or "rollback";
 
     private static bool RequiresPlan(OperationCommand command) => command.Action is
-        "delete" or "prune" or "apply-settings" or "install" or "update" or "reinstall" or "uninstall" or
+        "create" or "delete" or "prune" or "apply-settings" or "install" or "update" or "reinstall" or "uninstall" or
         "update-install" or "reboot" or "commit-push" or "apply-update" or "rollback";
 
     private static JobDto Map(OperationJob job) => new(job.Id, job.JobType, job.State, job.Phase, job.ProgressPercent, job.ErrorCode, job.CreatedAtUtc, job.CompletedAtUtc);
+
+    private static void RejectSensitiveParameters(string requestJson)
+    {
+        using var document = JsonDocument.Parse(requestJson);
+        if (!document.RootElement.TryGetProperty("parameters", out var parameters) || parameters.ValueKind != JsonValueKind.Object) return;
+        foreach (var property in parameters.EnumerateObject())
+        {
+            if (property.Name.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+                property.Name.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+                property.Name.Contains("token", StringComparison.OrdinalIgnoreCase) ||
+                property.Name.Contains("credential", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Sensitive values must use the one-time secret workflow and cannot be queued in job parameters.");
+            }
+        }
+    }
 }

@@ -32,6 +32,11 @@ public sealed class HostGrpcService(HostReader host, OperationStore operations) 
             var timestamp = Timestamp.FromDateTimeOffset(DateTimeOffset.UtcNow);
             await responseStream.WriteAsync(new MetricPoint { MetricKind = "cpu.utilization", DeviceId = "host", Value = usage.CpuPercent, Unit = "percent", Quality = "Good", SampledAtUtc = timestamp });
             await responseStream.WriteAsync(new MetricPoint { MetricKind = "memory.utilization", DeviceId = "host", Value = usage.MemoryPercent, Unit = "percent", Quality = "Good", SampledAtUtc = timestamp });
+            foreach (var metric in host.ReadDeviceMetrics())
+            {
+                await responseStream.WriteAsync(new MetricPoint { MetricKind = metric.Kind, DeviceId = metric.DeviceId, Value = metric.Value, Unit = metric.Unit, Quality = "Good", SampledAtUtc = timestamp });
+            }
+            await responseStream.WriteAsync(new MetricPoint { MetricKind = "batch.complete", DeviceId = "host", Unit = "none", Quality = "Good", SampledAtUtc = timestamp });
             await Task.Delay(interval, context.CancellationToken);
         }
     }

@@ -123,6 +123,11 @@ public sealed class DockerGrpcService(DockerEngine docker, ResourceRegistry regi
     public override Task<PlanResponse> PlanAction(RegisteredActionRequest request, ServerCallContext context) =>
         Task.FromResult(docker.Plan(request.Resource?.ResourceId ?? string.Empty, request.Action, request.Parameters));
 
+    public override Task<OperationHandle> RunAction(RegisteredActionRequest request, ServerCallContext context) =>
+        docker.RunActionAsync(request.Resource?.ResourceId ?? string.Empty, request.Action, request.Parameters,
+            request.PlanHash, request.Context?.JobId ?? string.Empty, request.Context?.IdempotencyKey ?? string.Empty,
+            context.CancellationToken);
+
     private static bool IsSensitiveLabel(string key) =>
         key.Contains("password", StringComparison.OrdinalIgnoreCase) ||
         key.Contains("token", StringComparison.OrdinalIgnoreCase) ||

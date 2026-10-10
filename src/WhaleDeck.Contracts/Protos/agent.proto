@@ -195,6 +195,7 @@ service DockerService {
   rpc ListNetworks(google.protobuf.Empty) returns (ResourceCollectionResponse);
   rpc ListVolumes(google.protobuf.Empty) returns (ResourceCollectionResponse);
   rpc PlanAction(RegisteredActionRequest) returns (PlanResponse);
+  rpc RunAction(RegisteredActionRequest) returns (OperationHandle);
 }
 
 service ManagedResourceService {

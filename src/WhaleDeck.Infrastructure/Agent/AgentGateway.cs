@@ -111,10 +111,11 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
     {
         using var call = _host.StreamMetrics(new MetricsRequest { IntervalSeconds = 6 },
             Headers("/whaledeck.agent.v1.HostService/StreamMetrics"), cancellationToken: cancellationToken);
-        var values = new List<MetricValueDto>(2);
-        while (values.Count < 2 && await call.ResponseStream.MoveNext(cancellationToken))
+        var values = new List<MetricValueDto>();
+        while (await call.ResponseStream.MoveNext(cancellationToken))
         {
             var item = call.ResponseStream.Current;
+            if (item.MetricKind == "batch.complete") break;
             values.Add(new MetricValueDto(item.MetricKind, item.DeviceId, item.Value, item.Unit, item.Quality, item.SampledAtUtc.ToDateTimeOffset()));
         }
         return values;
@@ -148,6 +149,7 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
             request.Parameters.Add(parameters.ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal));
             response = area.ToLowerInvariant() switch
             {
+                "containers" => await _docker.RunActionAsync(request, Headers("/whaledeck.agent.v1.DockerService/RunAction"), cancellationToken: cancellationToken),
                 "databases" or "backups" => await _resources.RunDatabaseActionAsync(request, Headers("/whaledeck.agent.v1.ManagedResourceService/RunDatabaseAction"), cancellationToken: cancellationToken),
                 "host" => await _resources.RunSystemdActionAsync(request, Headers("/whaledeck.agent.v1.ManagedResourceService/RunSystemdAction"), cancellationToken: cancellationToken),
                 "applications" => await _resources.RunComposeActionAsync(request, Headers("/whaledeck.agent.v1.ManagedResourceService/RunComposeAction"), cancellationToken: cancellationToken),
