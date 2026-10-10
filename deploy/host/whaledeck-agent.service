@@ -24,7 +24,10 @@ PrivateTmp=true
 PrivateDevices=false
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=/run/whaledeck /var/lib/whaledeck-agent /data/WhaleDeck/apps /data/DockerData
+# Docker settings are still protected by Unix ownership, sudoers and the
+# fixed-action helper. This mount exception only lets that root helper stage,
+# apply and roll back daemon.json from inside the service sandbox.
+ReadWritePaths=/run/whaledeck /var/lib/whaledeck-agent /data/WhaleDeck/apps /data/DockerData /etc/docker
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
