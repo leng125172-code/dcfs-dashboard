@@ -1,0 +1,80 @@
+<script setup lang="ts">
+import { onMounted, reactive, ref } from 'vue'
+import { Box, Plus, RefreshRight, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { apiRequest } from '@/services/apiClient'
+import { enqueueOperation, planOperation } from '@/services/operations'
+
+interface Container {
+  id: string; name: string; image: string; state: string; status: string
+  isProtected: boolean; protectionLevel: string; labels: Record<string, string>
+}
+
+const items = ref<Container[]>([])
+const loading = ref(false)
+const createVisible = ref(false)
+const submitting = ref(false)
+const form = reactive({ name: '', image: '', cpus: 1, memoryMb: 512, autoUpdate: false })
+
+async function load() {
+  loading.value = true
+  try { items.value = await apiRequest<Container[]>('containers?includeStopped=true') } finally { loading.value = false }
+}
+
+async function lifecycle(item: Container, action: 'start' | 'stop' | 'restart') {
+  if (item.isProtected) { ElMessage.warning('受保护容器只能通过平台维护流程操作'); return }
+  const label = action === 'start' ? '启动' : action === 'stop' ? '停止' : '重启'
+  await ElMessageBox.confirm(`${label}容器“${item.name}”？`, `${label}确认`, { type: 'warning', confirmButtonText: label, cancelButtonText: '取消' })
+  const job = await enqueueOperation('containers', action, item.id, { timeoutSeconds: '10' }, action !== 'start')
+  ElMessage.success(`任务已提交：${job.id}`)
+  await load()
+}
+
+async function createContainer() {
+  submitting.value = true
+  try {
+    const parameters = { name: form.name.trim(), image: form.image.trim(), cpus: String(form.cpus), memoryMb: String(form.memoryMb), autoUpdate: String(form.autoUpdate) }
+    const plan = await planOperation('containers', 'create', 'new', parameters)
+    const details = [...plan.changes, ...plan.warnings].join('\n') || '将拉取镜像、创建并启动受 Whale Deck 管理的容器。'
+    await ElMessageBox.confirm(details, '确认创建容器', { type: 'warning', confirmButtonText: '创建', cancelButtonText: '取消' })
+    const job = await enqueueOperation('containers', 'create', 'new', parameters, true, plan.planHash)
+    createVisible.value = false
+    ElMessage.success(`创建任务已提交：${job.id}`)
+  } finally { submitting.value = false }
+}
+
+onMounted(load)
+</script>
+
+<template>
+  <div class="containers-page">
+    <header class="page-heading"><div><span class="panel__eyebrow">DOCKER</span><h1>容器</h1><p>受保护的基础容器不会出现在普通生命周期操作中。</p></div><div class="page-heading__actions"><el-button :loading="loading" @click="load"><el-icon><RefreshRight /></el-icon>刷新</el-button><el-button type="primary" @click="createVisible = true"><el-icon><Plus /></el-icon>创建容器</el-button></div></header>
+    <section class="container-grid" v-loading="loading">
+      <article v-for="item in items" :key="item.id" class="panel container-card">
+        <span class="container-card__icon"><el-icon><Box /></el-icon></span>
+        <div><strong>{{ item.name }}</strong><small>{{ item.image }}</small><span>{{ item.status }}</span></div>
+        <el-tag :type="item.state === 'running' ? 'success' : 'info'" effect="light">{{ item.state }}</el-tag>
+        <el-tag v-if="item.isProtected" type="warning" effect="plain">{{ item.protectionLevel }}</el-tag>
+        <div class="container-card__actions">
+          <el-button v-if="item.state !== 'running'" link type="primary" :disabled="item.isProtected" @click="lifecycle(item, 'start')"><el-icon><VideoPlay /></el-icon>启动</el-button>
+          <template v-else><el-button link type="danger" :disabled="item.isProtected" @click="lifecycle(item, 'stop')"><el-icon><VideoPause /></el-icon>停止</el-button><el-button link type="primary" :disabled="item.isProtected" @click="lifecycle(item, 'restart')"><el-icon><RefreshRight /></el-icon>重启</el-button></template>
+        </div>
+      </article>
+    </section>
+    <el-dialog v-model="createVisible" title="创建受管容器" width="min(560px, calc(100vw - 32px))">
+      <el-alert title="仅支持无宿主端口、无宿主目录挂载的安全基础配置；复杂应用请使用应用模板。" type="info" :closable="false" show-icon />
+      <el-form label-position="top" class="container-form">
+        <el-form-item label="容器名称"><el-input v-model="form.name" placeholder="my-application" /></el-form-item>
+        <el-form-item label="OCI 镜像"><el-input v-model="form.image" placeholder="nginx:1.29-alpine" /></el-form-item>
+        <div class="container-form__resources"><el-form-item label="CPU"><el-input-number v-model="form.cpus" :min="0.1" :max="32" :step="0.5" /></el-form-item><el-form-item label="内存 (MiB)"><el-input-number v-model="form.memoryMb" :min="32" :max="32768" :step="128" /></el-form-item></div>
+        <el-form-item label="自动更新"><el-switch v-model="form.autoUpdate" /><span class="form-hint">只有启用此标签的普通应用才进入自动更新。</span></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" :loading="submitting" :disabled="!form.name || !form.image" @click="createContainer">预检并创建</el-button></template>
+    </el-dialog>
+  </div>
+</template>
+
+<style scoped>
+.containers-page { display: grid; gap: 18px; }.container-grid { display: grid; gap: 10px; min-height: 240px; }.container-card { display: grid; grid-template-columns: auto minmax(0,1fr) auto auto auto; align-items: center; gap: 14px; padding: 14px 16px; }.container-card__icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 10px; color: var(--el-color-primary); background: var(--el-color-primary-light-9); }.container-card > div:nth-child(2) { display: grid; min-width: 0; }.container-card small { overflow: hidden; color: var(--el-text-color-secondary); text-overflow: ellipsis; white-space: nowrap; }.container-card span { color: var(--el-text-color-secondary); font-size: 12px; }.container-card__actions { display: flex; }.container-form { margin-top: 18px; }.container-form__resources { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }.form-hint { margin-left: 10px; color: var(--el-text-color-secondary); font-size: 12px; }
+@media (max-width: 760px) { .container-card { grid-template-columns: auto minmax(0,1fr) auto; }.container-card > .el-tag:nth-of-type(2) { display: none; }.container-card__actions { grid-column: 2 / -1; }.container-form__resources { grid-template-columns: 1fr; } }
+</style>

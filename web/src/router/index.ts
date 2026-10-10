@@ -8,6 +8,7 @@ import ResourceListView from '@/views/ResourceListView.vue'
 import JobsView from '@/views/JobsView.vue'
 import StateView from '@/views/StateView.vue'
 import RecordsView from '@/views/RecordsView.vue'
+import ContainersView from '@/views/ContainersView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -28,7 +29,7 @@ const router = createRouter({
           component: OverviewView,
         },
         { path: 'portal', name: 'portal', component: PortalView, meta: { title: '我的门户' } },
-        { path: 'containers', name: 'containers', component: ResourceListView, meta: { administratorOnly: true, title: '容器', endpoint: 'containers' } },
+        { path: 'containers', name: 'containers', component: ContainersView, meta: { administratorOnly: true, title: '容器' } },
         { path: 'docker/images', name: 'images', component: ResourceListView, meta: { administratorOnly: true, title: '镜像', endpoint: 'images' } },
         { path: 'docker/networks', name: 'networks', component: ResourceListView, meta: { administratorOnly: true, title: '网络', endpoint: 'networks' } },
         { path: 'docker/volumes', name: 'volumes', component: ResourceListView, meta: { administratorOnly: true, title: '数据卷', endpoint: 'volumes' } },
