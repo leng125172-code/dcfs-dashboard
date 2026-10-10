@@ -1264,7 +1264,7 @@ public sealed class DockerEngine : IDisposable
         var first = image.Split('/')[0];
         var hasExplicitRegistry = image.Contains('/', StringComparison.Ordinal) &&
             (first.Contains('.', StringComparison.Ordinal) || first.Contains(':', StringComparison.Ordinal) || first == "localhost");
-        if (hasExplicitRegistry && first is not ("docker.io" or "ghcr.io" or "quay.io" or "xuanyuan.cloud" or "registry.cn-hangzhou.aliyuncs.com"))
+        if (hasExplicitRegistry && first is not ("docker.io" or "ghcr.io" or "quay.io" or "xuanyuan.cloud" or "docker.xuanyuan.run" or "registry.cn-hangzhou.aliyuncs.com"))
             throw new InvalidOperationException("The image registry is not approved.");
     }
 

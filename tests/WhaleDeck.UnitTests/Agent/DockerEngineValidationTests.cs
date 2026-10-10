@@ -96,6 +96,7 @@ public sealed class DockerEngineValidationTests
     [InlineData("docker.io/library/nginx:1.29-alpine")]
     [InlineData("ghcr.io/example/service:v1")]
     [InlineData("xuanyuan.cloud/team/service:v1")]
+    [InlineData("docker.xuanyuan.run/r/library/nginx:latest")]
     public void ImagesAcceptImplicitOrApprovedRegistries(string image) => Invoke("ValidateImage", image);
 
     [Theory]

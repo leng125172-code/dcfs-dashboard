@@ -9,6 +9,7 @@ public sealed class ManagedActionExecutorTests
     [InlineData("alpine:3.22")]
     [InlineData("library/alpine:3.22")]
     [InlineData("ghcr.io/example/service:1.2.3")]
+    [InlineData("docker.xuanyuan.run/r/library/nginx:latest")]
     public void ImageValidationAcceptsTagsAndApprovedRegistries(string image) => InvokeValidateImage(image);
 
     [Theory]

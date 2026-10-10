@@ -105,7 +105,7 @@ public sealed partial class XuanyuanCatalogProvider(
         return string.IsNullOrWhiteSpace(slug) ? "application" : slug;
     }
 
-    [GeneratedRegex("href=[\"'](?:https://xuanyuan\\.cloud)?/(?:image|images|detail)/(?<id>[^\"'#?]+)[^\"']*[\"'][^>]*>(?:<[^>]+>)*(?<name>[^<]{2,80})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex("href=[\"'](?:https://xuanyuan\\.cloud)?/(?:zh/r|r|image|images|detail)/(?<id>[^\"'#?]+)[^\"']*[\"'][^>]*>(?:<[^>]+>)*(?<name>[^<]{2,80})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ApplicationLinkPattern();
 
     [GeneratedRegex("[^a-z0-9]+", RegexOptions.CultureInvariant)]
