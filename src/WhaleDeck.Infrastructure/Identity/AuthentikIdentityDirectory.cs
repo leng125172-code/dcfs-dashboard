@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
@@ -191,8 +192,51 @@ public sealed class AuthentikIdentityDirectory(
     {
         using var request = new HttpRequestMessage(method, path) { Content = JsonContent.Create(payload) };
         var response = await Client().SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var status = response.StatusCode;
+            var detail = SafeProviderError(await response.Content.ReadAsStringAsync(cancellationToken));
+            response.Dispose();
+            throw new HttpRequestException(
+                $"Authentik rejected {method.Method} {path} ({(int)status}): {detail}",
+                null,
+                status);
+        }
         return response;
+    }
+
+    private static string SafeProviderError(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return "no provider detail";
+        try
+        {
+            using var document = JsonDocument.Parse(content);
+            if (document.RootElement.ValueKind != JsonValueKind.Object) return "non-object provider response";
+            var builder = new StringBuilder();
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (builder.Length > 0) builder.Append("; ");
+                builder.Append(property.Name).Append('=');
+                if (property.Name.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+                    property.Name.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+                    property.Name.Contains("token", StringComparison.OrdinalIgnoreCase) ||
+                    property.Name.Contains("credential", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Append("[redacted]");
+                }
+                else
+                {
+                    var value = property.Value.ToString().Replace('\r', ' ').Replace('\n', ' ');
+                    builder.Append(value.AsSpan(0, Math.Min(value.Length, 160)));
+                }
+                if (builder.Length >= 512) break;
+            }
+            return builder.Length == 0 ? "empty provider object" : builder.ToString(0, Math.Min(builder.Length, 512));
+        }
+        catch (JsonException)
+        {
+            return "unparseable provider response";
+        }
     }
 
     private async Task SendAndDisposeAsync(HttpMethod method, string path, object payload, CancellationToken cancellationToken)

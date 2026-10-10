@@ -20,6 +20,10 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
         LogLevel.Warning,
         new EventId(1002, "OutboxDispatchRetry"),
         "Outbox message {MessageId} dispatch failed; retry attempt {Attempt} is scheduled");
+    private static readonly Action<ILogger, Guid, string, Exception?> LogIdentityProviderRejected = LoggerMessage.Define<Guid, string>(
+        LogLevel.Warning,
+        new EventId(1003, "IdentityProviderRejected"),
+        "Identity operation in outbox message {MessageId} was rejected: {ProviderDetail}");
 
     private DateTimeOffset _nextCatalogRefresh = DateTimeOffset.MinValue;
     private DateTimeOffset _nextRetentionSweep = DateTimeOffset.MinValue;
@@ -383,6 +387,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
                     message.AvailableAtUtc = DateTimeOffset.UtcNow.AddSeconds(Math.Min(300, 5 * Math.Pow(2, message.Attempts)));
                 }
                 await db.SaveChangesAsync(cancellationToken);
+                if (providerRejected) LogIdentityProviderRejected(logger, message.Id, exception.Message, null);
                 if (!terminal) LogOutboxRetry(logger, message.Id, message.Attempts, null);
             }
         }
