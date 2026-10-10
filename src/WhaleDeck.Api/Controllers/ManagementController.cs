@@ -22,6 +22,18 @@ public sealed class ManagementController(
     public async Task<IActionResult> Containers([FromQuery] bool includeStopped = true, CancellationToken cancellationToken = default) =>
         Ok(await agent.ListContainersAsync(includeStopped, cancellationToken));
 
+    [HttpGet("containers/{containerId}/logs")]
+    public async Task<IActionResult> ContainerLogs(
+        string containerId,
+        [FromQuery] int tail = 300,
+        [FromQuery] int sinceMinutes = 60,
+        CancellationToken cancellationToken = default) =>
+        Ok(await agent.GetContainerLogsAsync(containerId, tail, sinceMinutes, cancellationToken));
+
+    [HttpGet("containers/{containerId}/stats")]
+    public async Task<IActionResult> ContainerStats(string containerId, CancellationToken cancellationToken = default) =>
+        Ok(await agent.GetContainerStatsAsync(containerId, cancellationToken));
+
     [HttpGet("applications/popular")]
     public async Task<IActionResult> Popular(CancellationToken cancellationToken) => Ok(await catalog.GetPopularAsync(cancellationToken));
 

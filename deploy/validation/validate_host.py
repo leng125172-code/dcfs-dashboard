@@ -35,6 +35,20 @@ def main() -> int:
     if not isinstance(journal, list):
         raise RuntimeError("The bounded journal query did not return a list")
 
+    containers = request(api, "GET", "containers?includeStopped=true").json()
+    running = next((item for item in containers if item.get("state") == "running"), None)
+    if not running:
+        raise RuntimeError("The Docker inventory did not contain a running container")
+    container_id = running.get("id")
+    if not isinstance(container_id, str) or not container_id:
+        raise RuntimeError("The running container did not contain an id")
+    stats = request(api, "GET", f"containers/{container_id}/stats").json()
+    if not isinstance(stats, dict) or not {"cpu", "memory", "network", "block", "pids"}.issubset(stats):
+        raise RuntimeError("The bounded container statistics did not contain the expected values")
+    logs = request(api, "GET", f"containers/{container_id}/logs?tail=20&sinceMinutes=60").json()
+    if not isinstance(logs.get("lines"), list) or not isinstance(logs.get("truncated"), bool):
+        raise RuntimeError("The bounded container log query did not return the expected shape")
+
     submitted = request(
         api,
         "POST",
@@ -74,7 +88,7 @@ def main() -> int:
 
     print(
         f"Host validation passed: {len(interfaces)} interfaces, {len(storage)} storage records, "
-        f"{len(journal)} journal entries and a {len(download.content)} byte diagnostic bundle"
+        f"{len(journal)} journal entries, container telemetry and a {len(download.content)} byte diagnostic bundle"
     )
     return 0
 

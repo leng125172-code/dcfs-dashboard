@@ -25,6 +25,8 @@ public interface IAgentGateway
     Task<HostInfoDto> GetHostInfoAsync(CancellationToken cancellationToken);
     Task<IReadOnlyCollection<JournalEntryDto>> QueryJournalAsync(string? unit, int take, int sinceMinutes, string? priority, string? keyword, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<ContainerDto>> ListContainersAsync(bool includeStopped, CancellationToken cancellationToken);
+    Task<ContainerLogsDto> GetContainerLogsAsync(string containerId, int tail, int sinceMinutes, CancellationToken cancellationToken);
+    Task<ContainerStatsDto> GetContainerStatsAsync(string containerId, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<ManagedResourceDto>> ListResourcesAsync(string kind, CancellationToken cancellationToken);
     Task<ManagedResourceDto> GetConfigRepositoryStatusAsync(CancellationToken cancellationToken);
     Task<DockerSettingsDto> GetDockerSettingsAsync(CancellationToken cancellationToken);

@@ -155,6 +155,21 @@ message ListContainersResponse {
   repeated ContainerSummary containers = 1;
 }
 
+message ContainerLogsRequest {
+  string container_id = 1;
+  uint32 tail = 2;
+  uint32 since_minutes = 3;
+}
+
+message ContainerLogsResponse {
+  repeated string lines = 1;
+  bool truncated = 2;
+}
+
+message ContainerStatsResponse {
+  map<string, string> values = 1;
+}
+
 message ImageMetadataRequest {
   RequestContext context = 1;
   string image = 2;
@@ -253,6 +268,8 @@ service HostService {
 service DockerService {
   rpc GetEngineInfo(google.protobuf.Empty) returns (DockerInfoResponse);
   rpc ListContainers(ListContainersRequest) returns (ListContainersResponse);
+  rpc GetContainerLogs(ContainerLogsRequest) returns (ContainerLogsResponse);
+  rpc GetContainerStats(ResourceReference) returns (ContainerStatsResponse);
   rpc ChangeContainerState(ChangeContainerStateRequest) returns (OperationHandle);
   rpc ListImages(google.protobuf.Empty) returns (ResourceCollectionResponse);
   rpc ListNetworks(google.protobuf.Empty) returns (ResourceCollectionResponse);

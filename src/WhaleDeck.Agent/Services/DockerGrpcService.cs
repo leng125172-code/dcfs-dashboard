@@ -1,10 +1,11 @@
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
+using System.Text.Json;
 using WhaleDeck.Contracts.Agent.V1;
 
 namespace WhaleDeck.Agent.Services;
 
-public sealed class DockerGrpcService(DockerEngine docker, ResourceRegistry registry) : DockerService.DockerServiceBase
+public sealed class DockerGrpcService(DockerEngine docker, ResourceRegistry registry, BoundedProcessRunner processes) : DockerService.DockerServiceBase
 {
     public override async Task<ImageMetadataResponse> InspectImage(ImageMetadataRequest request, ServerCallContext context)
     {
@@ -63,6 +64,43 @@ public sealed class DockerGrpcService(DockerEngine docker, ResourceRegistry regi
             }
             response.Containers.Add(summary);
         }
+        return response;
+    }
+
+    public override async Task<ContainerLogsResponse> GetContainerLogs(ContainerLogsRequest request, ServerCallContext context)
+    {
+        var containerId = await ResolveContainerIdAsync(request.ContainerId, context.CancellationToken);
+        var tail = (int)Math.Clamp(request.Tail, 1u, 2_000u);
+        var sinceMinutes = (int)Math.Clamp(request.SinceMinutes, 1u, 10_080u);
+        var result = await processes.RunAsync(
+            "/usr/bin/docker",
+            ["logs", "--timestamps", "--tail", tail.ToString(System.Globalization.CultureInfo.InvariantCulture), "--since", $"{sinceMinutes}m", containerId],
+            null,
+            TimeSpan.FromSeconds(20),
+            "CONTAINER_LOG_QUERY_FAILED",
+            context.CancellationToken);
+        var combined = string.Join('\n', new[] { result.StandardOutput, result.StandardError }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        var truncated = combined.Length > 64 * 1024;
+        if (truncated) combined = combined[..(64 * 1024)];
+        var response = new ContainerLogsResponse { Truncated = truncated };
+        response.Lines.AddRange(combined.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+        return response;
+    }
+
+    public override async Task<ContainerStatsResponse> GetContainerStats(ResourceReference request, ServerCallContext context)
+    {
+        var containerId = await ResolveContainerIdAsync(request.ResourceId, context.CancellationToken);
+        var result = await processes.RunAsync(
+            "/usr/bin/docker",
+            ["stats", "--no-stream", "--format", "{\"cpu\":{{json .CPUPerc}},\"memory\":{{json .MemUsage}},\"memoryPercent\":{{json .MemPerc}},\"network\":{{json .NetIO}},\"block\":{{json .BlockIO}},\"pids\":{{json .PIDs}}}", containerId],
+            null,
+            TimeSpan.FromSeconds(20),
+            "CONTAINER_STATS_QUERY_FAILED",
+            context.CancellationToken);
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        var response = new ContainerStatsResponse();
+        foreach (var property in document.RootElement.EnumerateObject())
+            response.Values[property.Name] = property.Value.GetString() ?? property.Value.ToString();
         return response;
     }
 
@@ -145,4 +183,21 @@ public sealed class DockerGrpcService(DockerEngine docker, ResourceRegistry regi
         key.Contains("password", StringComparison.OrdinalIgnoreCase) ||
         key.Contains("token", StringComparison.OrdinalIgnoreCase) ||
         key.Contains("secret", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<string> ResolveContainerIdAsync(string value, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 128 ||
+            value.Any(character => !(char.IsAsciiLetterOrDigit(character) || character is '_' or '.' or '-')))
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "The container id is invalid."));
+        var containers = await docker.ListContainersAsync(true, cancellationToken);
+        var matches = containers.Where(item =>
+            item.ID.StartsWith(value, StringComparison.OrdinalIgnoreCase) ||
+            item.Names.Any(name => string.Equals(name.TrimStart('/'), value, StringComparison.Ordinal))).ToArray();
+        return matches.Length switch
+        {
+            0 => throw new RpcException(new Status(StatusCode.NotFound, "The container was not found.")),
+            > 1 => throw new RpcException(new Status(StatusCode.InvalidArgument, "The container id is ambiguous.")),
+            _ => matches[0].ID,
+        };
+    }
 }

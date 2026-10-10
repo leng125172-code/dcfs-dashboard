@@ -4,6 +4,7 @@ import { Box, Delete, Plus, RefreshRight, VideoPause, VideoPlay } from '@element
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiRequest } from '@/services/apiClient'
 import { enqueueOperation, planOperation } from '@/services/operations'
+import type { ContainerLogs, ContainerStats } from '@/services/contracts'
 
 interface Container {
   id: string
@@ -21,6 +22,11 @@ const loading = ref(false)
 const createVisible = ref(false)
 const submitting = ref(false)
 const form = reactive({ name: '', image: '', cpus: 1, memoryMb: 512, autoUpdate: false })
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const selected = ref<Container | null>(null)
+const logs = ref<ContainerLogs>({ lines: [], truncated: false })
+const stats = ref<Record<string, string>>({})
 
 async function load() {
   loading.value = true
@@ -112,6 +118,27 @@ async function createContainer() {
   }
 }
 
+async function openDetails(item: Container) {
+  selected.value = item
+  detailVisible.value = true
+  detailLoading.value = true
+  logs.value = { lines: [], truncated: false }
+  stats.value = {}
+  try {
+    const id = encodeURIComponent(item.id)
+    const [logResult, statsResult] = await Promise.all([
+      apiRequest<ContainerLogs>(`containers/${id}/logs?tail=500&sinceMinutes=60`),
+      item.state === 'running'
+        ? apiRequest<ContainerStats>(`containers/${id}/stats`)
+        : Promise.resolve({ values: {} }),
+    ])
+    logs.value = logResult
+    stats.value = statsResult.values
+  } finally {
+    detailLoading.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -148,6 +175,7 @@ onMounted(load)
           item.protectionLevel
         }}</el-tag>
         <div class="container-card__actions">
+          <el-button link type="primary" @click="openDetails(item)">详情</el-button>
           <el-button
             v-if="item.state !== 'running'"
             link
@@ -215,6 +243,33 @@ onMounted(load)
         ></template
       >
     </el-dialog>
+    <el-drawer
+      v-model="detailVisible"
+      :title="selected ? `容器详情 · ${selected.name}` : '容器详情'"
+      size="min(760px, 96vw)"
+    >
+      <div v-loading="detailLoading" class="container-detail">
+        <el-descriptions v-if="selected" :column="2" border>
+          <el-descriptions-item label="镜像" :span="2">{{ selected.image }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ selected.status }}</el-descriptions-item>
+          <el-descriptions-item label="保护级别">{{
+            selected.protectionLevel
+          }}</el-descriptions-item>
+          <el-descriptions-item label="CPU">{{ stats.cpu || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="内存"
+            >{{ stats.memory || '—' }} · {{ stats.memoryPercent || '—' }}</el-descriptions-item
+          >
+          <el-descriptions-item label="网络 I/O">{{ stats.network || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="磁盘 I/O">{{ stats.block || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="进程数">{{ stats.pids || '—' }}</el-descriptions-item>
+        </el-descriptions>
+        <div class="log-heading">
+          <h3>最近一小时日志</h3>
+          <el-tag v-if="logs.truncated" type="warning" effect="plain">已按 64 KiB 截断</el-tag>
+        </div>
+        <pre class="container-logs">{{ logs.lines.join('\n') || '当前时间范围内没有日志。' }}</pre>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -273,6 +328,35 @@ onMounted(load)
   margin-left: 10px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.container-detail {
+  display: grid;
+  gap: 18px;
+  min-height: 320px;
+}
+.log-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.log-heading h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.container-logs {
+  max-height: 52vh;
+  overflow: auto;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  color: var(--el-text-color-regular);
+  background: var(--el-fill-color-light);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 @media (max-width: 760px) {
   .container-card {

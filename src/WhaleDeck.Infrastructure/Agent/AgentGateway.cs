@@ -93,6 +93,26 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
             item.ProtectedResource, item.ProtectionLevel, item.Labels)).ToArray();
     }
 
+    public async Task<ContainerLogsDto> GetContainerLogsAsync(string containerId, int tail, int sinceMinutes, CancellationToken cancellationToken)
+    {
+        var response = await _docker.GetContainerLogsAsync(new ContainerLogsRequest
+        {
+            ContainerId = containerId,
+            Tail = checked((uint)Math.Clamp(tail, 1, 2_000)),
+            SinceMinutes = checked((uint)Math.Clamp(sinceMinutes, 1, 10_080))
+        }, Headers("/whaledeck.agent.v1.DockerService/GetContainerLogs"), cancellationToken: cancellationToken);
+        return new ContainerLogsDto(response.Lines.ToArray(), response.Truncated);
+    }
+
+    public async Task<ContainerStatsDto> GetContainerStatsAsync(string containerId, CancellationToken cancellationToken)
+    {
+        var response = await _docker.GetContainerStatsAsync(
+            new ResourceReference { ResourceId = containerId, ResourceType = "Container" },
+            Headers("/whaledeck.agent.v1.DockerService/GetContainerStats"),
+            cancellationToken: cancellationToken);
+        return new ContainerStatsDto(response.Values);
+    }
+
     public async Task<IReadOnlyCollection<ManagedResourceDto>> ListResourcesAsync(string kind, CancellationToken cancellationToken)
     {
         return kind.ToLowerInvariant() switch

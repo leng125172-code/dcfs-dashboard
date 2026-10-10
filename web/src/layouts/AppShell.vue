@@ -42,6 +42,14 @@ const navigationGroups = [
     label: '运行与监控',
     items: [
       { index: '/containers', label: '容器', icon: DataAnalysis, administratorOnly: true },
+      { index: '/docker/images', label: '镜像', icon: Box, administratorOnly: true },
+      {
+        index: '/docker/networks',
+        label: 'Docker 网络',
+        icon: Connection,
+        administratorOnly: true,
+      },
+      { index: '/docker/volumes', label: '数据卷', icon: Odometer, administratorOnly: true },
       { index: '/docker/settings', label: 'Docker 设置', icon: Setting, administratorOnly: true },
       { index: '/databases', label: '数据库', icon: Odometer, administratorOnly: true },
       { index: '/systemd', label: '系统服务', icon: Monitor, administratorOnly: true },
@@ -58,6 +66,7 @@ const navigationGroups = [
       { index: '/applications', label: '应用管理', icon: Box, administratorOnly: true },
       { index: '/backups', label: '备份策略', icon: Document, administratorOnly: true },
       { index: '/identity/users', label: '身份用户', icon: UserFilled, administratorOnly: true },
+      { index: '/identity/groups', label: '身份组', icon: UserFilled, administratorOnly: true },
       { index: '/identity/sso', label: 'SSO 应用', icon: Link, administratorOnly: true },
     ],
   },

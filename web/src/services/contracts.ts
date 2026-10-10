@@ -59,6 +59,15 @@ export interface ManagedResource {
   attributes: Record<string, string>
 }
 
+export interface ContainerLogs {
+  lines: string[]
+  truncated: boolean
+}
+
+export interface ContainerStats {
+  values: Record<string, string>
+}
+
 export interface MetricValue {
   kind: string
   deviceId: string

@@ -94,6 +94,10 @@ public sealed record ContainerDto(
     string ProtectionLevel,
     IReadOnlyDictionary<string, string> Labels);
 
+public sealed record ContainerLogsDto(IReadOnlyCollection<string> Lines, bool Truncated);
+
+public sealed record ContainerStatsDto(IReadOnlyDictionary<string, string> Values);
+
 public sealed record OverviewDto(
     string Scope,
     string PlatformStatus,
