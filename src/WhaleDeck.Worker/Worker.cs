@@ -150,6 +150,7 @@ public sealed class Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> lo
             var parameters = root.TryGetProperty("parameters", out var parameterValue) && parameterValue.ValueKind == JsonValueKind.Object
                 ? parameterValue.EnumerateObject().ToDictionary(item => item.Name, item => item.Value.ToString(), StringComparer.Ordinal)
                 : new Dictionary<string, string>();
+            if (schedule.TaskType == "ApplicationUpdate") parameters["automatic"] = "true";
             string? planHash = null;
             if (action is "update" or "update-install")
                 planHash = (await agent.PlanAsync(area, action, resourceId, parameters, cancellationToken)).PlanHash;

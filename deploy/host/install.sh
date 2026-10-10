@@ -35,6 +35,7 @@ printf 'Agent__AllowedPeerGid=%s\n' "$(getent group whaledeck | cut -d: -f3)" > 
 chown root:whaledeck /etc/whaledeck/agent.env
 chmod 0640 /etc/whaledeck/agent.env
 install -o root -g root -m 0750 "$(dirname "$0")/whaledeck-privileged" /usr/local/libexec/whaledeck-privileged
+install -o root -g root -m 0750 "$(dirname "$0")/whaledeck-platform-maintenance" /usr/local/libexec/whaledeck-platform-maintenance
 printf '%s\n' 'whaledeck-agent ALL=(root) NOPASSWD: /usr/local/libexec/whaledeck-privileged *' > /etc/sudoers.d/whaledeck-agent
 chmod 0440 /etc/sudoers.d/whaledeck-agent
 visudo -cf /etc/sudoers.d/whaledeck-agent

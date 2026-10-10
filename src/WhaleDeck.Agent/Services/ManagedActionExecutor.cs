@@ -207,12 +207,14 @@ public sealed partial class ManagedActionExecutor(
             if (Directory.Exists(directory)) throw new InvalidOperationException("The application is already installed.");
             var image = Required(parameters.TryGetValue("image", out var imageValue) ? imageValue : null, "image");
             ValidateImage(image);
+            var autoUpdate = parameters.TryGetValue("autoupdate", out var autoUpdateValue) &&
+                bool.TryParse(autoUpdateValue, out var parsedAutoUpdate) && parsedAutoUpdate;
             Directory.CreateDirectory(directory);
             try
             {
                 var compose = BuildApplicationCompose(slug, image, parameters);
                 AtomicWrite(Path.Combine(directory, "compose.yml"), compose);
-                AtomicWrite(Path.Combine(directory, "manifest.json"), JsonSerializer.Serialize(new { slug, image, installedAtUtc = DateTimeOffset.UtcNow }, IndentedJson));
+                AtomicWrite(Path.Combine(directory, "manifest.json"), JsonSerializer.Serialize(new { slug, image, autoUpdate, installedAtUtc = DateTimeOffset.UtcNow }, IndentedJson));
                 AtomicWrite(Path.Combine(directory, ".env"), parameters.TryGetValue("environment", out var environment) ? NormalizeEnvironment(environment) : string.Empty, UnixFileMode.UserRead | UnixFileMode.UserWrite);
                 AtomicWrite(Path.Combine(directory, ".env.example"), string.Empty);
                 AtomicWrite(Path.Combine(directory, "README.md"), $"# {slug}\n\nManaged by Whale Deck.\n");
@@ -220,6 +222,8 @@ public sealed partial class ManagedActionExecutor(
             }
             catch
             {
+                try { await ComposeAsync(directory, ["down", "--remove-orphans"], CancellationToken.None); }
+                catch { /* best-effort cleanup before removing the failed installation directory */ }
                 if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
                 throw;
             }
@@ -233,6 +237,15 @@ public sealed partial class ManagedActionExecutor(
             case "stop": await ComposeAsync(directory, ["stop"], cancellationToken); break;
             case "restart": await ComposeAsync(directory, ["restart"], cancellationToken); break;
             case "update":
+                if (parameters.TryGetValue("automatic", out var automatic) && bool.TryParse(automatic, out var isAutomatic) && isAutomatic)
+                {
+                    using var manifest = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(directory, "manifest.json"), cancellationToken));
+                    if (!manifest.RootElement.TryGetProperty("autoUpdate", out var enabled) || !enabled.GetBoolean())
+                        throw new InvalidOperationException("Automatic update is not enabled for this application.");
+                }
+                await ComposeAsync(directory, ["pull"], cancellationToken);
+                await ComposeAsync(directory, ["up", "-d", "--force-recreate"], cancellationToken);
+                break;
             case "reinstall":
                 await ComposeAsync(directory, ["pull"], cancellationToken);
                 await ComposeAsync(directory, ["up", "-d", "--force-recreate"], cancellationToken);
@@ -284,7 +297,7 @@ public sealed partial class ManagedActionExecutor(
                 await RunHelperAsync(["platform-update-schedule"], null, ShortTimeout, "PLATFORM_UPDATE_FAILED", cancellationToken);
                 return;
             case "rollback":
-                await RunHelperAsync(["docker-rollback"], null, ShortTimeout, "PLATFORM_ROLLBACK_FAILED", cancellationToken);
+                await RunHelperAsync(["platform-rollback-schedule"], null, ShortTimeout, "PLATFORM_ROLLBACK_FAILED", cancellationToken);
                 return;
             default: throw new InvalidOperationException("The platform maintenance action is unsupported.");
         }
@@ -359,7 +372,9 @@ public sealed partial class ManagedActionExecutor(
 
     private static string BuildApplicationCompose(string slug, string image, IReadOnlyDictionary<string, string> parameters)
     {
-        var builder = new StringBuilder($"name: {slug}\nservices:\n  app:\n    image: {Json(image)}\n    container_name: {Json("whaledeck-app-" + slug)}\n    restart: unless-stopped\n    init: true\n    security_opt:\n      - no-new-privileges:true\n    cap_drop:\n      - ALL\n    logging:\n      driver: local\n      options:\n        max-size: 10m\n        max-file: \"5\"\n        compress: \"true\"\n");
+        var autoUpdate = parameters.TryGetValue("autoupdate", out var autoUpdateValue) &&
+            bool.TryParse(autoUpdateValue, out var parsedAutoUpdate) && parsedAutoUpdate;
+        var builder = new StringBuilder($"name: {slug}\nservices:\n  app:\n    image: {Json(image)}\n    container_name: {Json("whaledeck-app-" + slug)}\n    restart: unless-stopped\n    init: true\n    labels:\n      io.whaledeck.resource-id: {Json("application." + slug)}\n      io.whaledeck.protected: \"false\"\n      io.whaledeck.autoupdate: {Json(autoUpdate ? "true" : "false")}\n      autoupdate: {Json(autoUpdate ? "true" : "false")}\n    security_opt:\n      - no-new-privileges:true\n    cap_drop:\n      - ALL\n    logging:\n      driver: local\n      options:\n        max-size: 10m\n        max-file: \"5\"\n        compress: \"true\"\n");
         if (parameters.TryGetValue("ports", out var ports) && !string.IsNullOrWhiteSpace(ports))
         {
             builder.Append("    ports:\n");

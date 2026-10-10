@@ -90,7 +90,16 @@ public sealed class AuthentikIdentityDirectory(
                     authorization_flow = Required(parameters, "authorizationFlowId", 1, 100),
                     invalidation_flow = Required(parameters, "invalidationFlowId", 1, 100),
                     client_type = "confidential",
-                    redirect_uris = Required(parameters, "redirectUri", 1, 2048),
+                    grant_types = new[] { "authorization_code", "refresh_token" },
+                    redirect_uris = new[]
+                    {
+                        new
+                        {
+                            matching_mode = "strict",
+                            url = ApprovedRedirectUri(parameters),
+                            redirect_uri_type = "authorization"
+                        }
+                    },
                     sub_mode = "hashed_user_id"
                 };
                 using var provider = await SendAsync(HttpMethod.Post, "providers/oauth2/", providerPayload, cancellationToken);
@@ -190,6 +199,15 @@ public sealed class AuthentikIdentityDirectory(
             ? value.Trim() : throw new InvalidOperationException($"The Authentik field is invalid: {key}");
     private static string? Optional(IReadOnlyDictionary<string, string> values, string key, int maximum) =>
         values.TryGetValue(key, out var value) && value.Trim().Length <= maximum ? value.Trim() : null;
+    private static string ApprovedRedirectUri(IReadOnlyDictionary<string, string> values)
+    {
+        var value = Required(values, "redirectUri", 1, 2048);
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttp ||
+            uri.Host is not ("192.168.22.19" or "192.168.100.13" or "127.0.0.1" or "localhost") ||
+            !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Fragment))
+            throw new InvalidOperationException("The SSO redirect URI is not approved.");
+        return uri.AbsoluteUri;
+    }
     private static string AppendPage(string path, int page) => path + (path.Contains('?', StringComparison.Ordinal) ? "&" : "?") + $"page={page}";
 
     private HttpClient Client()

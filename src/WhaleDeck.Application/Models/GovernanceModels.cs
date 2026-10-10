@@ -7,11 +7,11 @@ public sealed record SaveScheduledTaskCommand(Guid? Id, string TaskType, string 
     string ScheduleExpression, string Timezone, string ParametersJson, string ConcurrencyPolicy, int TimeoutSeconds,
     bool IsEnabled, long? ExpectedVersion);
 
-public sealed record BackupPolicyDto(Guid Id, Guid InstanceResourceId, bool IsEnabled, string ScheduleExpression,
+public sealed record BackupPolicyDto(Guid Id, string InstanceResourceId, bool IsEnabled, string ScheduleExpression,
     string Timezone, int RetentionCount, int RetentionDays, string TargetDirectoryId, string Compression,
     bool VerifyAfterBackup, int CapacityWarningPercent, int CapacityCriticalPercent, long Version);
 
-public sealed record SaveBackupPolicyCommand(Guid? Id, Guid InstanceResourceId, bool IsEnabled, string ScheduleExpression,
+public sealed record SaveBackupPolicyCommand(Guid? Id, string InstanceResourceId, bool IsEnabled, string ScheduleExpression,
     string Timezone, int RetentionCount, int RetentionDays, string TargetDirectoryId, string Compression,
     bool VerifyAfterBackup, int CapacityWarningPercent, int CapacityCriticalPercent, long? ExpectedVersion);
 

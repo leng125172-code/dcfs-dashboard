@@ -31,20 +31,26 @@ public sealed class GovernanceService(IGovernanceRepository repository)
     public Task DeleteScheduleAsync(Guid id, long expectedVersion, CancellationToken cancellationToken) =>
         repository.DeleteScheduleAsync(id, expectedVersion, cancellationToken);
 
-    public async Task<IReadOnlyCollection<BackupPolicyDto>> ListBackupPoliciesAsync(CancellationToken cancellationToken) =>
-        (await repository.ListBackupPoliciesAsync(cancellationToken)).Select(item => new BackupPolicyDto(item.Id, item.InstanceResourceId,
-            item.IsEnabled, item.ScheduleExpression, item.Timezone, item.RetentionCount, item.RetentionDays, item.TargetDirectoryId,
-            item.Compression, item.VerifyAfterBackup, item.CapacityWarningPercent, item.CapacityCriticalPercent, item.Version)).ToArray();
+    public async Task<IReadOnlyCollection<BackupPolicyDto>> ListBackupPoliciesAsync(CancellationToken cancellationToken)
+    {
+        var policies = await repository.ListBackupPoliciesAsync(cancellationToken);
+        return await Task.WhenAll(policies.Select(async item => new BackupPolicyDto(item.Id,
+            await repository.ResolveResourceExternalIdAsync(item.InstanceResourceId, cancellationToken), item.IsEnabled,
+            item.ScheduleExpression, item.Timezone, item.RetentionCount, item.RetentionDays, item.TargetDirectoryId,
+            item.Compression, item.VerifyAfterBackup, item.CapacityWarningPercent, item.CapacityCriticalPercent, item.Version)));
+    }
 
     public async Task<BackupPolicyDto> SaveBackupPolicyAsync(SaveBackupPolicyCommand command, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(command.InstanceResourceId) || command.InstanceResourceId.Length > 160)
+            throw new ArgumentException("Managed database resource id is invalid.");
         ValidateSchedule("Cron", command.ScheduleExpression);
         if (command.RetentionCount is < 1 or > 365 || command.RetentionDays is < 1 or > 3650) throw new ArgumentException("Backup retention is out of range.");
         if (!string.Equals(command.TargetDirectoryId, "database-platform.backup.hdd", StringComparison.Ordinal)) throw new ArgumentException("Backup target is not approved.");
         if (command.CapacityWarningPercent is < 50 or > 95 || command.CapacityCriticalPercent <= command.CapacityWarningPercent || command.CapacityCriticalPercent > 99)
             throw new ArgumentException("Backup capacity thresholds are invalid.");
         var item = await repository.SaveBackupPolicyAsync(command, cancellationToken);
-        return new BackupPolicyDto(item.Id, item.InstanceResourceId, item.IsEnabled, item.ScheduleExpression, item.Timezone,
+        return new BackupPolicyDto(item.Id, await repository.ResolveResourceExternalIdAsync(item.InstanceResourceId, cancellationToken), item.IsEnabled, item.ScheduleExpression, item.Timezone,
             item.RetentionCount, item.RetentionDays, item.TargetDirectoryId, item.Compression, item.VerifyAfterBackup,
             item.CapacityWarningPercent, item.CapacityCriticalPercent, item.Version);
     }

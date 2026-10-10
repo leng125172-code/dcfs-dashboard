@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+[[ $EUID -eq 0 ]] || { echo 'Platform maintenance must run as root.' >&2; exit 1; }
+action=${1:-}
+source_root=/data/GitRepos/whale-deck
+state_root=/var/lib/whaledeck-agent/platform-maintenance
+previous_file="$state_root/previous-revision"
+status_file=/run/whaledeck/maintenance/status.json
+lock_file=/run/lock/whaledeck-platform-maintenance.lock
+
+[[ -d $source_root/.git && -r $source_root/.env && -r $source_root/.images.env ]] || {
+  echo 'Whale Deck source or private runtime configuration is unavailable.' >&2
+  exit 1
+}
+install -d -o root -g root -m 0700 "$state_root"
+install -d -o root -g whaledeck -m 0750 "$(dirname "$status_file")"
+exec 9>"$lock_file"
+flock -n 9 || { echo 'Another platform maintenance operation is active.' >&2; exit 1; }
+
+write_status() {
+  local state=$1 message=$2
+  printf '{"state":"%s","message":"%s","updatedAtUtc":"%s"}\n' \
+    "$state" "$message" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$status_file"
+  chown root:whaledeck "$status_file"
+  chmod 0640 "$status_file"
+}
+
+compose_for() {
+  local project_root=$1
+  shift
+  docker compose --project-name whale-deck --project-directory "$project_root" \
+    --env-file "$source_root/.env" --env-file "$source_root/.images.env" \
+    -f "$project_root/compose.yml" "$@"
+}
+
+deploy_revision() {
+  local project_root=$1 migrate=$2
+  "$project_root/deploy/host/publish-and-install.sh"
+  compose_for "$project_root" --profile tools config --quiet
+  compose_for "$project_root" --profile tools build --pull
+  if [[ $migrate == true ]]; then
+    compose_for "$project_root" --profile tools run --rm --no-deps migrator
+  fi
+  compose_for "$project_root" up -d --wait --wait-timeout 180
+}
+
+case "$action" in
+  update)
+    [[ -z $(git -C "$source_root" status --porcelain) ]] || { echo 'Whale Deck checkout has local changes.' >&2; exit 1; }
+    branch=$(git -C "$source_root" branch --show-current)
+    [[ $branch =~ ^[A-Za-z0-9._/-]{1,120}$ ]] || { echo 'The current update branch is invalid.' >&2; exit 1; }
+    before=$(git -C "$source_root" rev-parse HEAD)
+    write_status updating '正在获取并部署 Whale Deck 更新。'
+    timeout 60 git -C "$source_root" fetch origin "$branch"
+    git -C "$source_root" merge-base --is-ancestor "$before" FETCH_HEAD || { echo 'The update is not a fast-forward.' >&2; exit 1; }
+    printf '%s\n' "$before" > "$previous_file"
+    git -C "$source_root" merge --ff-only FETCH_HEAD
+    deploy_revision "$source_root" true
+    write_status healthy 'Whale Deck 更新完成。'
+    ;;
+  rollback)
+    [[ -r $previous_file ]] || { echo 'No previous Whale Deck revision is recorded.' >&2; exit 1; }
+    revision=$(<"$previous_file")
+    [[ $revision =~ ^[a-f0-9]{40}$ ]] || { echo 'The recorded rollback revision is invalid.' >&2; exit 1; }
+    git -C "$source_root" cat-file -e "$revision^{commit}"
+    rollback_root="$state_root/rollback-src"
+    [[ ! -e $rollback_root ]] || git -C "$source_root" worktree remove --force "$rollback_root"
+    write_status rollingBack '正在回退 Whale Deck；数据库迁移不会降级。'
+    git -C "$source_root" worktree add --detach "$rollback_root" "$revision"
+    trap 'git -C "$source_root" worktree remove --force "$rollback_root" >/dev/null 2>&1 || true' EXIT
+    install -o root -g root -m 0600 "$source_root/.images.env" "$rollback_root/.images.env"
+    deploy_revision "$rollback_root" false
+    git -C "$source_root" worktree remove --force "$rollback_root"
+    trap - EXIT
+    write_status healthy 'Whale Deck 已回退到上一版本。'
+    ;;
+  *)
+    echo 'Usage: whaledeck-platform-maintenance update|rollback' >&2
+    exit 2
+    ;;
+esac

@@ -61,6 +61,14 @@ case "$action" in
     [[ "$unit" == whaledeck-agent.service && "$verb" == restart ]] || exit 2
     exec /usr/bin/systemd-run --unit=whaledeck-agent-restart --collect --on-active=3s /usr/bin/systemctl restart "$unit"
     ;;
+  platform-update-schedule)
+    [[ $# -eq 1 ]] || exit 2
+    exec /usr/bin/systemd-run --unit=whaledeck-platform-update --collect --on-active=3s /usr/local/libexec/whaledeck-platform-maintenance update
+    ;;
+  platform-rollback-schedule)
+    [[ $# -eq 1 ]] || exit 2
+    exec /usr/bin/systemd-run --unit=whaledeck-platform-rollback --collect --on-active=3s /usr/local/libexec/whaledeck-platform-maintenance rollback
+    ;;
   reboot)
     [[ $# -eq 1 ]] || exit 2
     exec /usr/bin/systemctl reboot

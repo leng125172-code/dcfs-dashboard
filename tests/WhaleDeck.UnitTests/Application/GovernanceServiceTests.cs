@@ -19,7 +19,7 @@ public sealed class GovernanceServiceTests
     [Fact]
     public async Task BackupRejectsUnregisteredTarget()
     {
-        var command = new SaveBackupPolicyCommand(null, Guid.NewGuid(), true, "0 2 * * *", "Asia/Shanghai", 14, 14,
+        var command = new SaveBackupPolicyCommand(null, "database-platform.postgres", true, "0 2 * * *", "Asia/Shanghai", 14, 14,
             "/tmp", "Default", true, 80, 90, null);
         await Assert.ThrowsAsync<ArgumentException>(() => _service.SaveBackupPolicyAsync(command, default));
     }
@@ -45,6 +45,7 @@ public sealed class GovernanceServiceTests
         public Task<ScheduledTask> SaveScheduleAsync(string actorSubject, SaveScheduledTaskCommand command, CancellationToken cancellationToken) => throw new InvalidOperationException();
         public Task DeleteScheduleAsync(Guid id, long expectedVersion, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task<IReadOnlyCollection<BackupPolicy>> ListBackupPoliciesAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<BackupPolicy>>([]);
+        public Task<string> ResolveResourceExternalIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult("database-platform.postgres");
         public Task<BackupPolicy> SaveBackupPolicyAsync(SaveBackupPolicyCommand command, CancellationToken cancellationToken) => throw new InvalidOperationException();
         public Task<IReadOnlyCollection<AlertRule>> ListAlertRulesAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<AlertRule>>([]);
         public Task<AlertRule> SaveAlertRuleAsync(SaveAlertRuleCommand command, CancellationToken cancellationToken) => throw new InvalidOperationException();

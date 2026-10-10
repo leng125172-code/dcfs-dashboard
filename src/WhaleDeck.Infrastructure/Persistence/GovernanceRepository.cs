@@ -62,6 +62,10 @@ public sealed class GovernanceRepository(PlatformDbContext db) : IGovernanceRepo
     public async Task<IReadOnlyCollection<BackupPolicy>> ListBackupPoliciesAsync(CancellationToken cancellationToken) =>
         await db.BackupPolicies.AsNoTracking().OrderBy(item => item.InstanceResourceId).ToArrayAsync(cancellationToken);
 
+    public async Task<string> ResolveResourceExternalIdAsync(Guid id, CancellationToken cancellationToken) =>
+        await db.ManagedResources.Where(item => item.Id == id).Select(item => item.ExternalId).SingleOrDefaultAsync(cancellationToken)
+            ?? throw new KeyNotFoundException("Managed database resource was not found.");
+
     public async Task<BackupPolicy> SaveBackupPolicyAsync(SaveBackupPolicyCommand command, CancellationToken cancellationToken)
     {
         BackupPolicy item;
@@ -85,9 +89,13 @@ public sealed class GovernanceRepository(PlatformDbContext db) : IGovernanceRepo
         }
         else
         {
+            var resourceId = await db.ManagedResources
+                .Where(value => value.ResourceType == "Database" && value.ExternalId == command.InstanceResourceId)
+                .Select(value => (Guid?)value.Id).SingleOrDefaultAsync(cancellationToken)
+                ?? throw new KeyNotFoundException("Managed database resource was not found.");
             item = new BackupPolicy
             {
-                InstanceResourceId = command.InstanceResourceId, IsEnabled = command.IsEnabled,
+                InstanceResourceId = resourceId, IsEnabled = command.IsEnabled,
                 ScheduleExpression = command.ScheduleExpression, Timezone = command.Timezone,
                 RetentionCount = command.RetentionCount, RetentionDays = command.RetentionDays,
                 TargetDirectoryId = command.TargetDirectoryId, Compression = command.Compression,
