@@ -82,7 +82,10 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
             "images" => Map(await _docker.ListImagesAsync(new Empty(), Headers("/whaledeck.agent.v1.DockerService/ListImages"), cancellationToken: cancellationToken)),
             "networks" => Map(await _docker.ListNetworksAsync(new Empty(), Headers("/whaledeck.agent.v1.DockerService/ListNetworks"), cancellationToken: cancellationToken)),
             "volumes" => Map(await _docker.ListVolumesAsync(new Empty(), Headers("/whaledeck.agent.v1.DockerService/ListVolumes"), cancellationToken: cancellationToken)),
-            "overview" => (await ListContainersAsync(true, cancellationToken)).Select(item => new ManagedResourceDto(item.Id, item.Name, "Container", item.State, item.Image, item.IsProtected, item.Labels)).ToArray(),
+            "overview" => (await ListContainersAsync(true, cancellationToken))
+                .Where(IsOverviewContainer)
+                .Select(item => new ManagedResourceDto(item.Id, item.Name, "Container", item.State, item.Image, item.IsProtected, item.Labels))
+                .ToArray(),
             _ => []
         };
     }
@@ -254,6 +257,12 @@ public sealed class AgentGateway : IAgentGateway, IManagementQuery, IDisposable
     private static ManagedResourceDto[] Map(ResourceCollectionResponse response) =>
         response.Resources.Select(item => new ManagedResourceDto(item.ResourceId, item.DisplayName, item.ResourceType,
             item.State, item.Version, item.ProtectedResource, item.Attributes)).ToArray();
+
+    private static bool IsOverviewContainer(ContainerDto item) =>
+        string.Equals(item.State, "running", StringComparison.OrdinalIgnoreCase) ||
+        item.IsProtected ||
+        (item.Labels.TryGetValue("com.docker.compose.project", out var project) &&
+         project.StartsWith("whaledeck", StringComparison.Ordinal));
 
     private static ManagedResourceDto Map(ResourceSnapshot item) =>
         new(item.ResourceId, item.DisplayName, item.ResourceType, item.State, item.Version,
